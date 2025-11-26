@@ -1,0 +1,19 @@
+# Environnement virtuel
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Variables d'environnement (SECRETS)
+.env
+
+# Base de données locale (Optionnel : tu peux l'enlever si tu veux commit la DB de démo)
+# customers.db
+
+# Logs et fichiers temporaires
+*.log
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,27 @@
+# Utiliser une image Python récente
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# Dossier de travail
+WORKDIR /app
+
+# 1. Copier les fichiers de configuration
+COPY pyproject.toml uv.lock ./
+
+# 2. Installer les dépendances
+RUN uv sync --frozen --no-install-project
+
+# 3. Installer le serveur MCP
+RUN uv tool install mcp-server-sqlite
+
+# 4. Copier le code
+COPY . .
+
+
+EXPOSE 8080
+
+ENV PYTHONUNBUFFERED=1
+
+# LA COMMANDE PROPRE : PAS DE FLAGS STREAMLIT ICI
+CMD uv run python create_db.py && \
+    uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 & \
+    uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
