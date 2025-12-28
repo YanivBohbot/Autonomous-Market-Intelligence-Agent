@@ -1,6 +1,6 @@
 # 🕵️‍♂️ Autonomous Market Intelligence Agent (LangGraph + MCP)
 
-This project delivers an advanced, full-stack AI Agent system designed to perform complex financial research, synthesize data from diverse sources, and execute secure actions under human supervision. It serves as a strong portfolio piece demonstrating mastery of **Agentic AI** and robust DevOps practices.
+This project delivers an advanced, full-stack AI Agent system designed to perform complex financial research, synthesize data from diverse sources, and execute secure actions under human supervision.
 
 ## 🚀 Key Architectural Features
 
