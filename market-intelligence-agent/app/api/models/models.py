@@ -1,6 +1,5 @@
-# Modèles de données (Pydantic) pour valider les entrées/sorties
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 
 class ChatRequest(BaseModel):
@@ -10,7 +9,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
-    status: str  # "completed" ou "interrupted"
+    status: str
     next_step: Optional[str] = None
 
 
