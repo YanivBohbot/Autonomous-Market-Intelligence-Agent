@@ -7,7 +7,7 @@ from app.agent.state import AgentState
 logger = logging.getLogger(__name__)
 
 
-def retriveal_internal_documention(state: AgentState) -> dict:
+def retrieve_internal_documentation(state: AgentState) -> dict:
     logger.info("RAG: Starting internal document search")
     question = state["question"]
     embeddings = OpenAIEmbeddings(model=settings.OPENAI_EMBEDDING_MODEL)

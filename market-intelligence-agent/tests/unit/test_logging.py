@@ -17,6 +17,7 @@ def test_json_formatter_produces_valid_json():
 
 
 def test_configure_logging_sets_root_level():
+    original_level = logging.getLogger().level
     configure_logging("WARNING")
     assert logging.getLogger().level == logging.WARNING
-    configure_logging("INFO")  # reset for other tests
+    configure_logging(logging.getLevelName(original_level))  # restore

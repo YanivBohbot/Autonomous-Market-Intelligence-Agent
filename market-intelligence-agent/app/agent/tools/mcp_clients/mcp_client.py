@@ -39,8 +39,11 @@ def sync_query_wrapper(query: str) -> str:
     try:
         return asyncio.run(query_crm_tool(query))
     except RuntimeError:
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(query_crm_tool(query))
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(query_crm_tool(query))
+        finally:
+            loop.close()
 
 
 crm_tool = Tool(

@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from app.agent.state import AgentState
-from app.agent.nodes.rag import retriveal_internal_documention
+from app.agent.nodes.rag import retrieve_internal_documentation
 from app.agent.nodes.research import web_search
 from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
@@ -17,7 +17,7 @@ def decide_next_step(state: AgentState):
 
 
 workflow = StateGraph(AgentState)
-workflow.add_node("rag", retriveal_internal_documention)
+workflow.add_node("rag", retrieve_internal_documentation)
 workflow.add_node("grader", grade_documents)
 workflow.add_node("web_search", web_search)
 workflow.add_node("generate", generate_answer)
