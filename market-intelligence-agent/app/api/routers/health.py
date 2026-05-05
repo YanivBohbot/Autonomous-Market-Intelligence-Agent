@@ -1,14 +1,17 @@
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from fastapi import APIRouter
-from pydantic import BaseModel
+from app.api.models.models import HealthResponse
 
 router = APIRouter()
 
 
-class HealthResponse(BaseModel):
-    status: str
-    version: str = "0.1.0"
+def _get_version() -> str:
+    try:
+        return _pkg_version("market-intelligence-agent")
+    except PackageNotFoundError:
+        return "0.0.0"
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "version": _get_version()}

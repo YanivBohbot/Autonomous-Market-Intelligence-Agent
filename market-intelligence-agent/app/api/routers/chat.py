@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter
 from app.agent.graph import agent_app
@@ -21,6 +22,14 @@ def _get_safe_content(state: dict) -> str:
     return str(content)
 
 
+def _get_action_description(last_msg) -> str:
+    action_desc = last_msg.content
+    if not action_desc and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+        tc = last_msg.tool_calls[0]
+        action_desc = f"Exécuter : {tc['name']} ({tc['args']})"
+    return action_desc
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     config = {"configurable": {"thread_id": request.thread_id}}
@@ -32,14 +41,11 @@ async def chat_endpoint(request: ChatRequest):
             "next_step": str(snapshot.next),
         }
     inputs = {"question": request.query}
-    final_state = agent_app.invoke(inputs, config)
+    final_state = await asyncio.to_thread(agent_app.invoke, inputs, config)
     snapshot = agent_app.get_state(config)
     if snapshot.next:
         last_msg = final_state["messages"][-1]
-        action_desc = last_msg.content
-        if not action_desc and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-            tc = last_msg.tool_calls[0]
-            action_desc = f"Exécuter : {tc['name']} ({tc['args']})"
+        action_desc = _get_action_description(last_msg)
         return {
             "response": f"⏸️ ACTION REQUISE : {action_desc}",
             "status": "interrupted",
@@ -64,7 +70,7 @@ async def approve_endpoint(request: ApproveRequest):
         }
     if request.approved:
         logger.info("Action approved for thread %s", request.thread_id)
-        final_state = agent_app.invoke(None, config)
+        final_state = await asyncio.to_thread(agent_app.invoke, None, config)
     else:
         logger.info("Action refused for thread %s", request.thread_id)
         return {
@@ -75,10 +81,7 @@ async def approve_endpoint(request: ApproveRequest):
     snapshot = agent_app.get_state(config)
     if snapshot.next:
         last_msg = final_state["messages"][-1]
-        action_desc = last_msg.content
-        if not action_desc and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-            tc = last_msg.tool_calls[0]
-            action_desc = f"Exécuter : {tc['name']} ({tc['args']})"
+        action_desc = _get_action_description(last_msg)
         return {
             "response": f"⏸️ NOUVELLE ACTION REQUISE : {action_desc}",
             "status": "interrupted",

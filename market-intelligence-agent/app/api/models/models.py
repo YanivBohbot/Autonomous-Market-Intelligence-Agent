@@ -16,3 +16,8 @@ class ChatResponse(BaseModel):
 class ApproveRequest(BaseModel):
     thread_id: str
     approved: bool
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
