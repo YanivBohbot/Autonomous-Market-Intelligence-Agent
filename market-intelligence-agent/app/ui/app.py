@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 import uuid
@@ -7,7 +8,7 @@ st.set_page_config(page_title="Agent Autonome IA", page_icon="🕵️‍♂️")
 st.title("🕵️‍♂️ Market Intelligence Agent")
 
 # URL de l'API FastAPI (assure-toi que uvicorn tourne sur le port 8000)
-API_URL = "http://127.0.0.1:8000"
+API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
 
 # --- Gestion de la Session ---
 if "thread_id" not in st.session_state:
