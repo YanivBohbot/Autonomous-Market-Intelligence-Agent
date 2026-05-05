@@ -6,13 +6,14 @@ services:
     volumes:
       - ./data:/app/data
     env_file:
-      - .env
+      - path: .env
+        required: false
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 40s
     restart: unless-stopped
 
   ui:
@@ -22,7 +23,8 @@ services:
     volumes:
       - ./data:/app/data
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - API_URL=http://api:8000
     depends_on:

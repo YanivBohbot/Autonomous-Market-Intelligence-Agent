@@ -1,13 +1,8 @@
-# Ignorer les dossiers lourds et inutiles
-.git
-.venv
-venv
-__pycache__
-.pytest_cache
-.DS_Store
-
-# Ignorer les secrets (Très important pour la sécurité)
+.venv/
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
 .env
-
-# Ignorer la base de données locale (on veut qu'elle soit recréée propre dans le conteneur)
-customers.db
+*.db
+.worktrees/
