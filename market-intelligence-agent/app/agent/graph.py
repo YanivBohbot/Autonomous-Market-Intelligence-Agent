@@ -7,7 +7,7 @@ from app.agent.nodes.generate import generate_answer
 from langgraph.prebuilt import ToolNode, tools_condition
 from app.agent.tools.emails import send_email_tool
 from app.agent.tools.mcp_clients.mcp_client import crm_tool
-from langgraph.checkpoint.memory import MemorySaver
+from app.agent.memory.checkpointer import create_checkpointer
 
 
 def decide_next_step(state: AgentState):
@@ -46,9 +46,8 @@ workflow.add_conditional_edges(
     },
 )
 workflow.add_edge("tools", "generate")
-memory = MemorySaver()
 agent_app = workflow.compile(
-    checkpointer=memory,
+    checkpointer=create_checkpointer(),
     # On dit à LangGraph : "Arrête-toi JUSTE AVANT d'entrer dans le noeud 'tools'"
     # Cela permet de valider l'action.
     interrupt_before=["tools"],
