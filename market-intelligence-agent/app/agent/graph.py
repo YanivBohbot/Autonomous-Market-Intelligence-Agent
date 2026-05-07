@@ -1,4 +1,4 @@
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 from app.agent.state import AgentState
 from app.agent.nodes.rag import retrieve_internal_documentation
 from app.agent.nodes.research import web_search
@@ -23,7 +23,7 @@ workflow.add_node("generate", generate_answer)
 
 workflow.add_node("tools", ToolNode(TOOLS))
 
-workflow.set_entry_point("rag")
+workflow.add_edge(START, "rag")
 workflow.add_edge("rag", "grader")
 
 
