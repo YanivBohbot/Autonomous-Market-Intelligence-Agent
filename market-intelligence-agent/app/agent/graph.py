@@ -1,10 +1,12 @@
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
+from langgraph.types import interrupt
+from langchain_core.messages import ToolMessage
 from app.agent.state import AgentState
 from app.agent.nodes.rag import retrieve_internal_documentation
 from app.agent.nodes.research import web_search
 from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
-from langgraph.prebuilt import ToolNode, tools_condition
 from app.agent.tools import TOOLS
 from app.agent.memory.checkpointer import create_checkpointer
 
@@ -15,37 +17,75 @@ def decide_next_step(state: AgentState):
     return "web_search"
 
 
+def route_after_generate(state: AgentState):
+    last = state["messages"][-1]
+    if getattr(last, "tool_calls", None):
+        return "approval"
+    return END
+
+
+def approval_node(state: AgentState) -> dict:
+    """Pause graph execution and surface pending tool calls for human review.
+    Resumer passes 'approve' to proceed or 'reject' to cancel."""
+    last = state["messages"][-1]
+    tool_calls = getattr(last, "tool_calls", None) or []
+    tc = tool_calls[0]
+    request = {
+        "action_request": {"action": tc["name"], "args": tc["args"]},
+        "config": {
+            "allow_ignore": False,
+            "allow_respond": False,
+            "allow_edit": False,
+            "allow_accept": True,
+        },
+        "description": f"Approve or reject {tc['name']} with args {tc['args']}",
+    }
+    decision = interrupt([request])[0]
+    # decision is the value passed via Command(resume=...) — typically "approve" or "reject"
+    if isinstance(decision, dict):
+        decision = decision.get("type", "reject")
+    if decision == "approve":
+        return {}
+    cancel_msgs = [
+        ToolMessage(content="Action cancelled by user.", tool_call_id=t["id"], name=t["name"])
+        for t in tool_calls
+    ]
+    return {"messages": cancel_msgs}
+
+
+def route_after_approval(state: AgentState):
+    last = state["messages"][-1]
+    if isinstance(last, ToolMessage):
+        return "generate"
+    return "tools"
+
+
 workflow = StateGraph(AgentState)
 workflow.add_node("rag", retrieve_internal_documentation)
 workflow.add_node("grader", grade_documents)
 workflow.add_node("web_search", web_search)
 workflow.add_node("generate", generate_answer)
-
+workflow.add_node("approval", approval_node)
 workflow.add_node("tools", ToolNode(TOOLS))
 
 workflow.add_edge(START, "rag")
 workflow.add_edge("rag", "grader")
-
-
 workflow.add_conditional_edges(
     "grader",
     decide_next_step,
     {"generate": "generate", "web_search": "web_search"},
 )
 workflow.add_edge("web_search", "generate")
-
 workflow.add_conditional_edges(
     "generate",
-    tools_condition,  # Fonction native de LangGraph qui détecte les appels d'outils
-    {
-        "tools": "tools",
-        END: END,
-    },
+    route_after_generate,
+    {"approval": "approval", END: END},
+)
+workflow.add_conditional_edges(
+    "approval",
+    route_after_approval,
+    {"tools": "tools", "generate": "generate"},
 )
 workflow.add_edge("tools", "generate")
-agent_app = workflow.compile(
-    checkpointer=create_checkpointer(),
-    # On dit à LangGraph : "Arrête-toi JUSTE AVANT d'entrer dans le noeud 'tools'"
-    # Cela permet de valider l'action.
-    interrupt_before=["tools"],
-)
+
+agent_app = workflow.compile(checkpointer=create_checkpointer())
