@@ -7,7 +7,7 @@ from app.agent.nodes.rag import retrieve_internal_documentation
 from app.agent.nodes.research import web_search
 from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
-from app.agent.tools import TOOLS
+from app.agent.tools import TOOLS, READ_ONLY_TOOLS
 from app.agent.memory.checkpointer import create_checkpointer
 
 
@@ -25,23 +25,35 @@ def route_after_generate(state: AgentState):
 
 
 def approval_node(state: AgentState) -> dict:
-    """Pause graph execution and surface pending tool calls for human review.
-    Resumer passes 'approve' to proceed or 'reject' to cancel."""
+    """Pause graph execution and surface pending side-effect tool calls for human review.
+
+    Read-only tool calls (per READ_ONLY_TOOLS allowlist) bypass the interrupt and execute
+    immediately. Mixed batches follow the interrupt-if-any rule: if any call is a side
+    effect, the node interrupts and surfaces the side-effect call(s) to the human.
+    Resumer passes 'approve' to proceed or 'reject' to cancel; on reject, every tool
+    call in the batch (read-only or not) is cancelled with a ToolMessage."""
     last = state["messages"][-1]
     tool_calls = getattr(last, "tool_calls", None) or []
-    tc = tool_calls[0]
-    request = {
-        "action_request": {"action": tc["name"], "args": tc["args"]},
-        "config": {
-            "allow_ignore": False,
-            "allow_respond": False,
-            "allow_edit": False,
-            "allow_accept": True,
-        },
-        "description": f"Approve or reject {tc['name']} with args {tc['args']}",
-    }
-    decision = interrupt([request])[0]
-    # decision is the value passed via Command(resume=...) — typically "approve" or "reject"
+
+    side_effect_calls = [tc for tc in tool_calls if tc["name"] not in READ_ONLY_TOOLS]
+    if not side_effect_calls:
+        # All read-only — no human approval needed.
+        return {}
+
+    requests = [
+        {
+            "action_request": {"action": tc["name"], "args": tc["args"]},
+            "config": {
+                "allow_ignore": False,
+                "allow_respond": False,
+                "allow_edit": False,
+                "allow_accept": True,
+            },
+            "description": f"Approve or reject {tc['name']} with args {tc['args']}",
+        }
+        for tc in side_effect_calls
+    ]
+    decision = interrupt(requests)[0]
     if isinstance(decision, dict):
         decision = decision.get("type", "reject")
     if decision == "approve":
