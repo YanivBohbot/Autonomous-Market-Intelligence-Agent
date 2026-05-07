@@ -5,8 +5,7 @@ from app.agent.nodes.research import web_search
 from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
 from langgraph.prebuilt import ToolNode, tools_condition
-from app.agent.tools.emails import send_email_tool
-from app.agent.tools.mcp_clients.mcp_client import crm_tool
+from app.agent.tools import TOOLS
 from app.agent.memory.checkpointer import create_checkpointer
 
 
@@ -22,9 +21,7 @@ workflow.add_node("grader", grade_documents)
 workflow.add_node("web_search", web_search)
 workflow.add_node("generate", generate_answer)
 
-tools_list = [send_email_tool, crm_tool]
-
-workflow.add_node("tools", ToolNode(tools_list))
+workflow.add_node("tools", ToolNode(TOOLS))
 
 workflow.set_entry_point("rag")
 workflow.add_edge("rag", "grader")

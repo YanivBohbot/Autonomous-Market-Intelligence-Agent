@@ -3,8 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from app.core.config import settings
 from app.agent.state import AgentState
-from app.agent.tools.emails import send_email_tool
-from app.agent.tools.mcp_clients.mcp_client import crm_tool
+from app.agent.tools import TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ def generate_answer(state: AgentState) -> dict:
             }
 
     llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streaming=True)
-    llm_with_tools = llm.bind_tools([send_email_tool, crm_tool])
+    llm_with_tools = llm.bind_tools(TOOLS)
 
     system_prompt = """Tu es un assistant expert en analyse de données et en communication.
 
