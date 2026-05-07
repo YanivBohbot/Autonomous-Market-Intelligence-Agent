@@ -9,6 +9,7 @@ from app.agent.tools.mcp_clients.mcp_client import crm_tool
 logger = logging.getLogger(__name__)
 
 
+
 def generate_answer(state: AgentState) -> dict:
     logger.info("GENERATE: Building response")
     question = state["question"]
@@ -20,7 +21,7 @@ def generate_answer(state: AgentState) -> dict:
         last_message = messages[-1]
         if isinstance(last_message, ToolMessage) and "Error" in str(last_message.content):
             logger.warning("GENERATE: Tool error detected — generating explanation")
-            llm_error = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
+            llm_error = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streaming=True)
             return {
                 "messages": [
                     llm_error.invoke([
@@ -30,7 +31,7 @@ def generate_answer(state: AgentState) -> dict:
                 ]
             }
 
-    llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
+    llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streaming=True)
     llm_with_tools = llm.bind_tools([send_email_tool, crm_tool])
 
     system_prompt = """Tu es un assistant expert en analyse de données et en communication.
