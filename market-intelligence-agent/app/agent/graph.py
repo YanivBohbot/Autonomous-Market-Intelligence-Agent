@@ -53,10 +53,12 @@ def approval_node(state: AgentState) -> dict:
         }
         for tc in side_effect_calls
     ]
-    decision = interrupt(requests)[0]
-    if isinstance(decision, dict):
-        decision = decision.get("type", "reject")
-    if decision == "approve":
+    decisions = interrupt(requests)
+    normalized = [
+        d.get("type", "reject") if isinstance(d, dict) else d
+        for d in decisions
+    ]
+    if all(d == "approve" for d in normalized):
         return {}
     cancel_msgs = [
         ToolMessage(content="Action cancelled by user.", tool_call_id=t["id"], name=t["name"])
