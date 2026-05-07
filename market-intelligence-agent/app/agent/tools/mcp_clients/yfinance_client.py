@@ -4,7 +4,7 @@ import os
 from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from langchain_core.tools import Tool
+from langchain_core.tools import StructuredTool, Tool
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -80,18 +80,18 @@ yf_quote_tool = Tool(
     ),
 )
 
-yf_history_tool = Tool(
-    name="yf_history",
+yf_history_tool = StructuredTool.from_function(
     func=_history,
+    name="yf_history",
     description=(
         "Get historical prices for a stock ticker from Yahoo Finance. "
         "Args: ticker (str), period (str, optional, default '1mo'; e.g. '1mo', '3mo', '1y', '5y')."
     ),
 )
 
-yf_news_tool = Tool(
-    name="yf_news",
+yf_news_tool = StructuredTool.from_function(
     func=_news,
+    name="yf_news",
     description=(
         "Get recent news headlines for a stock ticker from Yahoo Finance. "
         "Args: ticker (str), limit (int, optional, default 5)."
