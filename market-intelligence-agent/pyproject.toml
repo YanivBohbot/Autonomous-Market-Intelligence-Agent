@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "emails>=0.6",
-    "fastapi>=0.121.3",
+    "fastapi>=0.135.0",
     "langchain>=1.0.8",
     "langchain-community>=0.4.1",
     "langchain-openai>=1.0.3",

@@ -1,0 +1,9 @@
+[server]
+port = 8080
+headless = true
+
+[client]
+showErrorDetails = true
+
+[logger]
+level = "debug"

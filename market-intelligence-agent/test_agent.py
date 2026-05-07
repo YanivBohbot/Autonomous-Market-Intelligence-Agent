@@ -3,18 +3,20 @@ from app.agent.graph import agent_app
 
 
 def run_test():
+    config = {"configurable": {"thread_id": "test_thread"}}
+
     # Test 1 : Info Interne (Amazon)
     q1 = "Quel est le revenu net d'Amazon en 2024 ?"
     print(f"\n--- TEST 1: {q1} ---")
     inputs = {"question": q1}
-    res = agent_app.invoke(inputs)
+    res = agent_app.invoke(inputs, config)
     print("🤖 REPONSE:", res["messages"][-1].content)
 
     # Test 2 : Info Externe (Tesla)
     q2 = "Quel est le prix de l'action Tesla aujourd'hui ?"
     print(f"\n--- TEST 2: {q2} ---")
     inputs = {"question": q2}
-    res = agent_app.invoke(inputs)
+    res = agent_app.invoke(inputs, config)
     print("🤖 REPONSE:", res["messages"][-1].content)
 
     # Ici, on donne une instruction explicite d'envoi
@@ -24,15 +26,15 @@ def run_test():
     inputs = {"question": q3}
 
     # On utilise .stream() pour voir les étapes s'afficher
-    for output in agent_app.stream(inputs):
+    for output in agent_app.stream(inputs, config):
         for node_name, node_content in output.items():
             print(f"👉 Étape terminée : {node_name}")
             # Si on est dans l'étape 'tools', on affiche le résultat de l'envoi
             if node_name == "tools":
                 print(f"   🛠️ Résultat Outil : {node_content['messages'][0].content}")
 
-    # Récupération de la réponse finale
-    final_state = agent_app.invoke(inputs)
+    # Récupération de la réponse finale (résume depuis l'interrupt sans re-soumettre la question)
+    final_state = agent_app.invoke(None, config)
     print("\n🤖 RÉPONSE FINALE :")
     print(final_state["messages"][-1].content)
 

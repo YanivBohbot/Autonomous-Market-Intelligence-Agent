@@ -17,3 +17,11 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# LangGraph SQLite checkpointer runtime files
+data/checkpoints.db
+data/checkpoints.db-shm
+data/checkpoints.db-wal
+
+# Claude Code local config
+.claude/
