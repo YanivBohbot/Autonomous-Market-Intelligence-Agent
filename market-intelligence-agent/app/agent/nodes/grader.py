@@ -11,16 +11,18 @@ class GradeDocument(BaseModel):
     binary_score: str = Field(description="'yes' or 'no'")
 
 
+_llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
+_grader = _llm.with_structured_output(GradeDocument)
+
+
 def grade_documents(state: AgentState) -> dict:
     logger.info("GRADER: Scoring %d documents", len(state["documents"]))
     question = state["question"]
     documents = state["documents"]
-    llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
-    structured_llm_grader = llm.with_structured_output(GradeDocument)
-    system_prompt = " the document answer to the question ? answer 'yes' ou 'no'."
+    system_prompt = "Does the document answer the question? Answer 'yes' or 'no'."
     filtered_docs = []
     for doc in documents:
-        res = structured_llm_grader.invoke(f"Question: {question}\nDoc: {doc}\n{system_prompt}")
+        res = _grader.invoke(f"Question: {question}\nDoc: {doc}\n{system_prompt}")
         if res.binary_score == "yes":
             filtered_docs.append(doc)
     logger.info("GRADER: Kept %d/%d documents", len(filtered_docs), len(documents))

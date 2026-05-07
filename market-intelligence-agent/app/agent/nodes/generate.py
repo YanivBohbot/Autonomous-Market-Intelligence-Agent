@@ -7,6 +7,8 @@ from app.agent.tools import TOOLS
 
 logger = logging.getLogger(__name__)
 
+_llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streaming=True)
+_llm_with_tools = _llm.bind_tools(TOOLS)
 
 
 def generate_answer(state: AgentState) -> dict:
@@ -20,7 +22,7 @@ def generate_answer(state: AgentState) -> dict:
         last_message = messages[-1]
         if isinstance(last_message, ToolMessage) and "Error" in str(last_message.content):
             logger.warning("GENERATE: Tool error detected — generating explanation")
-            llm_error = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streaming=True)
+            llm_error = _llm
             return {
                 "messages": [
                     llm_error.invoke([
@@ -29,9 +31,6 @@ def generate_answer(state: AgentState) -> dict:
                     ])
                 ]
             }
-
-    llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streaming=True)
-    llm_with_tools = llm.bind_tools(TOOLS)
 
     system_prompt = """Tu es un assistant expert en analyse de données et en communication.
 
@@ -63,5 +62,5 @@ Utilise le contexte fourni (RAG ou Historique) pour répondre précisément.
     if messages:
         msgs.extend(messages)
 
-    response = llm_with_tools.invoke(msgs)
+    response = _llm_with_tools.invoke(msgs)
     return {"messages": [response]}
