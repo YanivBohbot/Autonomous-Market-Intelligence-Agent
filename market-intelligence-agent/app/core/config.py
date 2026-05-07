@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
     API_URL: str = "http://127.0.0.1:8000"
+    YFINANCE_TIMEOUT_S: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
