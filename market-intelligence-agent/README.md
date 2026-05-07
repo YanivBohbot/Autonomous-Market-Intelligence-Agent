@@ -42,10 +42,22 @@ This scenario showcases the agent's ability to chain a structured data query (MC
 
 | Step | Action Taken by Agent | Agent Tool Called | Status in API/UI |
 | :--- | :--- | :--- | :--- |
-| **01** | Initial Analysis: Agent identifies the need for client data. | `crm_query` | **PAUSE 1: INTERRUPTED** |
-| **02** | *User Approves Action 1* | Executes SQL Query (`SELECT name, email, status FROM customers WHERE name LIKE...`). | Running |
-| **03** | **Data Synthesis:** Agent reads SQL result and retrieves IA Strategy from Pinecone (RAG). | `send_email` | **PAUSE 2: INTERRUPTED** |
-| **04** | *User Approves Action 2* | Executes SMTP Tool (Sends Email). | Completed |
+| **01** | Initial Analysis: Agent identifies the need for client data. | `crm_query` | **BYPASSES HITL** (read-only) |
+| **02** | Executes SQL Query (`SELECT name, email, status FROM customers WHERE name LIKE...`). | Running | Running |
+| **03** | **Data Synthesis:** Agent reads SQL result and retrieves IA Strategy from Pinecone (RAG). | `send_email` | **PAUSE 1: INTERRUPTED** |
+| **04** | *User Approves Action 1* | Executes SMTP Tool (Sends Email). | Completed |
+
+### 🛠️ Available Tools
+
+| Tool | Type | Description |
+|---|---|---|
+| `crm_query` | read-only (MCP / SQLite) | SELECT against the `customers` table; bypasses HITL approval |
+| `yf_quote` | read-only (MCP / yfinance) | Current price + day stats for a ticker; bypasses HITL approval |
+| `yf_history` | read-only (MCP / yfinance) | Historical prices, configurable period; bypasses HITL approval |
+| `yf_news` | read-only (MCP / yfinance) | Recent news headlines for a ticker; bypasses HITL approval |
+| `send_email` | side-effect (SMTP) | Sends email via Gmail; requires HITL approval before execution |
+
+**Note on HITL:** Read-only tools (data queries) bypass the human-approval gate and execute immediately, improving agent responsiveness. Side-effect tools (like `send_email`) still require explicit user approval via the API/UI before execution.
 
 ---
 
