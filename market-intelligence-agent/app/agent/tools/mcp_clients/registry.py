@@ -5,7 +5,11 @@ BaseTool objects produced by the registered MCP servers. Per-server modules
 (`mcp_client.py`, `yfinance_client.py`, `filesystem_client.py`) filter this list
 by name to re-export their public tool symbols.
 
-Tool names are namespaced as `<server_name>_<tool_name>` via tool_name_prefix=True.
+Tool names come straight from the upstream MCP servers (no controller-side prefix).
+yfmcp self-namespaces (`yfinance_get_ticker_info`, ...); the filesystem server uses
+unambiguous names (`read_text_file`, `write_file`, ...). The CRM `read_query` tool
+is the one bare name; per-server modules filter by exact name so any future
+collision surfaces as a startup-time RuntimeError, not silent wrong-tool routing.
 """
 
 from __future__ import annotations
@@ -45,7 +49,7 @@ async def _load_tools() -> list[BaseTool]:
     # raises NotImplementedError. `get_tools()` passes the connection config directly
     # to `load_mcp_tools(session=None, connection=...)` so each returned tool wrapper
     # manages its own per-call stdio subprocess — there is no long-lived session to clean up.
-    client = MultiServerMCPClient(_server_config(), tool_name_prefix=True)
+    client = MultiServerMCPClient(_server_config())
     tools = await client.get_tools()
     logger.info("MCP registry loaded %d tools: %s", len(tools), [t.name for t in tools])
     return tools

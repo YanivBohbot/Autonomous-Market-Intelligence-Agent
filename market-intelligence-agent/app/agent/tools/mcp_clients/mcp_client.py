@@ -15,7 +15,7 @@ from app.agent.tools.mcp_clients.registry import get_mcp_tools
 
 logger = logging.getLogger(__name__)
 
-CRM_TOOL_NAME = "crm_read_query"
+CRM_TOOL_NAME = "read_query"
 
 
 def _select_crm_tool() -> BaseTool:

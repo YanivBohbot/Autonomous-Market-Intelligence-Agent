@@ -1,99 +1,34 @@
-import asyncio
+"""Yahoo Finance MCP client — selects yfinance-server tools out of the shared registry.
+
+Public symbols preserved: `yf_quote_tool`, `yf_history_tool`, `yf_news_tool`. Schema
+conversion (single-arg vs multi-arg) is now handled automatically by
+langchain-mcp-adapters; the legacy Tool / StructuredTool decisions are gone.
+"""
+
+from __future__ import annotations
+
 import logging
-import os
-from contextlib import AsyncExitStack
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from langchain_core.tools import StructuredTool, Tool
-from app.core.config import settings
+
+from langchain_core.tools import BaseTool
+
+from app.agent.tools.mcp_clients.registry import get_mcp_tools
 
 logger = logging.getLogger(__name__)
 
-server_params = StdioServerParameters(
-    command="uv",
-    args=["run", "yfmcp"],
-    env=os.environ,
-)
+QUOTE_TOOL_NAME = "yfinance_get_ticker_info"
+HISTORY_TOOL_NAME = "yfinance_get_price_history"
+NEWS_TOOL_NAME = "yfinance_get_ticker_news"
 
 
-async def _call_yfmcp(tool_name: str, arguments: dict) -> str:
-    """Invoke a single tool on the yfmcp stdio server and return its text result."""
-    logger.info("YFMCP: %s args=%s", tool_name, arguments)
-    async with AsyncExitStack() as stack:
-        read_stream, write_stream = await stack.enter_async_context(
-            stdio_client(server_params)
-        )
-        session = await stack.enter_async_context(
-            ClientSession(read_stream, write_stream)
-        )
-        await session.initialize()
-        result = await session.call_tool(tool_name, arguments=arguments)
-        if result.content and len(result.content) > 0:
-            return result.content[0].text
-        return f"No data returned by {tool_name}."
+def _select(name: str) -> BaseTool:
+    for tool in get_mcp_tools():
+        if tool.name == name:
+            return tool
+    raise RuntimeError(
+        f"Yahoo Finance MCP tool {name!r} not found in registry; check server config."
+    )
 
 
-def _sync_call(tool_name: str, arguments: dict) -> str:
-    """Sync shim with timeout + error envelope. Returns a string the LLM can read."""
-    timeout = settings.YFINANCE_TIMEOUT_S
-    try:
-        return asyncio.run(asyncio.wait_for(_call_yfmcp(tool_name, arguments), timeout))
-    except asyncio.TimeoutError:
-        logger.error("YFMCP: timeout after %ss for %s", timeout, tool_name)
-        return "Error: Yahoo Finance request timed out"
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                asyncio.wait_for(_call_yfmcp(tool_name, arguments), timeout)
-            )
-        except asyncio.TimeoutError:
-            return "Error: Yahoo Finance request timed out"
-        except Exception as e:
-            logger.error("YFMCP: error — %s", e)
-            return f"Error: Yahoo Finance service unavailable: {e}"
-        finally:
-            loop.close()
-    except Exception as e:
-        logger.error("YFMCP: error — %s", e)
-        return f"Error: Yahoo Finance service unavailable: {e}"
-
-
-def _quote(ticker: str) -> str:
-    return _sync_call("get_quote", {"ticker": ticker})
-
-
-def _history(ticker: str, period: str = "1mo") -> str:
-    return _sync_call("get_history", {"ticker": ticker, "period": period})
-
-
-def _news(ticker: str, limit: int = 5) -> str:
-    return _sync_call("get_news", {"ticker": ticker, "limit": limit})
-
-
-yf_quote_tool = Tool(
-    name="yf_quote",
-    func=_quote,
-    description=(
-        "Get the current price and day statistics for a stock ticker from "
-        "Yahoo Finance. Args: ticker (str, e.g. 'AAPL')."
-    ),
-)
-
-yf_history_tool = StructuredTool.from_function(
-    func=_history,
-    name="yf_history",
-    description=(
-        "Get historical prices for a stock ticker from Yahoo Finance. "
-        "Args: ticker (str), period (str, optional, default '1mo'; e.g. '1mo', '3mo', '1y', '5y')."
-    ),
-)
-
-yf_news_tool = StructuredTool.from_function(
-    func=_news,
-    name="yf_news",
-    description=(
-        "Get recent news headlines for a stock ticker from Yahoo Finance. "
-        "Args: ticker (str), limit (int, optional, default 5)."
-    ),
-)
+yf_quote_tool: BaseTool = _select(QUOTE_TOOL_NAME)
+yf_history_tool: BaseTool = _select(HISTORY_TOOL_NAME)
+yf_news_tool: BaseTool = _select(NEWS_TOOL_NAME)
