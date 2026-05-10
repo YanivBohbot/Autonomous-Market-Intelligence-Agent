@@ -22,12 +22,16 @@ from functools import lru_cache
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 
 def _server_config() -> dict:
     """Build the MultiServerMCPClient server config. Centralised so adding a server
     means changing one dict, not three import sites."""
+    workspace_root = settings.WORKSPACE_ROOT.resolve()
+    workspace_root.mkdir(parents=True, exist_ok=True)
     return {
         "crm": {
             "command": "uv",
@@ -38,6 +42,12 @@ def _server_config() -> dict:
         "yfinance": {
             "command": "uv",
             "args": ["run", "yfmcp"],
+            "transport": "stdio",
+            "env": dict(os.environ),
+        },
+        "filesystem": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", str(workspace_root)],
             "transport": "stdio",
             "env": dict(os.environ),
         },
