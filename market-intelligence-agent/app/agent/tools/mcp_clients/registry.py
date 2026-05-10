@@ -50,6 +50,11 @@ def _server_config() -> dict:
             "args": ["-y", "@modelcontextprotocol/server-filesystem", str(workspace_root)],
             "transport": "stdio",
             "env": dict(os.environ),
+            # Run the filesystem server with cwd = workspace_root so the LLM can use
+            # plain relative paths like "brief.md" (the system prompt promises this).
+            # Without it, relative paths resolve to the calling process's cwd (project
+            # root), which is outside the allowed directory and the server rejects them.
+            "cwd": str(workspace_root),
         },
     }
 
