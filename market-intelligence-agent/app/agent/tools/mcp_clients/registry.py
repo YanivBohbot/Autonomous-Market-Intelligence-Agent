@@ -41,6 +41,10 @@ def _server_config() -> dict:
 
 
 async def _load_tools() -> list[BaseTool]:
+    # No context manager needed: as of langchain-mcp-adapters 0.1.0, `async with`
+    # raises NotImplementedError. `get_tools()` passes the connection config directly
+    # to `load_mcp_tools(session=None, connection=...)` so each returned tool wrapper
+    # manages its own per-call stdio subprocess — there is no long-lived session to clean up.
     client = MultiServerMCPClient(_server_config(), tool_name_prefix=True)
     tools = await client.get_tools()
     logger.info("MCP registry loaded %d tools: %s", len(tools), [t.name for t in tools])
@@ -48,10 +52,17 @@ async def _load_tools() -> list[BaseTool]:
 
 
 def _run_async(coro):
-    """Sync bridge that works whether or not an event loop is already running."""
+    """Sync bridge that works whether or not an event loop is already running.
+
+    Narrows the RuntimeError catch to the specific 'event loop is already running'
+    case so that errors raised by the coroutine itself (e.g. MCP subprocess failures)
+    propagate normally.
+    """
     try:
         return asyncio.run(coro)
-    except RuntimeError:
+    except RuntimeError as exc:
+        if "event loop is already running" not in str(exc).lower():
+            raise
         loop = asyncio.new_event_loop()
         try:
             return loop.run_until_complete(coro)
