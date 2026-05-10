@@ -11,7 +11,7 @@ import logging
 
 from langchain_core.tools import BaseTool
 
-from app.agent.tools.mcp_clients.registry import get_mcp_tools
+from app.agent.tools.mcp_clients.registry import select_tool
 
 logger = logging.getLogger(__name__)
 
@@ -19,16 +19,6 @@ QUOTE_TOOL_NAME = "yfinance_get_ticker_info"
 HISTORY_TOOL_NAME = "yfinance_get_price_history"
 NEWS_TOOL_NAME = "yfinance_get_ticker_news"
 
-
-def _select(name: str) -> BaseTool:
-    for tool in get_mcp_tools():
-        if tool.name == name:
-            return tool
-    raise RuntimeError(
-        f"Yahoo Finance MCP tool {name!r} not found in registry; check server config."
-    )
-
-
-yf_quote_tool: BaseTool = _select(QUOTE_TOOL_NAME)
-yf_history_tool: BaseTool = _select(HISTORY_TOOL_NAME)
-yf_news_tool: BaseTool = _select(NEWS_TOOL_NAME)
+yf_quote_tool: BaseTool = select_tool(QUOTE_TOOL_NAME, "Yahoo Finance")
+yf_history_tool: BaseTool = select_tool(HISTORY_TOOL_NAME, "Yahoo Finance")
+yf_news_tool: BaseTool = select_tool(NEWS_TOOL_NAME, "Yahoo Finance")

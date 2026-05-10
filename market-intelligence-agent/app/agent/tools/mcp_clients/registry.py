@@ -59,7 +59,7 @@ def _server_config() -> dict:
     }
 
 
-async def _load_tools() -> list[BaseTool]:
+async def _load_tools() -> tuple[BaseTool, ...]:
     # No context manager needed: as of langchain-mcp-adapters 0.1.0, `async with`
     # raises NotImplementedError. `get_tools()` passes the connection config directly
     # to `load_mcp_tools(session=None, connection=...)` so each returned tool wrapper
@@ -67,7 +67,7 @@ async def _load_tools() -> list[BaseTool]:
     client = MultiServerMCPClient(_server_config())
     tools = await client.get_tools()
     logger.info("MCP registry loaded %d tools: %s", len(tools), [t.name for t in tools])
-    return tools
+    return tuple(tools)
 
 
 def _run_async(coro):
@@ -90,6 +90,18 @@ def _run_async(coro):
 
 
 @lru_cache(maxsize=1)
-def get_mcp_tools() -> list[BaseTool]:
+def get_mcp_tools() -> tuple[BaseTool, ...]:
     """Return all MCP-backed LangChain tools. Cached after first call."""
     return _run_async(_load_tools())
+
+
+def select_tool(name: str, server_label: str) -> BaseTool:
+    """Return the registered MCP tool with the given .name, raising a clear
+    startup error if the registry doesn't contain it. `server_label` only
+    appears in the error message — it isn't used for matching."""
+    for tool in get_mcp_tools():
+        if tool.name == name:
+            return tool
+    raise RuntimeError(
+        f"{server_label} MCP tool {name!r} not found in registry; check server config."
+    )

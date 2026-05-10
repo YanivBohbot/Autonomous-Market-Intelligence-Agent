@@ -11,20 +11,10 @@ import logging
 
 from langchain_core.tools import BaseTool
 
-from app.agent.tools.mcp_clients.registry import get_mcp_tools
+from app.agent.tools.mcp_clients.registry import select_tool
 
 logger = logging.getLogger(__name__)
 
 CRM_TOOL_NAME = "read_query"
 
-
-def _select_crm_tool() -> BaseTool:
-    for tool in get_mcp_tools():
-        if tool.name == CRM_TOOL_NAME:
-            return tool
-    raise RuntimeError(
-        f"CRM MCP tool {CRM_TOOL_NAME!r} not found in registry; check server config."
-    )
-
-
-crm_tool: BaseTool = _select_crm_tool()
+crm_tool: BaseTool = select_tool(CRM_TOOL_NAME, "CRM")
