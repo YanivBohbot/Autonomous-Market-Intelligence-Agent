@@ -5,6 +5,11 @@ from app.agent.tools.mcp_clients.yfinance_client import (
     yf_history_tool,
     yf_news_tool,
 )
+from app.agent.tools.mcp_clients.filesystem_client import (
+    fs_read_file_tool,
+    fs_list_dir_tool,
+    fs_write_file_tool,
+)
 
 TOOLS = [
     send_email_tool,
@@ -12,9 +17,19 @@ TOOLS = [
     yf_quote_tool,
     yf_history_tool,
     yf_news_tool,
+    fs_read_file_tool,
+    fs_list_dir_tool,
+    fs_write_file_tool,
 ]
 
-READ_ONLY_TOOLS: set[str] = {"crm_query", "yf_quote", "yf_history", "yf_news"}
+READ_ONLY_TOOLS: set[str] = {
+    "read_query",
+    "yfinance_get_ticker_info",
+    "yfinance_get_price_history",
+    "yfinance_get_ticker_news",
+    "read_text_file",
+    "list_directory",
+}
 
 __all__ = [
     "TOOLS",
@@ -24,4 +39,7 @@ __all__ = [
     "yf_quote_tool",
     "yf_history_tool",
     "yf_news_tool",
+    "fs_read_file_tool",
+    "fs_list_dir_tool",
+    "fs_write_file_tool",
 ]
