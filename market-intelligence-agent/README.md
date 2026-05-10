@@ -61,6 +61,12 @@ This scenario showcases the agent's ability to chain a structured data query (MC
 
 ---
 
+## Workspace folder
+
+The agent has a sandboxed read-write workspace at `data/workspace/`. Drop files there (text only — UTF-8 CSV, markdown, JSON, etc.) and the agent can read them via `read_text_file` and `list_directory`. The agent can also save artifacts (briefs, snapshots) via `write_file`; saves are gated by HITL approval. The folder is bind-mounted into Docker, so artifacts survive container restarts.
+
+---
+
 ## 📦 Installation and Deployment
 
 ### 1. **Setup**
