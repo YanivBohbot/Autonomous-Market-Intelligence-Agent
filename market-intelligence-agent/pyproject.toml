@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.135.0",
     "langchain>=1.0.8",
     "langchain-community>=0.4.1",
+    "langchain-mcp-adapters>=0.1.0",
     "langchain-openai>=1.0.3",
     "langchain-pinecone>=0.2.13",
     "langgraph>=1.0.3",

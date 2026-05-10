@@ -23,5 +23,9 @@ data/checkpoints.db
 data/checkpoints.db-shm
 data/checkpoints.db-wal
 
+# Agent workspace — keep the folder, ignore its contents
+data/workspace/*
+!data/workspace/.gitkeep
+
 # Claude Code local config
 .claude/
