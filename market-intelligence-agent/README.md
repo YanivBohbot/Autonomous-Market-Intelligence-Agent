@@ -68,6 +68,8 @@ This scenario showcases the agent's ability to chain a structured data query (MC
 
 The agent has a sandboxed read-write workspace at `data/workspace/`. Drop files there (text only — UTF-8 CSV, markdown, JSON, etc.) and the agent can read them via `read_text_file` and `list_directory`. The agent can also save artifacts (briefs, snapshots) via `write_file`; saves are gated by HITL approval. The folder is bind-mounted into Docker, so artifacts survive container restarts.
 
+The agent also has a headless browser via `@playwright/mcp` (`browser_navigate`, `browser_snapshot`, `browser_take_screenshot`). Use it to reach pages Tavily snippets can't — full article bodies, JS-rendered competitor pricing, investor-relations transcripts. Screenshots land in `data/workspace/screenshots/`.
+
 ---
 
 ## 📦 Installation and Deployment

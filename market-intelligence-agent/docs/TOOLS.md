@@ -18,8 +18,11 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 6 | `read_text_file` | read-only | MCP stdio → `@modelcontextprotocol/server-filesystem` | path | Reads a UTF-8 text file from the sandboxed workspace at `data/workspace/`. | Lets the user drop a file (CSV of tickers, briefing notes) into the workspace and have the agent consume it without re-running the Pinecone ingest pipeline. |
 | 7 | `list_directory` | read-only | same | path (default `"."`) | Lists files and folders inside a workspace path. | Discovery: the agent uses this to find out what the user has dropped before reading. |
 | 8 | `write_file` | side-effect | same | path, content | Writes a UTF-8 text file into the sandboxed workspace. Gated by HITL approval. | Lets the agent persist briefs, CSV snapshots, or JSON dossiers as durable artifacts that survive the session. |
+| 9 | `browser_navigate` | read-only | MCP stdio → `@playwright/mcp` | url | Loads a URL in the headless Chromium controlled by the Playwright MCP server. Sets the active page for subsequent snapshot/screenshot calls. | Tavily snippets and yfinance metadata don't return article bodies — the browser lets the agent reach the actual page (paywalled-but-readable, JS-rendered, login-walled). |
+| 10 | `browser_snapshot` | read-only | same | (none) | Returns the current page as an accessibility tree — structured text plus element refs like `button [ref=e2]`. | The "extract" capability for the browser. Returns LLM-friendly structured text instead of raw HTML, so the agent can read full article bodies, pricing tables, and earnings transcripts without burning tokens on markup. |
+| 11 | `browser_take_screenshot` | read-only | same | filename (optional), fullPage (optional) | Captures a PNG of the current page, written to `data/workspace/screenshots/`. | Visual evidence of what the agent saw. Lets a human reviewer cross-check a brief or email proposal against the actual source before approving it. |
 
-`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
 
 ## Per-tool details
 
@@ -62,6 +65,21 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **File:** same as `read_text_file`
 - **What:** Writes UTF-8 content to `data/workspace/<path>`. Creates parent directories if missing. Last-write-wins.
 - **Why:** The output channel of the workspace. The agent's synthesis usually lives only in the message history; this lets it persist briefs and snapshots that survive the session. Gated by `approval_node` — the user sees the path and content in the Streamlit Approve/Refuse modal before any disk write.
+
+### 9. `browser_navigate`
+- **File:** `app/agent/tools/mcp_clients/browser_client.py` (selects from registry)
+- **What:** Spawns `@playwright/mcp` as a stdio subprocess (with headless Chromium), navigates the active browser tab to the given URL, returns page metadata.
+- **Why:** The agent's reach was bounded by what Tavily snippets and yfinance metadata could surface. With `browser_navigate` it can open the actual Reuters article, the actual investor-relations page, the actual competitor pricing tier — and feed that into the synthesis step instead of guessing from headlines.
+
+### 10. `browser_snapshot`
+- **File:** same as `browser_navigate`
+- **What:** Returns the current page as an accessibility tree — structured text plus element refs (`button [ref=e2]`, `link [ref=e3]`, etc.). No raw HTML.
+- **Why:** This is the "extract text" capability. Accessibility-tree output is LLM-friendly: cheap on tokens, semantically labelled, ignores the markup soup. Pair with `browser_navigate` to do the equivalent of "open page X and read it to me."
+
+### 11. `browser_take_screenshot`
+- **File:** same as `browser_navigate`
+- **What:** Captures a PNG of the current page. Saves into `data/workspace/screenshots/<filename>` via the server's `--output-dir` flag. Optional `fullPage` argument captures beyond the viewport.
+- **Why:** Visual evidence for HITL review. When the agent proposes a `write_file` or `send_email`, attaching a screenshot reference (`see screenshots/acme-2026-05-12.png`) lets the human reviewer cross-check the claim against the source page in one click. Screenshots are bypassed by `READ_ONLY_TOOLS` — they go into a dedicated subfolder so the workspace root stays clean for user-facing briefs.
 
 ## How to add a new tool
 
