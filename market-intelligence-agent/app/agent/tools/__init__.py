@@ -10,6 +10,11 @@ from app.agent.tools.mcp_clients.filesystem_client import (
     fs_list_dir_tool,
     fs_write_file_tool,
 )
+from app.agent.tools.mcp_clients.browser_client import (
+    browser_navigate_tool,
+    browser_snapshot_tool,
+    browser_screenshot_tool,
+)
 
 TOOLS = [
     send_email_tool,
@@ -20,6 +25,9 @@ TOOLS = [
     fs_read_file_tool,
     fs_list_dir_tool,
     fs_write_file_tool,
+    browser_navigate_tool,
+    browser_snapshot_tool,
+    browser_screenshot_tool,
 ]
 
 READ_ONLY_TOOLS: set[str] = {
@@ -29,6 +37,9 @@ READ_ONLY_TOOLS: set[str] = {
     "yfinance_get_ticker_news",
     "read_text_file",
     "list_directory",
+    "browser_navigate",
+    "browser_snapshot",
+    "browser_take_screenshot",
 }
 
 __all__ = [
@@ -42,4 +53,7 @@ __all__ = [
     "fs_read_file_tool",
     "fs_list_dir_tool",
     "fs_write_file_tool",
+    "browser_navigate_tool",
+    "browser_snapshot_tool",
+    "browser_screenshot_tool",
 ]
