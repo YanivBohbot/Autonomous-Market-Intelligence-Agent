@@ -1,6 +1,7 @@
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
+from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 from langchain_core.messages import ToolMessage
 from app.agent.state import AgentState
@@ -102,11 +103,15 @@ workflow.add_conditional_edges(
 )
 workflow.add_edge("tools", "generate")
 
-def build_agent_app(checkpointer: BaseCheckpointSaver):
-    """Compile the workflow with the supplied checkpointer.
+def build_agent_app(
+    checkpointer: BaseCheckpointSaver,
+    store: BaseStore | None = None,
+):
+    """Compile the workflow with the supplied checkpointer and optional store.
 
     Compilation is deferred from module load so the FastAPI lifespan can open an
     `AsyncSqliteSaver` (which requires a running event loop) and pass it in.
-    Tests can pass an `InMemorySaver` for isolation.
+    The `store` is the cross-thread long-term memory (LangGraph's BaseStore API).
+    Tests that only inspect graph structure can omit the store.
     """
-    return workflow.compile(checkpointer=checkpointer)
+    return workflow.compile(checkpointer=checkpointer, store=store)
