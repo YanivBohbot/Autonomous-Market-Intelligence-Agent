@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.agent.graph import build_agent_app
 from app.agent.memory.checkpointer import create_checkpointer
+from app.agent.memory.store import create_store
 from app.api.routers.approve import router as approve_router
 from app.api.routers.health import router as health_router
 from app.api.routers.stream import router as stream_router
@@ -24,7 +25,8 @@ def _get_version() -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with create_checkpointer() as checkpointer:
-        app.state.agent_app = build_agent_app(checkpointer)
+        store = create_store()
+        app.state.agent_app = build_agent_app(checkpointer, store)
         yield
 
 
