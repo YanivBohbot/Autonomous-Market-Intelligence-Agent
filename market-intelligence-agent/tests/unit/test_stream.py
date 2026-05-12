@@ -1,7 +1,6 @@
 import json
 from types import SimpleNamespace
 
-import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, AIMessageChunk
 
@@ -41,14 +40,14 @@ class _FakeAgentApp:
 
         return gen()
 
-    def get_state(self, config):
+    async def aget_state(self, config):
         return SimpleNamespace(
             next=self._next_after,
             values={"messages": self._state_messages},
         )
 
 
-def test_stream_happy_path_yields_token_then_done(monkeypatch):
+def test_stream_happy_path_yields_token_then_done():
     tokens = [
         (AIMessageChunk(content="Hello"), {"langgraph_node": "generate"}),
         (AIMessageChunk(content=" "), {"langgraph_node": "generate"}),
@@ -56,9 +55,7 @@ def test_stream_happy_path_yields_token_then_done(monkeypatch):
     ]
     fake = _FakeAgentApp(tokens, next_after=())
 
-    import app.api.routers.stream as stream_module
-    monkeypatch.setattr(stream_module, "agent_app", fake)
-
+    app.state.agent_app = fake
     client = TestClient(app)
     response = client.post(
         "/stream",
@@ -74,7 +71,7 @@ def test_stream_happy_path_yields_token_then_done(monkeypatch):
     assert events[-1][0] == "done"
 
 
-def test_stream_emits_interrupted_when_graph_pauses_before_tools(monkeypatch):
+def test_stream_emits_interrupted_when_graph_pauses_before_tools():
     tokens = [
         (AIMessageChunk(content="Sending"), {"langgraph_node": "generate"}),
     ]
@@ -94,9 +91,7 @@ def test_stream_emits_interrupted_when_graph_pauses_before_tools(monkeypatch):
         state_messages=[pending_msg],
     )
 
-    import app.api.routers.stream as stream_module
-    monkeypatch.setattr(stream_module, "agent_app", fake)
-
+    app.state.agent_app = fake
     client = TestClient(app)
     response = client.post(
         "/stream",
@@ -131,16 +126,14 @@ class _ExplodingAgentApp:
 
         return gen()
 
-    def get_state(self, config):
+    async def aget_state(self, config):
         return SimpleNamespace(next=(), values={"messages": []})
 
 
-def test_stream_emits_error_frame_when_astream_raises(monkeypatch):
+def test_stream_emits_error_frame_when_astream_raises():
     fake = _ExplodingAgentApp("boom")
 
-    import app.api.routers.stream as stream_module
-    monkeypatch.setattr(stream_module, "agent_app", fake)
-
+    app.state.agent_app = fake
     client = TestClient(app)
     response = client.post(
         "/stream",

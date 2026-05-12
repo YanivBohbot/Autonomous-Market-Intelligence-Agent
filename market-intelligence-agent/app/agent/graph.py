@@ -1,3 +1,4 @@
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
@@ -8,7 +9,6 @@ from app.agent.nodes.research import web_search
 from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
 from app.agent.tools import TOOLS, READ_ONLY_TOOLS
-from app.agent.memory.checkpointer import create_checkpointer
 
 
 def decide_next_step(state: AgentState):
@@ -102,4 +102,11 @@ workflow.add_conditional_edges(
 )
 workflow.add_edge("tools", "generate")
 
-agent_app = workflow.compile(checkpointer=create_checkpointer())
+def build_agent_app(checkpointer: BaseCheckpointSaver):
+    """Compile the workflow with the supplied checkpointer.
+
+    Compilation is deferred from module load so the FastAPI lifespan can open an
+    `AsyncSqliteSaver` (which requires a running event loop) and pass it in.
+    Tests can pass an `InMemorySaver` for isolation.
+    """
+    return workflow.compile(checkpointer=checkpointer)

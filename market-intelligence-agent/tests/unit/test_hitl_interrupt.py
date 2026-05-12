@@ -3,17 +3,24 @@
 Verifies the graph compiles WITHOUT interrupt_before, and the approval node
 exists. Full end-to-end resume tests would need real LLM calls, so we just
 assert structural correctness here."""
-from app.agent.graph import agent_app, approval_node
+from langgraph.checkpoint.memory import InMemorySaver
+
+from app.agent.graph import approval_node, build_agent_app
+
+
+def _build():
+    return build_agent_app(InMemorySaver())
 
 
 def test_graph_has_approval_node():
-    nodes = agent_app.get_graph().nodes
+    nodes = _build().get_graph().nodes
     assert "approval" in nodes
 
 
 def test_graph_does_not_use_static_interrupt_before():
     # The compiled graph should not declare static interrupt_before for tools.
     # If it did, that would be the legacy pattern.
+    agent_app = _build()
     interrupts = getattr(agent_app, "interrupt_before_nodes", None) or getattr(agent_app, "_interrupt_before", None) or []
     assert "tools" not in (interrupts or [])
 

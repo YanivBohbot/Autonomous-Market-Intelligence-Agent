@@ -1,11 +1,10 @@
 import logging
 from collections.abc import AsyncIterable
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from langchain_core.messages import AIMessageChunk
 
-from app.agent.graph import agent_app
 from app.api.models.models import StreamRequest
 from app.api.routers._helpers import get_action_description
 
@@ -14,9 +13,12 @@ router = APIRouter()
 
 
 @router.post("/stream", response_class=EventSourceResponse)
-async def stream_endpoint(request: StreamRequest) -> AsyncIterable[ServerSentEvent]:
-    config = {"configurable": {"thread_id": request.thread_id}}
-    inputs = {"question": request.query}
+async def stream_endpoint(
+    request: Request, payload: StreamRequest
+) -> AsyncIterable[ServerSentEvent]:
+    agent_app = request.app.state.agent_app
+    config = {"configurable": {"thread_id": payload.thread_id}}
+    inputs = {"question": payload.query}
 
     try:
         async for token, meta in agent_app.astream(
@@ -30,7 +32,7 @@ async def stream_endpoint(request: StreamRequest) -> AsyncIterable[ServerSentEve
             ):
                 yield ServerSentEvent(data={"token": token.content}, event="token")
 
-        snapshot = agent_app.get_state(config)
+        snapshot = await agent_app.aget_state(config)
         if snapshot.next:
             last_msg = snapshot.values["messages"][-1]
             action = get_action_description(last_msg)
@@ -41,5 +43,5 @@ async def stream_endpoint(request: StreamRequest) -> AsyncIterable[ServerSentEve
         else:
             yield ServerSentEvent(data={}, event="done")
     except Exception as exc:
-        logger.exception("stream failed for thread %s", request.thread_id)
+        logger.exception("stream failed for thread %s", payload.thread_id)
         yield ServerSentEvent(data={"error": str(exc)}, event="error")

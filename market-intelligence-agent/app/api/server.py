@@ -1,12 +1,15 @@
-from app.core.config import settings
-from app.core.logging import configure_logging
 from contextlib import asynccontextmanager
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 from fastapi import FastAPI
-from app.agent.graph import agent_app
+
+from app.agent.graph import build_agent_app
+from app.agent.memory.checkpointer import create_checkpointer
 from app.api.routers.approve import router as approve_router
 from app.api.routers.health import router as health_router
 from app.api.routers.stream import router as stream_router
+from app.core.config import settings
+from app.core.logging import configure_logging
 
 configure_logging(settings.LOG_LEVEL)
 
@@ -20,10 +23,9 @@ def _get_version() -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield
-    checkpointer = agent_app.checkpointer
-    if hasattr(checkpointer, "conn") and checkpointer.conn:
-        checkpointer.conn.close()
+    async with create_checkpointer() as checkpointer:
+        app.state.agent_app = build_agent_app(checkpointer)
+        yield
 
 
 app = FastAPI(

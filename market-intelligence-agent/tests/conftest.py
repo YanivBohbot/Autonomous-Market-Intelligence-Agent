@@ -1,6 +1,12 @@
 import os
 import pytest
 
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 # Set required env vars before any app imports so Settings() can be instantiated
 # during test collection without a real .env file.
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
