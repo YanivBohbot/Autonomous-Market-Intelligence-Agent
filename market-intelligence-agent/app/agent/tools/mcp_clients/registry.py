@@ -32,6 +32,7 @@ def _server_config() -> dict:
     means changing one dict, not three import sites."""
     workspace_root = settings.WORKSPACE_ROOT.resolve()
     workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "screenshots").mkdir(parents=True, exist_ok=True)
     return {
         "crm": {
             "command": "uv",
@@ -54,6 +55,20 @@ def _server_config() -> dict:
             # plain relative paths like "brief.md" (the system prompt promises this).
             # Without it, relative paths resolve to the calling process's cwd (project
             # root), which is outside the allowed directory and the server rejects them.
+            "cwd": str(workspace_root),
+        },
+        "browser": {
+            "command": "npx",
+            "args": [
+                "-y", "@playwright/mcp@latest",
+                "--browser", "chromium",
+                "--headless",
+                "--output-dir", str(workspace_root / "screenshots"),
+            ],
+            "transport": "stdio",
+            "env": dict(os.environ),
+            # cwd = workspace_root so any relative path the LLM passes to
+            # browser_take_screenshot lands inside the workspace, not the project root.
             "cwd": str(workspace_root),
         },
     }
