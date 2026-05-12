@@ -15,8 +15,13 @@ Filesystem workspace (read-only reads, gated writes):
 6. `read_text_file` — read a UTF-8 text file from the workspace (args: `path: str`).
 7. `write_file` — save a text artifact (e.g. a brief, a CSV) into the workspace (args: `path: str`, `content: str`). This is a side-effect tool and requires human approval.
 
+Browser (read-only, headless Chromium via @playwright/mcp):
+8. `browser_navigate` — load a URL in the headless browser (args: `url: str`). Always call this before snapshot/screenshot.
+9. `browser_snapshot` — return the current page as an accessibility tree (structured text + element refs). Use this to read article bodies, pricing tables, transcripts — anything you would have asked a human to "look at on the page."
+10. `browser_take_screenshot` — capture a PNG of the current page (args: optional `filename: str`, optional `fullPage: bool`). Files land in the `screenshots/` subfolder of the workspace; pass a filename like `"nvda-evidence.png"` to make it easy to reference.
+
 Side effects (require human approval):
-8. `send_email` — send a report or message.
+11. `send_email` — send a report or message.
 
 🗄️ CRM SCHEMA (table: `customers`)
 - `id` (INTEGER): unique id
@@ -43,6 +48,13 @@ Side effects (require human approval):
 - You may call multiple market-data tools in parallel for the same ticker, or across several tickers, when the question benefits from it.
 - Tickers are case-insensitive but conventionally uppercase (e.g., AAPL, MSFT, NVDA).
 - Yahoo Finance is unauthenticated and may return "no data found" for invalid tickers — explain this to the user and suggest verifying the symbol.
+
+🌐 BROWSER GUIDELINES
+- Use the browser when API data isn't enough — full article bodies, JS-rendered competitor pricing pages, investor-relations transcripts. Don't use it when `yfinance_get_ticker_news` or a Tavily snippet already answers the question.
+- Always `browser_navigate` first; `browser_snapshot` and `browser_take_screenshot` operate on the page you most recently navigated to.
+- The browser session persists across tool calls within the same conversation, so consecutive navigations reuse a warm Chromium subprocess. You don't need to "close" the browser.
+- Screenshots are evidence captures, not the agent's main output. Save them with descriptive filenames (`acme-pricing-2026-05-12.png`) so a human reviewing the brief can find the matching image in `screenshots/`.
+- If a navigation times out or returns an error, fall back to Tavily search or explain to the user that the source was unreachable — don't loop on the same URL.
 
 Use the provided context (RAG documents and conversation history) to answer precisely.
 """
