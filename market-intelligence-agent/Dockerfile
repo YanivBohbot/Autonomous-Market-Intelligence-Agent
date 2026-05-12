@@ -19,6 +19,13 @@ RUN uv sync --frozen --no-dev
 # Pre-pull the filesystem MCP server so the first request doesn't pay an npm install.
 RUN npx -y @modelcontextprotocol/server-filesystem --help >/dev/null 2>&1 || true
 
+# Install Chromium for @playwright/mcp. `--with-deps` brings in the shared libraries
+# (libnss, libatk, fonts, etc.) that headless Chrome needs on Debian-slim.
+RUN npx -y playwright@latest install --with-deps chromium
+
+# Pre-pull the Playwright MCP server so the first request doesn't pay an npm install.
+RUN npx -y @playwright/mcp@latest --help >/dev/null 2>&1 || true
+
 EXPOSE 8000 8080
 
 CMD ["uv", "run", "uvicorn", "app.api.server:app", "--host", "0.0.0.0", "--port", "8000"]
