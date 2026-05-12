@@ -15,6 +15,7 @@ collision surfaces as a startup-time RuntimeError, not silent wrong-tool routing
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import os
 from functools import lru_cache
@@ -88,20 +89,20 @@ async def _load_tools() -> tuple[BaseTool, ...]:
 def _run_async(coro):
     """Sync bridge that works whether or not an event loop is already running.
 
-    Narrows the RuntimeError catch to the specific 'event loop is already running'
-    case so that errors raised by the coroutine itself (e.g. MCP subprocess failures)
-    propagate normally.
+    The MCP tools are loaded at module import time (`get_mcp_tools()` is called
+    from module-level `select_tool(...)` lines in each per-server selector
+    module). When uvicorn imports the app, that import happens *inside* uvicorn's
+    running event loop — so `asyncio.run()` raises and we have to fall back.
+    Running another loop in the same thread is illegal, so the fallback runs the
+    coroutine in a fresh worker thread with its own loop and blocks until done.
     """
     try:
         return asyncio.run(coro)
-    except RuntimeError as exc:
-        if "event loop is already running" not in str(exc).lower():
-            raise
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+    except RuntimeError:
+        # asyncio.run() refused because a loop is already running on this thread.
+        # Hand the coroutine to a worker thread that owns its own fresh loop.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
 
 
 @lru_cache(maxsize=1)
