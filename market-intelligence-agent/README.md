@@ -70,6 +70,8 @@ The agent has a sandboxed read-write workspace at `data/workspace/`. Drop files 
 
 The agent also has a headless browser via `@playwright/mcp` (`browser_navigate`, `browser_snapshot`, `browser_take_screenshot`). Use it to reach pages Tavily snippets can't — full article bodies, JS-rendered competitor pricing, investor-relations transcripts. Screenshots land in `data/workspace/screenshots/`.
 
+The agent also has cross-thread memory for durable user facts via LangGraph's `BaseStore` (`save_memory`, `recall_memory`, `list_memories`). Tell the agent "remember my email is …" once and it can use that fact in future sessions without you re-stating it. The v1 backend is `InMemoryStore` (lost on server restart); persistent `AsyncSqliteStore` is a planned follow-up.
+
 ---
 
 ## 📦 Installation and Deployment

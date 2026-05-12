@@ -21,8 +21,11 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 9 | `browser_navigate` | read-only | MCP stdio → `@playwright/mcp` | url | Loads a URL in the headless Chromium controlled by the Playwright MCP server. Sets the active page for subsequent snapshot/screenshot calls. | Tavily snippets and yfinance metadata don't return article bodies — the browser lets the agent reach the actual page (paywalled-but-readable, JS-rendered, login-walled). |
 | 10 | `browser_snapshot` | read-only | same | (none) | Returns the current page as an accessibility tree — structured text plus element refs like `button [ref=e2]`. | The "extract" capability for the browser. Returns LLM-friendly structured text instead of raw HTML, so the agent can read full article bodies, pricing tables, and earnings transcripts without burning tokens on markup. |
 | 11 | `browser_take_screenshot` | read-only | same | filename (optional), fullPage (optional) | Captures a PNG of the current page, written to `data/workspace/screenshots/`. | Visual evidence of what the agent saw. Lets a human reviewer cross-check a brief or email proposal against the actual source before approving it. |
+| 12 | `recall_memory` | read-only | LangGraph BaseStore (in-memory v1) | key | Look up a previously-saved user fact by key. Returns the value or "No memory for…". | The read side of cross-thread memory. Lets the agent fetch a fact (email, preference) before a tool call that needs it, without re-asking the user. |
+| 13 | `list_memories` | read-only | same | (none) | Return every user fact currently in memory as `"key = value"` strings. | Discovery. The agent uses this to know what's on file before guessing keys — same pattern as `list_directory` for files. |
+| 14 | `save_memory` | side-effect | same | key, content | Persist a durable user fact under namespace `("user_facts",)`. Gated by HITL approval. | The write side of cross-thread memory. Without it, the user re-types their email and preferences every session. Gated because "the agent learning new facts about you" is a real side-effect users should consent to. |
 
-`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
 
 ## Per-tool details
 
@@ -80,6 +83,23 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **File:** same as `browser_navigate`
 - **What:** Captures a PNG of the current page. Saves into `data/workspace/screenshots/<filename>` via the server's `--output-dir` flag. Optional `fullPage` argument captures beyond the viewport.
 - **Why:** Visual evidence for HITL review. When the agent proposes a `write_file` or `send_email`, attaching a screenshot reference (`see screenshots/acme-2026-05-12.png`) lets the human reviewer cross-check the claim against the source page in one click. Screenshots are bypassed by `READ_ONLY_TOOLS` — they go into a dedicated subfolder so the workspace root stays clean for user-facing briefs.
+
+### 12. `recall_memory`
+- **File:** `app/agent/tools/memory.py`
+- **What:** Looks up a user fact in the LangGraph store under namespace `("user_facts",)` by `key`. Returns the stored string, or the literal `"No memory for 'key'"` if absent.
+- **Why:** Before composing a `send_email` (or any action that needs user-specific data), the agent calls this to avoid re-asking the user for facts they've already stated. Read-only, no HITL gate — the user has already approved the underlying *save*.
+
+### 13. `list_memories`
+- **File:** same as `recall_memory`
+- **What:** Returns every fact in the `("user_facts",)` namespace as a flat list `["email = yaniv@…", "investment_horizon = long-term", …]`.
+- **Why:** Discovery — same role `list_directory` plays for files. Lets the agent see what's on file before guessing key names, and gives a coherent "what do you know about me" answer.
+
+### 14. `save_memory`
+- **File:** same as `recall_memory`
+- **What:** Persists `{key: value}` under namespace `("user_facts",)` via `store.aput(...)`. Last-write-wins for collisions. Gated by `approval_node`.
+- **Why:** The write side of cross-thread memory. Saves the user from re-stating facts every session. Gated because creating durable knowledge *about* the user is a side-effect users should consent to — same trust posture as `send_email` and `write_file`. The Streamlit modal surfaces the proposed `{key, value}` pair before any disk write.
+
+> **Persistence note:** the v1 backend is `langgraph.store.memory.InMemoryStore` — facts are lost on server restart. Migrating to `AsyncSqliteStore` is a single-function change in `app/agent/memory/store.py`; deferred to a follow-up subsystem when durability matters.
 
 ## How to add a new tool
 
