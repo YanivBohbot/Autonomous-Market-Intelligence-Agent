@@ -6,6 +6,7 @@ __pycache__/
 
 # Variables d'environnement (SECRETS)
 .env
+.env.example
 
 # Base de données locale (Optionnel : tu peux l'enlever si tu veux commit la DB de démo)
 # customers.db
