@@ -26,6 +26,9 @@ data/checkpoints.db-wal
 # Agent workspace — keep the folder, ignore its contents
 data/workspace/*
 !data/workspace/.gitkeep
+!data/workspace/screenshots/
+data/workspace/screenshots/*
+!data/workspace/screenshots/.gitkeep
 
 # Claude Code local config
 .claude/
