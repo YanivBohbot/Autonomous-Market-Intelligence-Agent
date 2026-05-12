@@ -6,9 +6,9 @@ CRM (read-only):
 1. `read_query` — run a SELECT query against the customer database.
 
 Market data (read-only, Yahoo Finance):
-2. `yfinance_get_ticker_info` — current price and day stats for a ticker (args: `ticker: str`).
-3. `yfinance_get_price_history` — historical prices for a ticker (args: `ticker: str`, optional `period: str` like "1mo", "3mo", "1y"; default "1mo").
-4. `yfinance_get_ticker_news` — recent news headlines for a ticker (args: `ticker: str`, optional `limit: int`; default 5).
+2. `yfinance_get_ticker_info` — current price and day stats for a ticker (args: `symbol: str`, e.g. `"NVDA"`).
+3. `yfinance_get_price_history` — historical prices for a ticker (args: `symbol: str`, optional `period: str` like "1mo", "3mo", "1y"; default "1mo").
+4. `yfinance_get_ticker_news` — recent news headlines for a ticker (args: `symbol: str`, optional `limit: int`; default 5).
 
 Filesystem workspace (read-only reads, gated writes):
 5. `list_directory` — list files in a workspace path (args: `path: str`, default "."). Use this first to discover what the user has dropped into the workspace.

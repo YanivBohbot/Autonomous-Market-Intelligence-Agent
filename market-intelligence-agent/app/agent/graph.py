@@ -55,11 +55,22 @@ def approval_node(state: AgentState) -> dict:
         for tc in side_effect_calls
     ]
     decisions = interrupt(requests)
+    # Resume payload shape varies by caller:
+    #   - /approve router sends a bare string ("approve" | "reject")
+    #   - tests patch interrupt() to return a list of strings or dicts
+    # Normalize to a list of length len(side_effect_calls): broadcast a single
+    # global decision across all pending calls; treat anything else element-wise.
+    if isinstance(decisions, str):
+        raw = [decisions] * len(side_effect_calls)
+    elif isinstance(decisions, list):
+        raw = decisions * len(side_effect_calls) if len(decisions) == 1 else decisions
+    else:
+        raw = []
     normalized = [
         d.get("type", "reject") if isinstance(d, dict) else d
-        for d in decisions
+        for d in raw
     ]
-    if all(d == "approve" for d in normalized):
+    if normalized and all(d == "approve" for d in normalized):
         return {}
     cancel_msgs = [
         ToolMessage(content="Action cancelled by user.", tool_call_id=t["id"], name=t["name"])
