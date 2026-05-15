@@ -8,6 +8,7 @@ from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
 from app.api.routers.approve import router as approve_router
 from app.api.routers.health import router as health_router
+from app.api.routers.livekit_token import router as livekit_token_router
 from app.api.routers.stream import router as stream_router
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -36,3 +37,4 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(approve_router)
 app.include_router(stream_router)
+app.include_router(livekit_token_router)

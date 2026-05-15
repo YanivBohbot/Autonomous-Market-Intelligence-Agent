@@ -21,3 +21,14 @@ class StreamRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+
+
+class LiveKitTokenRequest(BaseModel):
+    identity: str
+    room: str = "market-intel-voice"
+
+
+class LiveKitTokenResponse(BaseModel):
+    token: str
+    url: str
+    room: str
