@@ -17,11 +17,17 @@ class Settings(BaseSettings):
     EMAIL_PASSWORD: str
     EMAIL_SMTP_SERVER: str
     EMAIL_SMTP_PORT: int
+    LIVEKIT_URL: str
+    LIVEKIT_API_KEY: str
+    LIVEKIT_API_SECRET: str
+    DEEPGRAM_API_KEY: str
+    ELEVENLABS_API_KEY: str
     LOG_LEVEL: str = "INFO"
     CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
     API_URL: str = "http://127.0.0.1:8000"
     YFINANCE_TIMEOUT_S: int = 10
     WORKSPACE_ROOT: Path = Path("data/workspace")
+    ELEVENLABS_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel (ElevenLabs default voice)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
