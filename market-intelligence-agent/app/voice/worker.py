@@ -6,6 +6,7 @@ For production-style worker (multi-room):
 
     uv run python -m app.voice.worker start
 """
+
 import logging
 
 from dotenv import load_dotenv
@@ -30,7 +31,11 @@ async def entrypoint(ctx: JobContext) -> None:
         agent_app = build_agent_app(checkpointer, store)
         session = build_voice_session(agent_app)
 
-        await session.start(agent=MarketIntelAssistant(), room=ctx.room)
+        thread_id = f"voice-{ctx.room.name}"
+        await session.start(
+            agent=MarketIntelAssistant(agent_app, thread_id),
+            room=ctx.room,
+        )
         await ctx.connect()
         await session.generate_reply(
             instructions="Greet the user briefly and ask what they want to know."

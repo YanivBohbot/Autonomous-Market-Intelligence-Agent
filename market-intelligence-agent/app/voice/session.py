@@ -3,7 +3,11 @@
 The LLM is the compiled LangGraph workflow (via langchain.LLMAdapter), so
 voice turns run the same RAG + grader + tools + HITL flow as text turns.
 """
-from livekit.agents import Agent, AgentSession, ChatContext
+import uuid
+from typing import AsyncGenerator
+
+from livekit.agents import Agent, AgentSession, ChatContext, FlushSentinel, ModelSettings
+from livekit.agents import llm
 from livekit.plugins import deepgram, elevenlabs, langchain as lk_langchain, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
@@ -19,14 +23,14 @@ VOICE_PREAMBLE = (
 
 
 class MarketIntelAssistant(Agent):
-    """Voice persona. Instructions stay short — verbal answers, no markdown.
+    """Voice persona with verbal HITL support.
 
-    A system-level VOICE MODE preamble is attached via `chat_ctx` so the
-    LangGraph `generate` node biases toward spoken-friendly replies even
-    though its base prompt was tuned for chat.
+    When `agent_app` and `thread_id` are provided, `llm_node` detects pending
+    LangGraph interrupts and either re-prompts for confirmation or resumes the
+    graph with the user's verdict before delegating to the normal LLM path.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, agent_app=None, thread_id: str | None = None) -> None:
         chat_ctx = ChatContext()
         chat_ctx.add_message(role="system", content=VOICE_PREAMBLE)
         super().__init__(
@@ -38,6 +42,48 @@ class MarketIntelAssistant(Agent):
             ),
             chat_ctx=chat_ctx,
         )
+        self._agent_app = agent_app
+        self._thread_id = thread_id
+
+    async def llm_node(
+        self,
+        chat_ctx: llm.ChatContext,
+        tools: list[llm.Tool],
+        model_settings: ModelSettings,
+    ) -> AsyncGenerator[llm.ChatChunk | str | FlushSentinel, None]:
+        from app.voice.hitl import classify_verdict, is_interrupted, resume_with
+
+        if self._agent_app and self._thread_id:
+            paused, action = await is_interrupted(self._agent_app, self._thread_id)
+            if paused:
+                last_user = next(
+                    (m.content for m in reversed(chat_ctx.items) if m.role == "user"),
+                    "",
+                )
+                verdict = classify_verdict(str(last_user))
+                if verdict is None:
+                    yield llm.ChatChunk(
+                        id=str(uuid.uuid4()),
+                        delta=llm.ChoiceDelta(
+                            content=f"I need confirmation before {action}. Say yes or no.",
+                            role="assistant",
+                        ),
+                    )
+                    return
+                # Resume the graph, then yield the final AI message as the spoken reply.
+                state = await resume_with(self._agent_app, self._thread_id, verdict)
+                for msg in reversed(state.get("messages", [])):
+                    content = getattr(msg, "content", None)
+                    if content and not getattr(msg, "tool_calls", None):
+                        yield llm.ChatChunk(
+                            id=str(uuid.uuid4()),
+                            delta=llm.ChoiceDelta(content=str(content), role="assistant"),
+                        )
+                        return
+                return  # No message to speak (e.g., after reject)
+
+        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
+            yield chunk
 
 
 def build_voice_session(agent_app) -> AgentSession:
