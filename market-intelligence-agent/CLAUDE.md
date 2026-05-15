@@ -90,8 +90,8 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 ### Human-in-the-Loop (HITL) flow
 
 1. `POST /chat` (in `app/api/routers/stream.py`) — runs the graph until `interrupt()` fires, returns `status: "interrupted"` with the pending tool-call payload. Streaming variant exposed at `/chat/stream`.
-2. `POST /approve` (in `app/api/routers/approve.py`) — resumes via `Command(resume=[{"type": "approve"}, ...])` or `[{"type": "reject"}]`. The decision list mirrors the request list 1:1.
-3. Multiple side-effect calls in one batch produce a list of decisions; **any reject cancels all** (read-only or not) with `ToolMessage("Action cancelled by user.")`.
+2. `POST /approve` (in `app/api/routers/approve.py`) — resumes via `Command(resume="approve")` or `Command(resume="reject")`. The decision is a single global verdict that `approval_node` broadcasts across every pending side-effect call in the batch. Per-call approve/reject is not currently supported by the router contract.
+3. Multiple side-effect calls in one batch share the single global decision; on reject, **all** tool calls in the batch (read-only included) are cancelled with `ToolMessage("Action cancelled by user.")`. Unknown / malformed resume payloads fail closed (cancel).
 4. Session state persists across server restarts via the SQLite checkpointer keyed on `thread_id`.
 
 ### API routers (`app/api/routers/`)
@@ -105,7 +105,26 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 
 - `ChatRequest`: `query: str`, `thread_id: str = "default_thread"`
 - `ChatResponse`: `response: str`, `status: "completed"|"interrupted"`, `next_step: str|None`, `pending_tool_calls: list|None`
-- `ApproveRequest`: `thread_id: str`, `decisions: list[dict]` (each `{"type": "approve"|"reject"}`)
+- `ApproveRequest`: `thread_id: str`, `approved: bool` (single global verdict for the whole interrupted batch)
+
+### Voice mode (`app/voice/` + Streamlit panel)
+
+A separate `livekit-agents` worker process (`uv run python -m app.voice.worker dev`)
+joins LiveKit Cloud rooms and runs the pipeline
+`Deepgram STT → langchain.LLMAdapter(graph=agent_app) → ElevenLabs TTS`. The
+worker imports the **same** compiled LangGraph workflow as the FastAPI app —
+RAG, grader, tools, and HITL behave identically; only the transport differs.
+
+- `app/voice/worker.py` — entrypoint; `agents.cli.run_app`.
+- `app/voice/session.py` — `MarketIntelAssistant` + `AgentSession` factory.
+- `app/voice/hitl.py` — verbalizes interrupts and maps yes/no to `Command(resume=…)`.
+- `app/api/routers/livekit_token.py` — `POST /livekit/token` mints room-join JWTs.
+- `app/ui/voice_panel.py` — `render_voice_panel()` injects a LiveKit JS client into
+  the existing Streamlit app via `st.components.v1.html`. Activated by the
+  `🎤 Enable voice` sidebar toggle in `app/ui/app.py`. Voice and text sessions
+  use different `thread_id`s (`voice-<room>` vs `web_session_<uuid>`).
+
+See `docs/VOICE.md` for env vars and run order.
 
 ### Data ingestion (`app/ingest.py`)
 
