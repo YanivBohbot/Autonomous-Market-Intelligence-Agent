@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.graph import build_agent_app
 from app.agent.memory.checkpointer import create_checkpointer
@@ -33,6 +34,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Market Intelligence Agent API", version=_get_version(), lifespan=lifespan
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080"],
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["*"],
 )
 app.include_router(health_router)
 app.include_router(approve_router)

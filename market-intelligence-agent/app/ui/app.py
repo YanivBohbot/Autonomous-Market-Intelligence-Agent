@@ -24,6 +24,23 @@ if "awaiting_approval" not in st.session_state:
 if "last_action" not in st.session_state:
     st.session_state.last_action = ""
 
+# --- Voice mode (LiveKit-backed) ---
+from app.ui.voice_panel import render_voice_panel
+
+with st.sidebar:
+    st.markdown("### 🎤 Voice mode")
+    voice_on = st.toggle(
+        "Enable voice",
+        value=False,
+        help="Speak to the agent via your mic. Requires the LiveKit worker running.",
+    )
+    if voice_on:
+        st.caption(
+            "Click **Connect** in the panel below, allow mic access, then speak. "
+            "Voice runs on a separate `thread_id` from the text chat."
+        )
+        render_voice_panel(height=280)
+
 # --- Affichage de l'historique ---
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
