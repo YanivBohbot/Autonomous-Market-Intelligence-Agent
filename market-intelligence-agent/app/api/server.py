@@ -2,12 +2,14 @@ from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.graph import build_agent_app
 from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
 from app.api.routers.approve import router as approve_router
 from app.api.routers.health import router as health_router
+from app.api.routers.livekit_token import router as livekit_token_router
 from app.api.routers.stream import router as stream_router
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -33,6 +35,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Market Intelligence Agent API", version=_get_version(), lifespan=lifespan
 )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=".*",
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["*"],
+)
 app.include_router(health_router)
 app.include_router(approve_router)
 app.include_router(stream_router)
+app.include_router(livekit_token_router)

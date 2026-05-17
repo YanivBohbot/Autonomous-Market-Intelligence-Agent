@@ -80,8 +80,17 @@ async def _load_tools() -> tuple[BaseTool, ...]:
     # raises NotImplementedError. `get_tools()` passes the connection config directly
     # to `load_mcp_tools(session=None, connection=...)` so each returned tool wrapper
     # manages its own per-call stdio subprocess — there is no long-lived session to clean up.
-    client = MultiServerMCPClient(_server_config())
-    tools = await client.get_tools()
+    config = _server_config()
+    client = MultiServerMCPClient(config)
+    try:
+        tools = await client.get_tools()
+    except Exception as exc:
+        servers = ", ".join(config.keys())
+        raise RuntimeError(
+            f"Failed to load MCP tools from servers [{servers}]. "
+            f"Check that `npx`, `uv`, and the configured MCP packages are installed and reachable. "
+            f"Underlying error: {exc!r}"
+        ) from exc
     logger.info("MCP registry loaded %d tools: %s", len(tools), [t.name for t in tools])
     return tuple(tools)
 

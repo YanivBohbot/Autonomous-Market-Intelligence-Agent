@@ -15,7 +15,6 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.core.config import settings
@@ -25,15 +24,10 @@ from app.core.config import settings
 async def create_checkpointer(
     db_path: str | None = None,
 ) -> AsyncIterator[AsyncSqliteSaver]:
-    """Open an `AsyncSqliteSaver` backed by an aiosqlite connection.
-
-    The parent directory is created if missing. The aiosqlite worker thread is
-    started inside `__aenter__` and torn down on `__aexit__` so the caller does
-    not need to manage the connection lifecycle.
-    """
+    """Open an `AsyncSqliteSaver` via the canonical `from_conn_string` entry."""
     path = db_path or settings.CHECKPOINT_DB_PATH
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    async with aiosqlite.connect(path) as conn:
-        yield AsyncSqliteSaver(conn)
+    async with AsyncSqliteSaver.from_conn_string(path) as saver:
+        yield saver

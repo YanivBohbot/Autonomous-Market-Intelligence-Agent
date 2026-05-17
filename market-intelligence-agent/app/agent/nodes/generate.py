@@ -21,7 +21,7 @@ def generate_answer(state: AgentState) -> dict:
 
     if messages:
         last_message = messages[-1]
-        if isinstance(last_message, ToolMessage) and "Error" in str(last_message.content):
+        if isinstance(last_message, ToolMessage) and getattr(last_message, "status", None) == "error":
             logger.warning("GENERATE: Tool error detected — generating explanation")
             return {
                 "messages": [
