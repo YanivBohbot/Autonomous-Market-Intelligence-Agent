@@ -62,10 +62,10 @@ def approval_node(state: AgentState) -> dict:
     # global decision across all pending calls; treat anything else element-wise.
     if isinstance(decisions, str):
         raw = [decisions] * len(side_effect_calls)
-    elif isinstance(decisions, list):
+    elif isinstance(decisions, list) and decisions:
         raw = decisions * len(side_effect_calls) if len(decisions) == 1 else decisions
     else:
-        raw = []
+        raw = ["reject"] * len(side_effect_calls)
     normalized = [
         d.get("type", "reject") if isinstance(d, dict) else d
         for d in raw

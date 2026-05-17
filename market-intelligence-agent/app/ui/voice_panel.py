@@ -49,7 +49,10 @@ _HTML_TEMPLATE = """
           headers: {{ "Content-Type": "application/json" }},
           body: JSON.stringify({{
             identity: "user-" + Math.random().toString(36).slice(2, 8),
-            room: "market-intel-voice"
+            // Unique room per session so stale agent participants from a
+            // previous Connect don't prevent LiveKit from dispatching the
+            // worker to a "new" room.
+            room: "mi-voice-" + Math.random().toString(36).slice(2, 10)
           }}),
         }});
         if (!res.ok) throw new Error("token endpoint returned " + res.status);
@@ -60,8 +63,14 @@ _HTML_TEMPLATE = """
         room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {{
           if (track.kind === "audio") {{
             const el = track.attach();
+            el.autoplay = true;
+            el.playsInline = true;
+            el.muted = false;
+            el.volume = 1.0;
             document.body.appendChild(el);
-            log("agent audio attached");
+            // Force playback in case Chrome's autoplay policy blocked it.
+            // The Connect click is a user gesture so play() should succeed.
+            el.play().then(() => log("agent audio playing")).catch((e) => log("audio play error: " + e.message));
           }}
         }});
         room.on(LivekitClient.RoomEvent.Disconnected, () => {{

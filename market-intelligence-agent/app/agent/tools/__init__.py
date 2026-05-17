@@ -52,6 +52,17 @@ READ_ONLY_TOOLS: set[str] = {
     "list_memories",
 }
 
+# Guard against silent drift: if an upstream MCP server renames a tool, the name
+# in READ_ONLY_TOOLS no longer matches anything in TOOLS and the tool gets gated
+# as a side effect. Fail loud at import instead.
+_TOOL_NAMES = {t.name for t in TOOLS}
+_missing = READ_ONLY_TOOLS - _TOOL_NAMES
+if _missing:
+    raise RuntimeError(
+        f"READ_ONLY_TOOLS contains names not present in TOOLS: {sorted(_missing)}. "
+        f"Known tool names: {sorted(_TOOL_NAMES)}"
+    )
+
 __all__ = [
     "TOOLS",
     "READ_ONLY_TOOLS",

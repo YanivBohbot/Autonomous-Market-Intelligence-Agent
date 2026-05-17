@@ -25,7 +25,7 @@ if "last_action" not in st.session_state:
     st.session_state.last_action = ""
 
 # --- Voice mode (LiveKit-backed) ---
-from app.ui.voice_panel import render_voice_panel
+from voice_panel import render_voice_panel
 
 with st.sidebar:
     st.markdown("### 🎤 Voice mode")

@@ -20,9 +20,15 @@ def classify_verdict(utterance: str) -> str | None:
 
 
 async def is_interrupted(agent_app, thread_id: str) -> tuple[bool, str | None]:
-    """Return (is_paused, action_description) for the given thread."""
+    """Return (is_paused, action_description) for the given thread.
+
+    Only treat the graph as awaiting HITL approval when it is specifically paused
+    at the `approval` node. Any other non-empty `snapshot.next` (e.g. a failed
+    task waiting to be retried after an unrelated exception) must NOT trigger a
+    verbal "Say yes or no" prompt.
+    """
     snapshot = await agent_app.aget_state({"configurable": {"thread_id": thread_id}})
-    if not snapshot.next:
+    if not snapshot.next or "approval" not in snapshot.next:
         return False, None
     last = snapshot.values["messages"][-1]
     tool_calls = getattr(last, "tool_calls", None) or []
