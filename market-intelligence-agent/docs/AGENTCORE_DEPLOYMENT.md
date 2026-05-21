@@ -31,7 +31,7 @@ Deploy the dev project (LangGraph + MCP + HITL + RAG + Streamlit) to **Amazon Be
 | 4a | yfinance + CRM via Gateway | ✅ done | Lambda-backed MCP servers behind `market-gw`; local-dev fallback when `GATEWAY_URL` unset |
 | 4b | AgentCore Browser | ✅ done | managed Chromium via CDP + S3 screenshots; per-call sessions |
 | 4c | AgentCore Memory | ✅ done | `AgentCoreMemoryStore` replaces `InMemoryStore`; DDB checkpointer kept |
-| 5 | IAM, Secrets Manager, observability | ⏳ | Anthropic/OpenAI/Pinecone keys → Secrets Manager; finalize execution role; OTel → CloudWatch |
+| 5 | IAM, Secrets Manager, observability | ✅ done | JSON secret + boot fetcher; CloudWatch log group; IAM audited |
 | 6 | First `agentcore deploy` to AWS | ⏳ | smoke test in cloud; verify CFN outputs |
 | 7 | Promote / refine CDK | ⏳ | shared infra stack, CI/CD wiring |
 | 8 | Streamlit frontend | ⏳ | App Runner (or ECS Fargate) hosting Streamlit, calls Runtime via HTTPS + Cognito |
