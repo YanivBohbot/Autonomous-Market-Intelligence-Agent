@@ -29,7 +29,7 @@ Deploy the dev project (LangGraph + MCP + HITL + RAG + Streamlit) to **Amazon Be
 | 2 | Local dev validation | ✅ done | `agentcore dev -p 8090` — graph + HITL verified end-to-end inside container |
 | 3 | Durable checkpointer | ✅ done | `langgraph-checkpoint-aws.DynamoDBSaver` + CDK provisions table + grants IAM |
 | 4a | yfinance + CRM via Gateway | ✅ done | Lambda-backed MCP servers behind `market-gw`; local-dev fallback when `GATEWAY_URL` unset |
-| 4b | AgentCore Browser | ⏳ | replace Playwright stdio tool with native Browser service |
+| 4b | AgentCore Browser | ✅ done | managed Chromium via CDP + S3 screenshots; per-call sessions |
 | 4c | AgentCore Memory | ⏳ | replace in-container memory tools with managed Memory |
 | 5 | IAM, Secrets Manager, observability | ⏳ | Anthropic/OpenAI/Pinecone keys → Secrets Manager; finalize execution role; OTel → CloudWatch |
 | 6 | First `agentcore deploy` to AWS | ⏳ | smoke test in cloud; verify CFN outputs |
@@ -76,6 +76,14 @@ Deploy the dev project (LangGraph + MCP + HITL + RAG + Streamlit) to **Amazon Be
 - `tools/__init__.py` re-enables yfinance + CRM imports behind a try/except; only extends `TOOLS` when the Gateway registry actually produced tools. `READ_ONLY_TOOLS` keeps the full name union.
 - CDK stack instantiates `AgentCoreMcp` and publishes `GATEWAY_URL` (from `gateways.get('market-gw').attrGatewayUrl`) into every runtime alongside the Phase 3 `DDB_CHECKPOINT_TABLE`.
 - `npx tsc --noEmit` clean; `agentcore validate` clean. Smoke tests deferred (per project convention — Gateway-bound tests are first-class in Phase 6 against the real deployed endpoint).
+
+### Phase 4b — AgentCore Browser (commit `038474d`)
+- New `tools/browser.py` with 3 native LangChain tools (`browser_navigate`, `browser_snapshot`, `browser_take_screenshot`) driving managed Chromium via Playwright CDP. Per-call sessions: each tool invocation opens `StartBrowserSession`, runs, closes. Container ships only the Playwright Python client — no local Chromium binary.
+- `browser_take_screenshot` uploads PNGs to a dedicated S3 bucket; returns a 1-hour pre-signed URL to the LLM. Bucket has SSE-S3, BLOCK_ALL public, lifecycle expires objects at 30 days, `RemovalPolicy.RETAIN`.
+- `tools/__init__.py` gates the import on `BROWSER_ENABLED=true`. CDK sets the var in cloud; local dev never even imports the module.
+- CDK grants the runtime exec role: `s3:PutObject`/`s3:GetObject` on the bucket only, and `bedrock-agentcore:StartBrowserSession`/`StopBrowserSession`/`GetBrowserSession`/`ConnectBrowserAutomationStream` scoped to `browser/*` in this region/account.
+- `pyproject.toml` adds `playwright>=1.50.0`; `bedrock-agentcore` was already present from Phase 1.
+- `npx tsc --noEmit` clean; `agentcore validate` clean. Real-browser smoke tests deferred to Phase 6.
 
 ## What's next — Phase 4 design questions
 
