@@ -53,7 +53,11 @@ async def invoke(payload, context):
         if not prompt:
             return {"error": "payload missing 'prompt' or 'resume'"}
         result = await _agent_app.ainvoke(
-            {"messages": [HumanMessage(content=prompt)]},
+            {
+                "messages": [HumanMessage(content=prompt)],
+                "question": prompt,
+                "documents": [],
+            },
             config=config,
         )
 
