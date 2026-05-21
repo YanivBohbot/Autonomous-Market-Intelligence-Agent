@@ -107,6 +107,14 @@ The `browser_navigate`, `browser_snapshot`, and `browser_take_screenshot` tools 
 - Screenshots land in `$SCREENSHOT_BUCKET` under `screenshots/<uuid>.png`. The tool returns a **1-hour pre-signed URL** to the LLM. Lifecycle rule deletes objects after 30 days.
 - Gated on `BROWSER_ENABLED=true`. The CDK stack injects this in cloud; locally the var is unset so `tools/__init__.py` never even imports the browser module — the LLM doesn't see the tools.
 
+## Memory store (Phase 4c)
+
+The agent's three memory tools (`save_memory`, `recall_memory`, `list_memories`) write to a LangGraph `BaseStore`. In production that store is **AgentCore Memory** (`AgentCoreMemoryStore`) — a managed long-term memory service with semantic indexing. The Memory resource (name `user_facts`, 90-day event expiry, SEMANTIC strategy) is declared in `agentcore/agentcore.json` and provisioned automatically by the CDK `AgentCoreApplication` L3 construct, which also grants the runtime the needed `bedrock-agentcore:*` permissions and injects `MEMORY_USER_FACTS_ID` as an env var.
+
+Local dev: `MEMORY_USER_FACTS_ID` unset → falls back to `InMemoryStore` (volatile, in-process). The memory tools themselves are unchanged — they use `InjectedStore()` and receive whatever store the graph was compiled with.
+
+The Phase 3 DynamoDB checkpointer is kept for per-thread conversational state — only the long-term cross-thread store moves to AgentCore Memory.
+
 ## Phase status
 
 See [`../../docs/AGENTCORE_DEPLOYMENT.md`](../../docs/AGENTCORE_DEPLOYMENT.md) for the full multi-phase plan and what's done so far.

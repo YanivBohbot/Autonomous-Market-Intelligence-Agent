@@ -18,7 +18,20 @@
       "protocol": "HTTP"
     }
   ],
-  "memories": [],
+  "memories": [
+    {
+      "name": "user_facts",
+      "eventExpiryDuration": 90,
+      "strategies": [
+        {
+          "type": "SEMANTIC",
+          "name": "facts",
+          "description": "User facts and preferences extracted from conversations",
+          "namespaceTemplates": ["user_facts"]
+        }
+      ]
+    }
+  ],
   "credentials": [],
   "evaluators": [],
   "onlineEvalConfigs": [],

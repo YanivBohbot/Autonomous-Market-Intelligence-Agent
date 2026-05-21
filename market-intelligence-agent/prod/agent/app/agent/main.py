@@ -3,15 +3,19 @@
 Wraps the existing LangGraph workflow (imported from app.agent.graph) and
 exposes it to AgentCore Runtime via the BedrockAgentCoreApp HTTP contract.
 
-Checkpointer selection is env-driven:
-- DDB_CHECKPOINT_TABLE set → DynamoDBSaver (durable, used in AWS)
-- unset                  → MemorySaver (in-memory, local-dev fallback)
+Persistence selection is env-driven:
+- DDB_CHECKPOINT_TABLE set    → DynamoDBSaver (durable per-thread state in AWS)
+- unset                       → MemorySaver (in-memory, local-dev fallback)
+- MEMORY_USER_FACTS_ID set    → AgentCoreMemoryStore (managed long-term store)
+- unset                       → InMemoryStore (local-dev fallback)
 """
 import os
 
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.store.base import BaseStore
+from langgraph.store.memory import InMemoryStore
 from langgraph.types import Command
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
@@ -40,10 +44,32 @@ def _build_checkpointer() -> BaseCheckpointSaver:
     return MemorySaver()
 
 
+def _build_store() -> BaseStore:
+    """Pick AgentCore Memory in AWS, in-memory store locally — single env-var switch.
+
+    The L3 `AgentCoreApplication` CDK construct provisions the Memory resource
+    (declared in agentcore.json) and injects MEMORY_USER_FACTS_ID as an env var.
+    When unset (local dev) we fall back to LangGraph's InMemoryStore so the
+    memory tools (save/recall/list_memory) still work in the same process.
+    """
+    memory_id = os.getenv("MEMORY_USER_FACTS_ID")
+    if memory_id:
+        from langgraph_checkpoint_aws import AgentCoreMemoryStore
+        log.info(f"[store] AgentCoreMemoryStore memory_id={memory_id}")
+        return AgentCoreMemoryStore(
+            memory_id=memory_id,
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
+        )
+    log.info("[store] InMemoryStore (local-dev fallback)")
+    return InMemoryStore()
+
+
 # Compile once at module load — graph is stateless across invocations,
-# state lives in the checkpointer keyed by thread_id.
+# state lives in the checkpointer keyed by thread_id and the store keyed
+# by namespace.
 _checkpointer = _build_checkpointer()
-_agent_app = build_agent_app(checkpointer=_checkpointer)
+_store = _build_store()
+_agent_app = build_agent_app(checkpointer=_checkpointer, store=_store)
 
 
 @app.entrypoint
