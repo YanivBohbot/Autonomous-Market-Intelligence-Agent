@@ -11,6 +11,10 @@ Persistence selection is env-driven:
 """
 import os
 
+# Phase 5: pull API keys from Secrets Manager into os.environ BEFORE any
+# downstream module reads them. Must be the first app-local import.
+import app.bootstrap  # noqa: F401  (side-effect import — populates os.environ)
+
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver

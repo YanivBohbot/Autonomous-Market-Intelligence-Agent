@@ -115,6 +115,16 @@ Local dev: `MEMORY_USER_FACTS_ID` unset → falls back to `InMemoryStore` (volat
 
 The Phase 3 DynamoDB checkpointer is kept for per-thread conversational state — only the long-term cross-thread store moves to AgentCore Memory.
 
+## Secrets & observability (Phase 5)
+
+Real API-key secrets (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `TAVILY_API_KEY`, `EMAIL_PASSWORD`) live in a single **AWS Secrets Manager** JSON bundle named `agent/api-keys`. The bundle is provisioned with placeholder `"REPLACE_ME"` values by CDK; **fill the real values via the AWS Console after the first deploy** (Secrets Manager → `agent/api-keys` → Retrieve secret value → Edit). The secret has `RemovalPolicy.RETAIN` so a stack tear-down doesn't wipe your keys.
+
+At container boot, `app/bootstrap.py` reads `API_KEYS_SECRET_ARN` (injected by CDK), fetches the JSON, and copies every key into `os.environ` **before** `app.core.config.Settings()` runs. Local dev has the var unset → bootstrap logs "skipping" and `.env.local` continues to provide the keys.
+
+Non-secret config (model IDs, SMTP host, voice-stack dummies) is set as plain env vars in the CDK stack. The voice keys (`LIVEKIT_*`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`) get literal `"unused-in-prod-agent"` values — the shared `Settings` schema requires them but the agent runtime doesn't use them.
+
+Observability is mostly AgentCore-native: the runtime exports OTel to CloudWatch + X-Ray automatically (the container ships `aws-opentelemetry-distro`), and `LangchainInstrumentor()` in `main.py` annotates LangChain spans. CDK adds an explicit log group `/aws/bedrock-agentcore/runtimes/agent` with 30-day retention; the ARN is in stack outputs.
+
 ## Phase status
 
 See [`../../docs/AGENTCORE_DEPLOYMENT.md`](../../docs/AGENTCORE_DEPLOYMENT.md) for the full multi-phase plan and what's done so far.

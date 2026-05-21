@@ -8,10 +8,13 @@ import {
   CfnOutput,
   Duration,
   RemovalPolicy,
+  SecretValue,
   Stack,
   aws_dynamodb as dynamodb,
   aws_iam as iam,
+  aws_logs as logs,
   aws_s3 as s3,
+  aws_secretsmanager as secretsmanager,
   type StackProps,
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -50,6 +53,12 @@ export class AgentCoreStack extends Stack {
 
   /** S3 bucket holding screenshots taken by the AgentCore Browser tool. */
   public readonly screenshotBucket: s3.Bucket;
+
+  /** JSON secret bundle: OpenAI, Pinecone, Tavily, and email-SMTP credentials. */
+  public readonly apiKeysSecret: secretsmanager.Secret;
+
+  /** CloudWatch Log Group surfaced for operator convenience. */
+  public readonly logGroup: logs.LogGroup;
 
   constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
@@ -184,6 +193,84 @@ export class AgentCoreStack extends Stack {
     new CfnOutput(this, 'ScreenshotBucketName', {
       description: 'S3 bucket for AgentCore Browser screenshots',
       value: this.screenshotBucket.bucketName,
+    });
+
+    // --- Phase 5: Secrets Manager + non-secret config + log group ---
+    //
+    // Single JSON bundle. The agent's bootstrap.py fetches at boot and
+    // copies each key into os.environ before pydantic-settings runs.
+    // Created with a placeholder; operator fills real values via the
+    // Secrets Manager console after first deploy.
+    //
+    // RETAIN so a stack destroy doesn't wipe rotated keys.
+    this.apiKeysSecret = new secretsmanager.Secret(this, 'ApiKeysSecret', {
+      secretName: `${spec.name}/api-keys`,
+      description: 'API keys for the Market Intelligence agent (fill via Console after deploy).',
+      removalPolicy: RemovalPolicy.RETAIN,
+      secretObjectValue: {
+        OPENAI_API_KEY: SecretValue.unsafePlainText('REPLACE_ME'),
+        PINECONE_API_KEY: SecretValue.unsafePlainText('REPLACE_ME'),
+        TAVILY_API_KEY: SecretValue.unsafePlainText('REPLACE_ME'),
+        EMAIL_PASSWORD: SecretValue.unsafePlainText('REPLACE_ME'),
+      },
+    });
+
+    // CloudWatch log group for the runtime. AgentCore Runtime writes here
+    // automatically once it knows the name; explicit so we can apply
+    // retention + surface the name in CfnOutput.
+    this.logGroup = new logs.LogGroup(this, 'RuntimeLogGroup', {
+      logGroupName: `/aws/bedrock-agentcore/runtimes/${spec.name}`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // Non-secret config that pydantic-settings needs. The voice keys
+    // (LIVEKIT_*, DEEPGRAM_API_KEY, ELEVENLABS_API_KEY) are required by the
+    // shared Settings schema but unused by the agent runtime — give them
+    // explicit dummy values so the agent boots without a NoneType crash.
+    const nonSecretEnv: Record<string, string> = {
+      OPENAI_MODEL: 'gpt-4o-mini',
+      OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
+      PINECONE_INDEX_NAME: 'market-intel',
+      EMAIL_SENDER: 'noreply@example.com',
+      EMAIL_SMTP_SERVER: 'smtp.gmail.com',
+      EMAIL_SMTP_PORT: '587',
+      LOG_LEVEL: 'INFO',
+      // Voice keys — unused by the agent runtime.
+      LIVEKIT_URL: 'unused-in-prod-agent',
+      LIVEKIT_API_KEY: 'unused-in-prod-agent',
+      LIVEKIT_API_SECRET: 'unused-in-prod-agent',
+      DEEPGRAM_API_KEY: 'unused-in-prod-agent',
+      ELEVENLABS_API_KEY: 'unused-in-prod-agent',
+    };
+
+    for (const [, env] of this.application.environments) {
+      // Inject secret ARN + non-secret config.
+      env.runtime.addEnvironmentVariable(
+        'API_KEYS_SECRET_ARN',
+        this.apiKeysSecret.secretArn,
+      );
+      for (const [key, value] of Object.entries(nonSecretEnv)) {
+        env.runtime.addEnvironmentVariable(key, value);
+      }
+
+      // IAM: GetSecretValue scoped to this secret only.
+      env.runtime.addToPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['secretsmanager:GetSecretValue'],
+          resources: [this.apiKeysSecret.secretArn],
+        }),
+      );
+    }
+
+    new CfnOutput(this, 'ApiKeysSecretArn', {
+      description: 'Secrets Manager ARN for the API key bundle — fill via Console',
+      value: this.apiKeysSecret.secretArn,
+    });
+    new CfnOutput(this, 'LogGroupName', {
+      description: 'CloudWatch Log Group for the runtime',
+      value: this.logGroup.logGroupName,
     });
 
     // Stack-level outputs
