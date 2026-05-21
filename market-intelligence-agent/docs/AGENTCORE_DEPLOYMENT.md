@@ -28,7 +28,9 @@ Deploy the dev project (LangGraph + MCP + HITL + RAG + Streamlit) to **Amazon Be
 | 1 | Scaffold via AgentCore CLI | ✅ done | `npm i -g @aws/agentcore`; `agentcore create` with `LangChain_LangGraph` + Container build |
 | 2 | Local dev validation | ✅ done | `agentcore dev -p 8090` — graph + HITL verified end-to-end inside container |
 | 3 | Durable checkpointer | ✅ done | `langgraph-checkpoint-aws.DynamoDBSaver` + CDK provisions table + grants IAM |
-| 4 | MCP tools via Gateway | ⏳ next | wrap CRM / yfinance / filesystem / browser MCPs as HTTPS-callable Gateway tools |
+| 4a | yfinance + CRM via Gateway | ✅ done | Lambda-backed MCP servers behind `market-gw`; local-dev fallback when `GATEWAY_URL` unset |
+| 4b | AgentCore Browser | ⏳ | replace Playwright stdio tool with native Browser service |
+| 4c | AgentCore Memory | ⏳ | replace in-container memory tools with managed Memory |
 | 5 | IAM, Secrets Manager, observability | ⏳ | Anthropic/OpenAI/Pinecone keys → Secrets Manager; finalize execution role; OTel → CloudWatch |
 | 6 | First `agentcore deploy` to AWS | ⏳ | smoke test in cloud; verify CFN outputs |
 | 7 | Promote / refine CDK | ⏳ | shared infra stack, CI/CD wiring |
@@ -66,6 +68,14 @@ Deploy the dev project (LangGraph + MCP + HITL + RAG + Streamlit) to **Amazon Be
   - Grants minimum DDB perms (`GetItem`, `PutItem`, `Query`, `BatchGetItem`, `BatchWriteItem`) on the runtime exec role, scoped to the table ARN
   - New CFN outputs: `CheckpointTableArn`, `CheckpointTableWiredToagent`
 - `npx tsc --noEmit` clean; local dev still passes with the MemorySaver fallback log line
+
+### Phase 4a — Gateway + yfinance + CRM (commit `d5156ef`)
+- Two Lambda MCP servers under `prod/agent/app/{yfinance_tool,crm_tool}/` using `mcp.server.fastmcp.FastMCP`. CRM bundles `customers.db` (read-only via `?mode=ro&immutable=1`); yfinance applies a 10 s socket timeout.
+- `agentcore.json` `market-gw` Gateway gains two `lambda`-type targets with inline `toolDefinitions` (3 yfinance tools + `read_query`) and `compute.implementation` blocks pointing at the new directories.
+- `tools/mcp_clients/registry.py` rewritten to `streamable_http` `MultiServerMCPClient` keyed on `GATEWAY_URL`. Unset → empty tool list + warning log (local-dev path); `select_tool` returns a no-op tool whose `.func` raises only if invoked.
+- `tools/__init__.py` re-enables yfinance + CRM imports behind a try/except; only extends `TOOLS` when the Gateway registry actually produced tools. `READ_ONLY_TOOLS` keeps the full name union.
+- CDK stack instantiates `AgentCoreMcp` and publishes `GATEWAY_URL` (from `gateways.get('market-gw').attrGatewayUrl`) into every runtime alongside the Phase 3 `DDB_CHECKPOINT_TABLE`.
+- `npx tsc --noEmit` clean; `agentcore validate` clean. Smoke tests deferred (per project convention — Gateway-bound tests are first-class in Phase 6 against the real deployed endpoint).
 
 ## What's next — Phase 4 design questions
 
