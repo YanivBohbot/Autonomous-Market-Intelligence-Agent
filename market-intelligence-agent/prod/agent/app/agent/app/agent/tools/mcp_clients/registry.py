@@ -1,15 +1,18 @@
-"""MCP client registry — single MultiServerMCPClient for every stdio MCP server.
+"""MCP client registry — Gateway-backed MultiServerMCPClient.
 
-Exposes `get_mcp_tools()`, a sync function that returns the full list of LangChain
-BaseTool objects produced by the registered MCP servers. Per-server modules
-(`mcp_client.py`, `yfinance_client.py`, `filesystem_client.py`) filter this list
-by name to re-export their public tool symbols.
+In production (Phase 4a+), the yfinance and CRM tools live behind an AgentCore
+Gateway exposed as a single MCP-over-HTTPS endpoint. The agent talks to that
+Gateway via `streamable_http` transport. The Gateway URL is injected into the
+runtime as the `GATEWAY_URL` env var by the CDK stack (see cdk-stack.ts).
 
-Tool names come straight from the upstream MCP servers (no controller-side prefix).
-yfmcp self-namespaces (`yfinance_get_ticker_info`, ...); the filesystem server uses
-unambiguous names (`read_text_file`, `write_file`, ...). The CRM `read_query` tool
-is the one bare name; per-server modules filter by exact name so any future
-collision surfaces as a startup-time RuntimeError, not silent wrong-tool routing.
+In local dev, `agentcore dev` doesn't spin up a real Gateway, so `GATEWAY_URL`
+is unset. We log a clear "skipped" message and return an empty tool list — the
+container's native tools (email, memory) still work, the graph still loads, and
+the Phase 2 HITL smoke tests still pass.
+
+Per-server modules (`mcp_client.py`, `yfinance_client.py`) filter this list by
+exact name. `select_tool()` gracefully handles the empty-list case by returning
+a no-op tool wrapper that raises only if the LLM actually tries to call it.
 """
 
 from __future__ import annotations
@@ -20,78 +23,49 @@ import logging
 import os
 from functools import lru_cache
 
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, Tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
-
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def _server_config() -> dict:
-    """Build the MultiServerMCPClient server config. Centralised so adding a server
-    means changing one dict, not three import sites."""
-    workspace_root = settings.WORKSPACE_ROOT.resolve()
-    workspace_root.mkdir(parents=True, exist_ok=True)
-    (workspace_root / "screenshots").mkdir(parents=True, exist_ok=True)
-    return {
-        "crm": {
-            "command": "uv",
-            "args": ["run", "mcp-server-sqlite", "--db-path", "customers.db"],
-            "transport": "stdio",
-            "env": dict(os.environ),
-        },
-        "yfinance": {
-            "command": "uv",
-            "args": ["run", "yfmcp"],
-            "transport": "stdio",
-            "env": dict(os.environ),
-        },
-        "filesystem": {
-            "command": "npx",
-            "args": ["-y", "@modelcontextprotocol/server-filesystem", str(workspace_root)],
-            "transport": "stdio",
-            "env": dict(os.environ),
-            # Run the filesystem server with cwd = workspace_root so the LLM can use
-            # plain relative paths like "brief.md" (the system prompt promises this).
-            # Without it, relative paths resolve to the calling process's cwd (project
-            # root), which is outside the allowed directory and the server rejects them.
-            "cwd": str(workspace_root),
-        },
-        "browser": {
-            "command": "npx",
-            "args": [
-                "-y", "@playwright/mcp@latest",
-                "--browser", "chromium",
-                "--headless",
-                "--output-dir", str(workspace_root / "screenshots"),
-            ],
-            "transport": "stdio",
-            "env": dict(os.environ),
-            # cwd = workspace_root so any relative path the LLM passes to
-            # browser_take_screenshot lands inside the workspace, not the project root.
-            "cwd": str(workspace_root),
-        },
-    }
+def _gateway_url() -> str | None:
+    """Return the Gateway URL from env, or None if unset (local dev)."""
+    url = os.environ.get("GATEWAY_URL")
+    if url and url.strip():
+        return url.strip()
+    return None
 
 
 async def _load_tools() -> tuple[BaseTool, ...]:
-    # No context manager needed: as of langchain-mcp-adapters 0.1.0, `async with`
-    # raises NotImplementedError. `get_tools()` passes the connection config directly
-    # to `load_mcp_tools(session=None, connection=...)` so each returned tool wrapper
-    # manages its own per-call stdio subprocess — there is no long-lived session to clean up.
-    config = _server_config()
+    """Load MCP tools from the AgentCore Gateway via streamable_http."""
+    url = _gateway_url()
+    if url is None:
+        logger.warning("[registry] GATEWAY_URL unset — Gateway tools skipped")
+        return ()
+
+    config = {
+        "market-gw": {
+            "transport": "streamable_http",
+            "url": url,
+        },
+    }
     client = MultiServerMCPClient(config)
     try:
         tools = await client.get_tools()
     except Exception as exc:
-        servers = ", ".join(config.keys())
-        raise RuntimeError(
-            f"Failed to load MCP tools from servers [{servers}]. "
-            f"Check that `npx`, `uv`, and the configured MCP packages are installed and reachable. "
-            f"Underlying error: {exc!r}"
-        ) from exc
-    logger.info("MCP registry loaded %d tools: %s", len(tools), [t.name for t in tools])
+        logger.warning(
+            "[registry] Failed to load Gateway tools from %s: %r — proceeding with empty set",
+            url,
+            exc,
+        )
+        return ()
+    logger.info(
+        "[registry] Loaded %d Gateway tools from %s: %s",
+        len(tools),
+        url,
+        [t.name for t in tools],
+    )
     return tuple(tools)
 
 
@@ -108,25 +82,56 @@ def _run_async(coro):
     try:
         return asyncio.run(coro)
     except RuntimeError:
-        # asyncio.run() refused because a loop is already running on this thread.
-        # Hand the coroutine to a worker thread that owns its own fresh loop.
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             return pool.submit(asyncio.run, coro).result()
 
 
 @lru_cache(maxsize=1)
 def get_mcp_tools() -> tuple[BaseTool, ...]:
-    """Return all MCP-backed LangChain tools. Cached after first call."""
+    """Return all MCP-backed LangChain tools. Cached after first call.
+
+    Returns an empty tuple in local dev (no Gateway).
+    """
     return _run_async(_load_tools())
 
 
+def _noop_tool(name: str, server_label: str) -> BaseTool:
+    """Build a placeholder tool that raises only if actually invoked.
+
+    Used when the registry is empty (local dev / Gateway unreachable). Keeps
+    module imports working so the agent boots; the LLM won't bind these into
+    its tool set because they aren't in TOOLS, but per-server selector modules
+    can still re-export them as references.
+    """
+
+    def _unavailable(*_args, **_kwargs):  # pragma: no cover - never run in healthy flow
+        raise RuntimeError(
+            f"{server_label} MCP tool {name!r} is not available — Gateway not configured."
+        )
+
+    return Tool(
+        name=name,
+        description=f"[unavailable] {server_label} {name} — Gateway not configured.",
+        func=_unavailable,
+    )
+
+
 def select_tool(name: str, server_label: str) -> BaseTool:
-    """Return the registered MCP tool with the given .name, raising a clear
-    startup error if the registry doesn't contain it. `server_label` only
-    appears in the error message — it isn't used for matching."""
-    for tool in get_mcp_tools():
+    """Return the registered MCP tool with the given .name.
+
+    If the registry is empty (local dev fallback), log a warning and return a
+    no-op tool whose `.func` raises on invocation. That keeps `from ... import
+    yf_quote_tool` working without crashing import; the tool simply won't be
+    listed in TOOLS so the LLM never tries to call it.
+    """
+    tools = get_mcp_tools()
+    for tool in tools:
         if tool.name == name:
             return tool
-    raise RuntimeError(
-        f"{server_label} MCP tool {name!r} not found in registry; check server config."
+    logger.warning(
+        "[registry] %s MCP tool %r not found (registry has %d tools) — returning no-op",
+        server_label,
+        name,
+        len(tools),
     )
+    return _noop_tool(name, server_label)

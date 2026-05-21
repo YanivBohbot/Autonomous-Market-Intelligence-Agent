@@ -26,7 +26,80 @@
     {
       "name": "market-gw",
       "description": "MCP gateway for yfinance and CRM tools",
-      "targets": [],
+      "targets": [
+        {
+          "name": "yfinance",
+          "targetType": "lambda",
+          "toolDefinitions": [
+            {
+              "name": "yfinance_get_ticker_info",
+              "description": "Get current ticker info (price, volume, market cap, etc.) for a stock symbol.",
+              "inputSchema": {
+                "type": "object",
+                "properties": { "ticker": { "type": "string" } },
+                "required": ["ticker"]
+              }
+            },
+            {
+              "name": "yfinance_get_price_history",
+              "description": "Get historical OHLCV price data for a stock symbol over a period.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "ticker": { "type": "string" },
+                  "period": { "type": "string", "default": "1mo" }
+                },
+                "required": ["ticker"]
+              }
+            },
+            {
+              "name": "yfinance_get_ticker_news",
+              "description": "Get recent news articles for a stock symbol.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "ticker": { "type": "string" },
+                  "limit": { "type": "integer", "default": 5 }
+                },
+                "required": ["ticker"]
+              }
+            }
+          ],
+          "compute": {
+            "host": "Lambda",
+            "pythonVersion": "PYTHON_3_12",
+            "implementation": {
+              "language": "Python",
+              "path": "app/yfinance_tool",
+              "handler": "handler.app"
+            }
+          }
+        },
+        {
+          "name": "crm",
+          "targetType": "lambda",
+          "toolDefinitions": [
+            {
+              "name": "read_query",
+              "description": "Run a SELECT-only SQL query against the customers database. Returns JSON list of rows.",
+              "inputSchema": {
+                "type": "object",
+                "properties": { "query": { "type": "string" } },
+                "required": ["query"]
+              }
+            }
+          ],
+          "compute": {
+            "host": "Lambda",
+            "pythonVersion": "PYTHON_3_12",
+            "implementation": {
+              "language": "Python",
+              "path": "app/crm_tool",
+              "handler": "handler.app"
+            }
+          }
+        }
+      ],
       "authorizerType": "AWS_IAM",
       "enableSemanticSearch": true,
       "exceptionLevel": "NONE"

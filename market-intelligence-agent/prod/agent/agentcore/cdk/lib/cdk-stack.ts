@@ -56,15 +56,30 @@ export class AgentCoreStack extends Stack {
       spec,
     });
 
-    // Create AgentCoreMcp if there are gateways configured
+    // Create AgentCoreMcp if there are gateways configured.
+    //
+    // The L3 construct auto-wires gateway URLs into every runtime as
+    // `AGENTCORE_GATEWAY_{NAME}_URL`. For our `market-gw` gateway that's
+    // `AGENTCORE_GATEWAY_MARKET_GW_URL`. We additionally publish a generic
+    // `GATEWAY_URL` env var pointing at the same endpoint so the Python
+    // registry can read a single, stable name (see registry.py).
+    let mcp: AgentCoreMcp | undefined;
     if (mcpSpec?.agentCoreGateways && mcpSpec.agentCoreGateways.length > 0) {
-      new AgentCoreMcp(this, 'Mcp', {
+      mcp = new AgentCoreMcp(this, 'Mcp', {
         projectName: spec.name,
         mcpSpec,
         agentCoreApplication: this.application,
         credentials,
         projectTags: spec.tags,
       });
+
+      // Find the primary gateway (`market-gw`) and inject GATEWAY_URL.
+      const primary = mcp.gateways.get('market-gw');
+      if (primary) {
+        for (const [, env] of this.application.environments) {
+          env.runtime.addEnvironmentVariable('GATEWAY_URL', primary.attrGatewayUrl);
+        }
+      }
     }
 
     // --- Phase 3: LangGraph checkpoint store (DynamoDB) ---

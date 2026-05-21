@@ -91,6 +91,14 @@ That command:
 | Memory store | MemorySaver locally / DynamoDB in cloud | Env-driven switch via `DDB_CHECKPOINT_TABLE` |
 | MCP tools | Disabled in Phase 2, restored via **AgentCore Gateway** in Phase 4 | Stdio MCPs don't survive in serverless containers (no `uvx`/`npx`) |
 
+## Gateway tools (Phase 4a)
+
+The `yfinance_*` and `read_query` (CRM) tools live in Lambda-backed MCP servers under `prod/agent/app/yfinance_tool/` and `prod/agent/app/crm_tool/`, registered as targets of the `market-gw` AgentCore Gateway in `agentcore/agentcore.json`.
+
+At runtime the agent reads `GATEWAY_URL` (injected by the CDK stack) and connects to the Gateway over `streamable_http` via `MultiServerMCPClient`. In **local dev** `GATEWAY_URL` is unset — the registry logs `[registry] GATEWAY_URL unset — Gateway tools skipped` and the agent runs with email + memory tools only. The Gateway-backed tools come alive only after Phase 6 (`agentcore deploy`).
+
+To exercise the Gateway path locally against a deployed dev stack, set `GATEWAY_URL` in `agentcore/.env.local`.
+
 ## Phase status
 
 See [`../../docs/AGENTCORE_DEPLOYMENT.md`](../../docs/AGENTCORE_DEPLOYMENT.md) for the full multi-phase plan and what's done so far.
