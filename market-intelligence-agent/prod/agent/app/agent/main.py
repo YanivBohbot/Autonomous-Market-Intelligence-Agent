@@ -3,10 +3,14 @@
 Wraps the existing LangGraph workflow (imported from app.agent.graph) and
 exposes it to AgentCore Runtime via the BedrockAgentCoreApp HTTP contract.
 
-Phase 2 (local dev validation): uses in-memory MemorySaver for checkpointing.
-This is swapped for a durable checkpointer in Phase 3.
+Checkpointer selection is env-driven:
+- DDB_CHECKPOINT_TABLE set → DynamoDBSaver (durable, used in AWS)
+- unset                  → MemorySaver (in-memory, local-dev fallback)
 """
+import os
+
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
@@ -19,9 +23,26 @@ LangchainInstrumentor().instrument()
 app = BedrockAgentCoreApp()
 log = app.logger
 
+
+def _build_checkpointer() -> BaseCheckpointSaver:
+    """Pick DynamoDB in AWS, MemorySaver locally — single env-var switch."""
+    table = os.getenv("DDB_CHECKPOINT_TABLE")
+    if table:
+        from langgraph_checkpoint_aws import DynamoDBSaver
+        log.info(f"[checkpointer] DynamoDBSaver table={table}")
+        return DynamoDBSaver(
+            table_name=table,
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
+            ttl_seconds=86400 * 7,
+            enable_checkpoint_compression=True,
+        )
+    log.info("[checkpointer] MemorySaver (local-dev fallback)")
+    return MemorySaver()
+
+
 # Compile once at module load — graph is stateless across invocations,
 # state lives in the checkpointer keyed by thread_id.
-_checkpointer = MemorySaver()
+_checkpointer = _build_checkpointer()
 _agent_app = build_agent_app(checkpointer=_checkpointer)
 
 
