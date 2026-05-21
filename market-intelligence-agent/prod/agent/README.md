@@ -99,6 +99,14 @@ At runtime the agent reads `GATEWAY_URL` (injected by the CDK stack) and connect
 
 To exercise the Gateway path locally against a deployed dev stack, set `GATEWAY_URL` in `agentcore/.env.local`.
 
+## Browser tool (Phase 4b)
+
+The `browser_navigate`, `browser_snapshot`, and `browser_take_screenshot` tools are powered by **Amazon Bedrock AgentCore Browser** — managed headless Chromium that runs on AWS. The container ships only the Playwright Python client (no local Chromium binary), connects to the remote browser over CDP via WebSocket, and uploads screenshots to a dedicated S3 bucket.
+
+- Sessions are **per-call**: each tool invocation opens a fresh `StartBrowserSession`, navigates, returns, closes.
+- Screenshots land in `$SCREENSHOT_BUCKET` under `screenshots/<uuid>.png`. The tool returns a **1-hour pre-signed URL** to the LLM. Lifecycle rule deletes objects after 30 days.
+- Gated on `BROWSER_ENABLED=true`. The CDK stack injects this in cloud; locally the var is unset so `tools/__init__.py` never even imports the browser module — the LLM doesn't see the tools.
+
 ## Phase status
 
 See [`../../docs/AGENTCORE_DEPLOYMENT.md`](../../docs/AGENTCORE_DEPLOYMENT.md) for the full multi-phase plan and what's done so far.

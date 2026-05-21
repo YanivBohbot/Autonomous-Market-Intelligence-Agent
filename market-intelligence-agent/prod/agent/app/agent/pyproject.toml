@@ -38,6 +38,8 @@ dependencies = [
     "python-dotenv >= 1.2.1",
     "emails >= 0.6",
     "aiosqlite >= 0.21.0",
+    # Phase 4b: AgentCore Browser CDP client (no local Chromium binary needed)
+    "playwright >= 1.50.0",
 ]
 
 [tool.hatch.build.targets.wheel]

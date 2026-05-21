@@ -12,6 +12,7 @@ Filesystem and browser tools intentionally stay disabled — Phase 4b covers
 AgentCore Browser; filesystem is dropped pending real user demand.
 """
 import logging
+import os
 
 from app.agent.tools.emails import send_email_tool
 from app.agent.tools.memory import (
@@ -42,6 +43,9 @@ READ_ONLY_TOOLS: set[str] = {
     "yfinance_get_ticker_info",
     "yfinance_get_price_history",
     "yfinance_get_ticker_news",
+    "browser_navigate",
+    "browser_snapshot",
+    "browser_take_screenshot",
 }
 
 # Attempt to load Gateway-backed tools. In local dev (no GATEWAY_URL) the
@@ -73,6 +77,29 @@ except Exception as exc:  # noqa: BLE001
         "[tools] Failed to import Gateway-backed tools (%r) — falling back to in-container set",
         exc,
     )
+
+# Phase 4b — AgentCore Browser tools. Gated by BROWSER_ENABLED env var injected
+# by the CDK stack. In local dev the var is unset, so we never import the
+# module and the LLM never sees these tools — same fallback pattern as
+# the Gateway block above.
+if os.environ.get("BROWSER_ENABLED", "").lower() in ("1", "true", "yes"):
+    try:
+        from app.agent.tools.browser import (
+            browser_navigate_tool,
+            browser_snapshot_tool,
+            browser_screenshot_tool,
+        )
+
+        TOOLS.extend(
+            [browser_navigate_tool, browser_snapshot_tool, browser_screenshot_tool]
+        )
+        logger.info("[tools] AgentCore Browser tools enabled")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[tools] Failed to import browser tools (%r) — skipping", exc
+        )
+else:
+    logger.info("[tools] BROWSER_ENABLED unset — browser tools skipped")
 
 # Note: We deliberately do NOT validate that every READ_ONLY_TOOLS entry is in
 # TOOLS. The allowlist is name-based and tracks the union of tools the agent

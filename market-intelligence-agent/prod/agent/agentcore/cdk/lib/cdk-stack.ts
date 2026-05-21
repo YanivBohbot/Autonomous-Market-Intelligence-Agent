@@ -6,10 +6,12 @@ import {
 } from '@aws/agentcore-cdk';
 import {
   CfnOutput,
+  Duration,
   RemovalPolicy,
   Stack,
   aws_dynamodb as dynamodb,
   aws_iam as iam,
+  aws_s3 as s3,
   type StackProps,
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -45,6 +47,9 @@ export class AgentCoreStack extends Stack {
 
   /** DynamoDB table that stores LangGraph checkpoints (one per thread_id). */
   public readonly checkpointTable: dynamodb.Table;
+
+  /** S3 bucket holding screenshots taken by the AgentCore Browser tool. */
+  public readonly screenshotBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
@@ -126,6 +131,60 @@ export class AgentCoreStack extends Stack {
         value: this.checkpointTable.tableName,
       });
     }
+
+    // --- Phase 4b: AgentCore Browser screenshots bucket + IAM ---
+    //
+    // Per-call sessions upload PNGs to this bucket; the tool returns a
+    // 1-hour pre-signed URL to the LLM. Lifecycle rule deletes objects
+    // after 30 days so the bucket doesn't grow unbounded.
+    this.screenshotBucket = new s3.Bucket(this, 'ScreenshotBucket', {
+      bucketName: `${spec.name}-screenshots-${this.account}-${this.region}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+      lifecycleRules: [{ expiration: Duration.days(30) }],
+    });
+
+    for (const [, env] of this.application.environments) {
+      // Tell the runtime which bucket to upload to + flip the import gate.
+      env.runtime.addEnvironmentVariable(
+        'SCREENSHOT_BUCKET',
+        this.screenshotBucket.bucketName,
+      );
+      env.runtime.addEnvironmentVariable('BROWSER_ENABLED', 'true');
+
+      // S3 write on the screenshot bucket only.
+      env.runtime.addToPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['s3:PutObject', 's3:GetObject'],
+          resources: [this.screenshotBucket.arnForObjects('*')],
+        }),
+      );
+
+      // AgentCore Browser session management. Scoped to browser/* in this
+      // account/region (we use the built-in browser, not a custom one).
+      env.runtime.addToPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'bedrock-agentcore:StartBrowserSession',
+            'bedrock-agentcore:StopBrowserSession',
+            'bedrock-agentcore:GetBrowserSession',
+            'bedrock-agentcore:ConnectBrowserAutomationStream',
+          ],
+          resources: [
+            `arn:aws:bedrock-agentcore:${this.region}:${this.account}:browser/*`,
+          ],
+        }),
+      );
+    }
+
+    new CfnOutput(this, 'ScreenshotBucketName', {
+      description: 'S3 bucket for AgentCore Browser screenshots',
+      value: this.screenshotBucket.bucketName,
+    });
 
     // Stack-level outputs
     new CfnOutput(this, 'StackNameOutput', {
