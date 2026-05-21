@@ -30,7 +30,7 @@ Deploy the dev project (LangGraph + MCP + HITL + RAG + Streamlit) to **Amazon Be
 | 3 | Durable checkpointer | ✅ done | `langgraph-checkpoint-aws.DynamoDBSaver` + CDK provisions table + grants IAM |
 | 4a | yfinance + CRM via Gateway | ✅ done | Lambda-backed MCP servers behind `market-gw`; local-dev fallback when `GATEWAY_URL` unset |
 | 4b | AgentCore Browser | ✅ done | managed Chromium via CDP + S3 screenshots; per-call sessions |
-| 4c | AgentCore Memory | ⏳ | replace in-container memory tools with managed Memory |
+| 4c | AgentCore Memory | ✅ done | `AgentCoreMemoryStore` replaces `InMemoryStore`; DDB checkpointer kept |
 | 5 | IAM, Secrets Manager, observability | ⏳ | Anthropic/OpenAI/Pinecone keys → Secrets Manager; finalize execution role; OTel → CloudWatch |
 | 6 | First `agentcore deploy` to AWS | ⏳ | smoke test in cloud; verify CFN outputs |
 | 7 | Promote / refine CDK | ⏳ | shared infra stack, CI/CD wiring |
@@ -84,6 +84,13 @@ Deploy the dev project (LangGraph + MCP + HITL + RAG + Streamlit) to **Amazon Be
 - CDK grants the runtime exec role: `s3:PutObject`/`s3:GetObject` on the bucket only, and `bedrock-agentcore:StartBrowserSession`/`StopBrowserSession`/`GetBrowserSession`/`ConnectBrowserAutomationStream` scoped to `browser/*` in this region/account.
 - `pyproject.toml` adds `playwright>=1.50.0`; `bedrock-agentcore` was already present from Phase 1.
 - `npx tsc --noEmit` clean; `agentcore validate` clean. Real-browser smoke tests deferred to Phase 6.
+
+### Phase 4c — AgentCore Memory store (commit `363187e`)
+- `agentcore.json` declares one Memory resource (name `user_facts`, 90-day event expiry, SEMANTIC strategy scoped to namespace `user_facts`). The L3 `AgentCoreApplication` construct auto-provisions `CfnMemory`, grants the runtime `bedrock-agentcore:CreateEvent`/`ListEvents`/`RetrieveMemories`, and injects `MEMORY_USER_FACTS_ID` as an env var. Zero CDK Python changes.
+- `main.py` adds `_build_store()` mirroring `_build_checkpointer()`. `MEMORY_USER_FACTS_ID` set → `AgentCoreMemoryStore(memory_id, region_name=...)`. Unset → `InMemoryStore` (local-dev). Graph compiled with `build_agent_app(checkpointer=..., store=...)`.
+- The three memory tools (`save_memory`, `recall_memory`, `list_memories`) are untouched — they use `InjectedStore()` and pick up whatever store the graph was compiled with.
+- Phase 3 `DynamoDBSaver` checkpointer kept for per-thread state. AgentCore Memory replaces only the long-term cross-thread store. Splitting concerns by lifetime: DDB short-term, Memory long-term.
+- `npx tsc --noEmit` clean; `agentcore validate` clean.
 
 ## What's next — Phase 4 design questions
 
