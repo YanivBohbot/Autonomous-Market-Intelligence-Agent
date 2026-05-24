@@ -8,6 +8,7 @@ import os
 import aws_cdk as cdk
 
 from stacks.identity_stack import MiaIdentityStack
+from stacks.mcp_lambdas_stack import MiaMcpLambdasStack
 from stacks.secrets_stack import MiaSecretsStack
 from stacks.storage_stack import MiaStorageStack
 
@@ -44,6 +45,15 @@ secrets = MiaSecretsStack(
     app, f"{PROJECT}-secrets-{ENV_NAME}",
     project=PROJECT, env_name=ENV_NAME, env=env,
 )
+
+mcp_lambdas = MiaMcpLambdasStack(
+    app, f"{PROJECT}-mcp-lambdas-{ENV_NAME}",
+    project=PROJECT, env_name=ENV_NAME,
+    workspace_bucket=storage.workspace_bucket,
+    data_bucket=storage.data_bucket,
+    env=env,
+)
+mcp_lambdas.add_dependency(storage)
 
 for k, v in common_tags.items():
     cdk.Tags.of(app).add(k, v)
