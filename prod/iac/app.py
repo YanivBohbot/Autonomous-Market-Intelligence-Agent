@@ -8,6 +8,7 @@ import os
 import aws_cdk as cdk
 
 from stacks.identity_stack import MiaIdentityStack
+from stacks.secrets_stack import MiaSecretsStack
 from stacks.storage_stack import MiaStorageStack
 
 PROJECT = "mia"
@@ -38,6 +39,11 @@ storage = MiaStorageStack(
     env=env,
 )
 storage.add_dependency(identity)
+
+secrets = MiaSecretsStack(
+    app, f"{PROJECT}-secrets-{ENV_NAME}",
+    project=PROJECT, env_name=ENV_NAME, env=env,
+)
 
 for k, v in common_tags.items():
     cdk.Tags.of(app).add(k, v)
