@@ -1,0 +1,33 @@
+# ARM64 container image for AgentCore Runtime.
+# Builds from the market-intelligence-agent/ directory as context.
+# Exposes /ping + /invocations on :8080 per the AgentCore Runtime contract.
+
+FROM --platform=linux/arm64 python:3.12-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    UV_LINK_MODE=copy \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# Install uv (fast Python installer) — same tool used in dev.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv \
+    && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+# Install deps first for layer caching.
+COPY pyproject.toml uv.lock* ./
+RUN uv export --no-dev --format requirements-txt --output-file requirements.txt 2>/dev/null \
+    || cp pyproject.toml requirements.txt  # fallback path; refined when uv.lock is present
+RUN pip install --no-cache-dir -r requirements.txt || true
+
+# Copy the application code.
+COPY app/ ./app/
+COPY entrypoint.py ./entrypoint.py
+
+# AgentCore Runtime contract: /ping + /invocations on :8080.
+EXPOSE 8080
+
+CMD ["python", "entrypoint.py"]

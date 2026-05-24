@@ -22,7 +22,11 @@ from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_secretsmanager as sm
 from constructs import Construct
 
-DOCKER_DIR = Path(__file__).resolve().parents[2] / "docker" / "agent"
+# Build context is the agent code directory (one level above prod/).
+# The Dockerfile and entrypoint live next to the code they package; see
+# prod/docker/agent/README.md for rationale.
+AGENT_CODE_DIR = Path(__file__).resolve().parents[3] / "market-intelligence-agent"
+AGENT_DOCKERFILE = "Dockerfile.agentcore"
 
 
 class MiaRuntimeStack(Stack):
@@ -54,8 +58,15 @@ class MiaRuntimeStack(Stack):
         # --- Agent container image ----------------------------------------
         self.image = ecr_assets.DockerImageAsset(
             self, "AgentImage",
-            directory=str(DOCKER_DIR),
+            directory=str(AGENT_CODE_DIR),
+            file=AGENT_DOCKERFILE,
             platform=ecr_assets.Platform.LINUX_ARM64,
+            exclude=[
+                ".venv/**", "data/**", "tests/**", "docs/**",
+                "**/__pycache__/**", "**/*.pyc",
+                ".pytest_cache/**", ".mypy_cache/**",
+                "*.md", ".env*",
+            ],
         )
 
         # --- Runtime execution role ---------------------------------------
