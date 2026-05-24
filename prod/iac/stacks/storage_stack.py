@@ -7,15 +7,13 @@ Two buckets per prod/SPEC.md §3.1:
 - `mia-data`       — hosts the static SQLite CRM DB (`customers.db`) and the
   source PDFs used by RAG ingestion.
 
-Both buckets are encrypted with the shared CMK from MiaIdentityStack, block all
-public access, and deny non-TLS requests via a bucket policy (security §4.2).
+Both buckets are encrypted at rest with AWS-managed keys (default SSE-S3),
+block all public access, and deny non-TLS requests via a bucket policy.
 """
 
 from __future__ import annotations
 
 from aws_cdk import CfnOutput, RemovalPolicy, Stack
-from aws_cdk import aws_iam as iam
-from aws_cdk import aws_kms as kms
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
@@ -28,7 +26,6 @@ class MiaStorageStack(Stack):
         *,
         project: str,
         env_name: str,
-        kms_key: kms.IKey,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -39,12 +36,12 @@ class MiaStorageStack(Stack):
         self.workspace_bucket = self._make_bucket(
             "WorkspaceBucket",
             f"{project}-workspace-{self.account}",
-            kms_key, removal, auto_delete, versioned=True,
+            removal, auto_delete, versioned=True,
         )
         self.data_bucket = self._make_bucket(
             "DataBucket",
             f"{project}-data-{self.account}",
-            kms_key, removal, auto_delete, versioned=True,
+            removal, auto_delete, versioned=True,
         )
 
         CfnOutput(self, "WorkspaceBucketName",
@@ -58,35 +55,18 @@ class MiaStorageStack(Stack):
         self,
         construct_id: str,
         bucket_name: str,
-        kms_key: kms.IKey,
         removal: RemovalPolicy,
         auto_delete: bool,
         *,
         versioned: bool,
     ) -> s3.Bucket:
-        bucket = s3.Bucket(
+        return s3.Bucket(
             self, construct_id,
             bucket_name=bucket_name,
-            encryption=s3.BucketEncryption.KMS,
-            encryption_key=kms_key,
+            encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             enforce_ssl=True,  # adds the aws:SecureTransport=false deny stmt
             versioned=versioned,
             removal_policy=removal,
             auto_delete_objects=auto_delete,
         )
-        # Belt-and-braces: explicitly deny PutObject without SSE-KMS using our key.
-        bucket.add_to_resource_policy(
-            iam.PolicyStatement(
-                effect=iam.Effect.DENY,
-                principals=[iam.AnyPrincipal()],
-                actions=["s3:PutObject"],
-                resources=[bucket.arn_for_objects("*")],
-                conditions={
-                    "StringNotEquals": {
-                        "s3:x-amz-server-side-encryption": "aws:kms"
-                    }
-                },
-            )
-        )
-        return bucket

@@ -12,7 +12,7 @@ Deploy the existing LangGraph + MCP market-intelligence agent to AWS using **Ama
 
 - **Scale:** ≤10 internal users, demo.
 - **Cost:** ~$3 idle, ~$10–25 light demo, ~$60–175 peak — under the $200/mo cap. AgentCore $200 Free Tier credits cover ~2 months light.
-- **Security:** 5 architectural findings (none critical) addressed in Section 4. Three per-function Lambda roles, one CMK `alias/mia`, baseline SCPs proposed.
+- **Security:** 5 architectural findings (none critical) addressed in Section 4. Three per-function Lambda roles, AWS-managed encryption at rest (no customer-managed KMS in v1 — re-evaluate if compliance needs change), baseline SCPs proposed.
 - **IaC:** AWS CDK in Python. One stack per concern (network-free, so it's mainly compute + identity + storage + observability).
 - **CI/CD:** GitHub Actions with OIDC trust to AWS (no static keys). On push to `master`: test → build ARM64 image → push ECR → `cdk deploy`.
 - **Path to prod:** Phase 6 scaffolds `prod/`, Phase 7 deploys to a sandbox account and smoke-tests every tool end-to-end before cutover.
@@ -42,7 +42,7 @@ Deploy the existing LangGraph + MCP market-intelligence agent to AWS production 
 |---|---|---|
 | **AgentCore Runtime** | Hosts the agent container (FastAPI + LangGraph). | ARM64 image in ECR. Exposes `/ping` and `/invocations` on :8080. Scale-to-zero, pay per active CPU/mem. |
 | **AgentCore Gateway** | Unified MCP endpoint for all tools. | Three Lambda targets in v1: yfinance, filesystem, sqlite-crm. |
-| **AgentCore Memory** | Replaces the local SQLite checkpointer for graph state. | Removes the need for EFS or VPC. |
+| **AgentCore Memory** | Replaces the local SQLite checkpointer for graph state. | Removes the need for EFS or VPC. Encrypted at rest with AWS-managed key. |
 | **AWS Lambda × 3** | MCP servers behind Gateway. | `mia-mcp-yfinance`, `mia-mcp-filesystem`, `mia-mcp-sqlite-crm`. Python 3.12, ARM64. |
 | **Amazon ECR** | Container registry for the agent image. | Private repo `mia-agent`. |
 | **AWS Secrets Manager** | Stores `OPENAI_API_KEY`, `PINECONE_API_KEY`, `TAVILY_API_KEY`, `EMAIL_PASSWORD`. | Read by Runtime + Lambdas via IAM. |
@@ -107,14 +107,20 @@ No human IAM users — admin access via IAM Identity Center / SSO only.
 
 | Resource | At rest | In transit |
 |---|---|---|
-| S3 `mia-workspace`, `mia-data` | SSE-S3 minimum; **SSE-KMS with a customer-managed KMS key recommended** so we can deny non-KMS uploads via SCP. | TLS via `aws:SecureTransport` bucket policy condition. |
-| Secrets Manager | KMS-encrypted by default (AWS-managed key fine for v1). | TLS only. |
-| CloudWatch Logs | KMS-encrypted log group (use the same CMK as S3). | TLS only. |
+| S3 `mia-workspace`, `mia-data` | SSE-S3 (AWS-managed key). | TLS via `aws:SecureTransport` bucket policy condition. |
+| Secrets Manager | KMS-encrypted by default (AWS-managed key). | TLS only. |
+| CloudWatch Logs | Encrypted at rest by default (AWS-managed key). | TLS only. |
 | AgentCore Memory | Managed — encrypted at rest by AWS. | TLS only. |
-| ECR | Default encryption fine for v1. | TLS only. |
+| ECR | Default encryption. | TLS only. |
 | AgentCore Runtime ↔ Gateway ↔ Lambda | All AWS-internal HTTPS; nothing to configure. | n/a |
 
-Add an S3 bucket policy on both buckets denying non-TLS requests:
+Decision: **No customer-managed KMS key in v1.** All encryption uses AWS-managed
+keys (free, fully encrypted, no operator burden). Trade-off: cannot enforce
+"deny anything not encrypted with our key" via SCP, and cannot revoke access by
+disabling a key in an emergency. Acceptable at demo scale; revisit if real
+compliance requirements appear.
+
+S3 bucket policy still denies non-TLS requests:
 ```json
 {"Effect":"Deny","Principal":"*","Action":"s3:*",
  "Resource":["arn:aws:s3:::mia-*","arn:aws:s3:::mia-*/*"],
@@ -158,7 +164,7 @@ Add an S3 bucket policy on both buckets denying non-TLS requests:
 | # | Severity | Finding | Action |
 |---|---|---|---|
 | F1 | Med | Spec implied "no auth" — needs clarification: Runtime endpoint is always SigV4-protected. | Edit Section 6 to say "no end-user auth layer; AWS-layer SigV4 only." |
-| F2 | Med | No KMS CMK called out — using AWS-managed keys means we can't enforce non-KMS-deny via SCP. | Add a single CMK `alias/mia` used by S3 + CloudWatch Logs. |
+| F2 | ~~Med~~ Closed | ~~No KMS CMK called out~~ — re-decided 2026-05-24: AWS-managed encryption is sufficient at demo scale. No customer-managed key. | No action — accept the trade-off. Re-open if compliance need appears. |
 | F3 | Low | Logger redaction not yet implemented for the four secret values. | Add filter + unit test in code-changes section 3.3. |
 | F4 | Low | No rotation reminder for external API keys. | EventBridge 90-day rule → SNS. |
 | F5 | Info | CloudTrail assumed present — confirm before deploy. | Account check in Phase 6 runbook. |

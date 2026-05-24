@@ -68,13 +68,9 @@ def _list_directory(args: dict[str, Any]) -> list[dict[str, Any]]:
 def _write_file(args: dict[str, Any]) -> dict[str, Any]:
     key = _safe_key(args["path"])
     body = args["content"].encode("utf-8")
-    _s3.put_object(
-        Bucket=_BUCKET,
-        Key=key,
-        Body=body,
-        # Required by the bucket policy in MiaStorageStack.
-        ServerSideEncryption="aws:kms",
-    )
+    # Bucket is configured with SSE-S3 default encryption; no explicit
+    # ServerSideEncryption header needed — S3 applies it automatically.
+    _s3.put_object(Bucket=_BUCKET, Key=key, Body=body)
     return {"path": key, "bytes": len(body)}
 
 

@@ -17,7 +17,6 @@ from aws_cdk import CfnOutput, Duration, Stack
 from aws_cdk import aws_bedrockagentcore as agentcore
 from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_iam as iam
-from aws_cdk import aws_kms as kms
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_secretsmanager as sm
 from constructs import Construct
@@ -37,7 +36,6 @@ class MiaRuntimeStack(Stack):
         *,
         project: str,
         env_name: str,
-        kms_key: kms.IKey,
         workspace_bucket: s3.IBucket,
         data_bucket: s3.IBucket,
         secrets: dict[str, sm.ISecret],
@@ -52,7 +50,6 @@ class MiaRuntimeStack(Stack):
             memory_name=f"{project}-memory-{env_name}",
             description=f"{project} {env_name} session memory",
             expiration_duration=Duration.days(30),
-            kms_key=kms_key,
         )
 
         # --- Agent container image ----------------------------------------
@@ -92,8 +89,6 @@ class MiaRuntimeStack(Stack):
         # Memory r/w
         self.memory.grant_read(role)
         self.memory.grant(role, "bedrock-agentcore:CreateEvent")
-        # KMS — encrypt/decrypt for SSE-KMS objects.
-        kms_key.grant_encrypt_decrypt(role)
 
         # --- AgentCore Runtime --------------------------------------------
         artifact = agentcore.AgentRuntimeArtifact.from_container_image(self.image)

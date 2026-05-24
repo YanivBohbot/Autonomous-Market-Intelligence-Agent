@@ -15,7 +15,6 @@ from pathlib import Path
 
 from aws_cdk import CfnOutput, Stack
 from aws_cdk import aws_bedrockagentcore as agentcore
-from aws_cdk import aws_kms as kms
 from aws_cdk import aws_lambda as _lambda
 from constructs import Construct
 
@@ -30,7 +29,6 @@ class MiaGatewayStack(Stack):
         *,
         project: str,
         env_name: str,
-        kms_key: kms.IKey,
         yfinance_fn: _lambda.IFunction,
         filesystem_fn: _lambda.IFunction,
         sqlite_crm_fn: _lambda.IFunction,
@@ -42,7 +40,6 @@ class MiaGatewayStack(Stack):
             self, "MiaGateway",
             gateway_name=f"{project}-gateway-{env_name}",
             description="MIA MCP gateway — yfinance, filesystem, sqlite-crm",
-            kms_key=kms_key,
         )
 
         agentcore.GatewayTarget.for_lambda(
