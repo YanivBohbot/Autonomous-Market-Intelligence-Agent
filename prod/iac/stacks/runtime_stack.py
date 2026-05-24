@@ -101,7 +101,11 @@ class MiaRuntimeStack(Stack):
             agent_runtime_artifact=artifact,
             execution_role=role,
             description=f"{project} {env_name} agent runtime",
-            tracing_enabled=True,
+            # tracing_enabled requires the account-level X-Ray trace segment
+            # destination to be CloudWatch Logs (UpdateTraceSegmentDestination)
+            # AND a CW Logs resource policy granting xray.amazonaws.com
+            # PutLogEvents on aws/spans. Re-enable once those are configured.
+            tracing_enabled=False,
             environment_variables={
                 # Backend switches set in app/ during Phase 6a:
                 "CHECKPOINTER_BACKEND": "memory",
