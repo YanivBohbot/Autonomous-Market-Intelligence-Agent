@@ -1,1 +1,0 @@
-# sqlite3 and boto3 are provided by the Lambda Python runtime.
