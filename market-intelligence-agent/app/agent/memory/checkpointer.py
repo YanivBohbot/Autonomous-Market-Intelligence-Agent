@@ -23,7 +23,6 @@ from contextlib import asynccontextmanager
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.core.config import settings
 
@@ -37,6 +36,10 @@ async def create_checkpointer(
     backend = settings.CHECKPOINTER_BACKEND.lower()
 
     if backend == "sqlite":
+        # Lazy import: langgraph-checkpoint-sqlite is not in the slim
+        # AgentCore Runtime image (memory backend only). Local dev / tests
+        # that select the sqlite backend keep working because uv.lock has it.
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
         path = db_path or settings.CHECKPOINT_DB_PATH
         parent = os.path.dirname(path)
         if parent:
