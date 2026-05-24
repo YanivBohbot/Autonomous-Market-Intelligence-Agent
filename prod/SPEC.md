@@ -63,6 +63,7 @@ Caller ──SigV4──▶ AgentCore Runtime (/invocations)
 3. **`app/agent/tools/mcp_clients/registry.py`** — when `MCP_TRANSPORT=gateway`, build clients over `streamable-http` to `$AGENTCORE_GATEWAY_URL` instead of stdio.
 4. **New: `prod/lambdas/yfinance/`, `prod/lambdas/filesystem/`, `prod/lambdas/sqlite-crm/`** — Lambda handlers that wrap each MCP server.
 5. **`app/agent/tools/mcp_clients/filesystem_client.py`** — file ops must target S3 when `WORKSPACE_BACKEND=s3`.
+6. **`app/core/logging.py`** — add a redaction filter that masks the four secret values (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `TAVILY_API_KEY`, `EMAIL_PASSWORD`) from any log record. Unit test asserting redaction (see security finding F3).
 
 ### 3.4 Deferred to v1.1+
 
@@ -73,7 +74,103 @@ Caller ──SigV4──▶ AgentCore Runtime (/invocations)
 
 ## 4. Security review (Phase 3)
 
-_To be completed._
+Architectural review against the proposed design (no IaC yet — re-run with `iac-reviewer` once Terraform/CDK exists).
+
+### 4.1 IAM (least privilege)
+
+Three execution roles, scoped tightly:
+
+| Role | Allowed actions | Scoped to |
+|---|---|---|
+| `mia-runtime-exec` (AgentCore Runtime) | `secretsmanager:GetSecretValue` (4 secrets), `bedrock-agentcore:InvokeGateway`, `bedrock-agentcore:CreateEvent`/`RetrieveMemory` (Memory), `s3:GetObject` on `mia-data/*`, `s3:GetObject`/`PutObject` on `mia-workspace/*`, `logs:CreateLogStream`/`PutLogEvents`, ECR pull. | Specific secret ARNs, specific bucket ARNs, the one Gateway ARN, the one Memory store ARN. No wildcards. |
+| `mia-gateway-exec` (AgentCore Gateway) | `lambda:InvokeFunction` on the 3 MCP Lambda ARNs only. | Per-target ARN. |
+| `mia-lambda-mcp-exec` (one shared role for the 3 MCP Lambdas, OR three per-function roles — *recommend three per-function*) | yfinance: outbound HTTPS (no AWS perms needed beyond logs). filesystem: `s3:GetObject`/`PutObject`/`ListBucket` on `mia-workspace/*` only. sqlite-crm: `s3:GetObject` on `mia-data/customers.db` only. | Per-bucket and per-prefix. |
+
+**Decision:** three per-function Lambda roles, not one shared role — blast radius matters more than role-count savings.
+
+Trust policies: each role's `AssumeRole` principal restricted to the exact AWS service principal (`bedrock-agentcore.amazonaws.com`, `lambda.amazonaws.com`).
+
+No human IAM users — admin access via IAM Identity Center / SSO only.
+
+### 4.2 Encryption
+
+| Resource | At rest | In transit |
+|---|---|---|
+| S3 `mia-workspace`, `mia-data` | SSE-S3 minimum; **SSE-KMS with a customer-managed KMS key recommended** so we can deny non-KMS uploads via SCP. | TLS via `aws:SecureTransport` bucket policy condition. |
+| Secrets Manager | KMS-encrypted by default (AWS-managed key fine for v1). | TLS only. |
+| CloudWatch Logs | KMS-encrypted log group (use the same CMK as S3). | TLS only. |
+| AgentCore Memory | Managed — encrypted at rest by AWS. | TLS only. |
+| ECR | Default encryption fine for v1. | TLS only. |
+| AgentCore Runtime ↔ Gateway ↔ Lambda | All AWS-internal HTTPS; nothing to configure. | n/a |
+
+Add an S3 bucket policy on both buckets denying non-TLS requests:
+```json
+{"Effect":"Deny","Principal":"*","Action":"s3:*",
+ "Resource":["arn:aws:s3:::mia-*","arn:aws:s3:::mia-*/*"],
+ "Condition":{"Bool":{"aws:SecureTransport":"false"}}}
+```
+
+### 4.3 Secrets management
+
+- All four secrets (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `TAVILY_API_KEY`, `EMAIL_PASSWORD`) live in Secrets Manager, fetched at container start. **Never** bake into the image or env-var defaults.
+- `app/core/logging.py` must redact these four values from log output (logger filter). Add a unit test that asserts redaction.
+- Rotation: enable rotation reminders (no auto-rotation possible — external SaaS keys). 90-day reminder via EventBridge → SNS to your email.
+- `.env` stays gitignored locally; spec explicitly forbids checking secrets into the repo.
+
+### 4.4 Public exposure
+
+| Surface | Exposure | Hardening |
+|---|---|---|
+| AgentCore Runtime `/invocations` endpoint | Public AWS endpoint, **IAM/SigV4 required**. | No "no-auth" option exists on Runtime — this is already authenticated. Caller signs with IAM creds. The "no auth" v1 decision means we issue a long-lived IAM access key for a `mia-demo-caller` user (or use STS for short-lived). |
+| AgentCore Gateway URL | Public, **IAM/SigV4 required** (or OAuth — using IAM in v1). | Same — the Runtime IAM role signs requests; no anonymous access. |
+| S3 buckets | Private. Block Public Access ON. | Hard requirement — see SCPs. |
+| Lambda functions | Not directly invokable from internet (only via Gateway). | Function URLs disabled. |
+| ECR repo | Private. | No public push. |
+| External egress | OpenAI/Pinecone/Tavily/Gmail SMTP. | Runtime has internet egress by default (managed). No SSRF surface in our code paths. |
+
+**Finding:** "No auth" in discovery actually means "no end-user auth"; AWS layer is SigV4-authenticated regardless. Update Section 6 to make this distinction clear.
+
+### 4.5 Network isolation
+
+- **No VPC for v1** — all components managed and use public AWS endpoints. This is intentional (avoids NAT GW ≈ $33/mo).
+- No security groups, no NACLs (no VPC resources).
+- If we later add OpenSearch Serverless or RDS, we'll need a VPC + VPC endpoints to Secrets Manager and S3 — out of scope for v1.
+
+### 4.6 Logging & audit
+
+- CloudTrail (org or account level): **must** be enabled. Captures all `InvokeAgentRuntime`, `GetSecretValue`, `s3:*` API calls.
+- AgentCore Observability: on by default — captures graph traces.
+- CloudWatch alarm: `GetSecretValue` denied count > 0 in 5 min → SNS email.
+
+### 4.7 Findings summary
+
+| # | Severity | Finding | Action |
+|---|---|---|---|
+| F1 | Med | Spec implied "no auth" — needs clarification: Runtime endpoint is always SigV4-protected. | Edit Section 6 to say "no end-user auth layer; AWS-layer SigV4 only." |
+| F2 | Med | No KMS CMK called out — using AWS-managed keys means we can't enforce non-KMS-deny via SCP. | Add a single CMK `alias/mia` used by S3 + CloudWatch Logs. |
+| F3 | Low | Logger redaction not yet implemented for the four secret values. | Add filter + unit test in code-changes section 3.3. |
+| F4 | Low | No rotation reminder for external API keys. | EventBridge 90-day rule → SNS. |
+| F5 | Info | CloudTrail assumed present — confirm before deploy. | Account check in Phase 6 runbook. |
+
+No critical findings. No blockers for proceeding to cost estimate.
+
+### 4.8 Baseline SCPs (recommended for the deploy account/OU)
+
+If the AWS account is part of an Organization, attach these as a `mia-baseline` SCP. If standalone, implement equivalent checks as IAM permission boundaries on the admin role.
+
+```
+1. DenyDisableCloudTrail                — protect audit trail
+2. DenyS3PublicAccessGrants             — no public buckets or ACLs
+3. DenyUnencryptedS3Uploads             — require SSE-KMS via alias/mia
+4. DenyNonTLSS3                         — require aws:SecureTransport
+5. DenyRDSPublicEndpoint                — n/a in v1 but cheap insurance
+6. DenyEC2WithoutIMDSv2                 — n/a in v1, future-proof
+7. DenyRootAccessKeyCreation            — no root keys, ever
+8. DenyLambdaFunctionURLPublicAuth      — no anonymous Lambda URLs
+9. RequireIAMSSOForConsoleLogin         — no static IAM-user console access
+```
+
+The first four are hard requirements for this design; the rest are baseline hygiene that costs nothing to add now.
 
 ## 5. Cost estimate (Phase 4)
 
@@ -84,7 +181,7 @@ _To be completed. Preliminary: $15–$40/mo at demo traffic._
 - **Why OpenAI not Bedrock:** zero code change; demo budget doesn't need single-cloud benefits.
 - **Why no Gateway for Playwright in v1:** Chromium is too heavy for cheap Lambda; AgentCore Browser is the managed answer and will replace it cleanly in v1.1.
 - **Why AgentCore Memory over SQLite-on-EFS:** EFS forces a VPC, which raises floor cost (NAT GW ~$33/mo) and complexity. Managed memory is cheaper and simpler at this scale.
-- **Why no auth:** ≤10 internal users + signed URL is sufficient for demo. Cognito or AgentCore Identity goes in alongside the UI in v1.1.
+- **Why no auth:** No *end-user* auth layer in v1. The AWS-side endpoint is always SigV4-protected — the demo caller uses an IAM access key (or STS) to sign requests. Cognito or AgentCore Identity for human login goes in alongside the UI in v1.1.
 
 ## 7. Risks
 
