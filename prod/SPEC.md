@@ -174,7 +174,67 @@ The first four are hard requirements for this design; the rest are baseline hygi
 
 ## 5. Cost estimate (Phase 4)
 
-_To be completed. Preliminary: $15–$40/mo at demo traffic._
+### 5.1 Traffic assumptions
+
+| Scenario | Invocations / mo | Avg active CPU / invocation | Tool calls / mo |
+|---|---|---|---|
+| Idle | 0 | — | 0 |
+| Light demo (~5 users, ~10 chats/user/day) | ~1,500 | ~10 s | ~3,000 |
+| Peak demo (~10 users, ~50 chats/user/day) | ~15,000 | ~10 s | ~30,000 |
+
+Container sizing for Runtime: **1 vCPU + 2 GB RAM, ARM64**. Lambda MCP tools: 256 MB, ~500 ms each.
+
+### 5.2 AWS-side line items
+
+| Service | Light demo | Peak demo | Notes |
+|---|---|---|---|
+| AgentCore Runtime (vCPU + memory, active-only) | ~$0.50 | ~$5 | 1,500 × 10 s ≈ 4.2 vCPU-h × $0.0895 + 2 GB × $0.00945. Scale-to-zero. |
+| AgentCore Gateway (tool invocations) | ~$0.02 | ~$0.15 | $0.005 per 1K invocations. Per-target listing fee negligible at 3 targets. |
+| AgentCore Memory | ~$1–3 | ~$10–15 | $0.25 per 1K events stored + $0.10 per 1K retrieved. |
+| AgentCore Observability | ~$0.50 | ~$5 | Trace events; scales with invocations. |
+| Lambda (3 MCP functions) | ~$0 (free tier) | ~$0.50 | Tiny billed duration; free tier covers light demo entirely. |
+| Secrets Manager | $1.60 | $1.60 | 4 secrets × $0.40. API calls trivial. |
+| S3 (storage + requests, both buckets) | ~$0.10 | ~$0.50 | <1 GB each in v1. |
+| CloudWatch Logs (ingest + 30-day retention) | ~$1 | ~$5 | $0.50/GB ingest + $0.03/GB-month. |
+| KMS (1 CMK `alias/mia`) | $1 | $1 | Per-key fee. API calls trivial. |
+| ECR (image storage) | $0.10 | $0.10 | ~1 GB private repo. |
+| CloudTrail (mgmt events, single trail) | $0 | $0 | First trail free. |
+| Data egress (Runtime → OpenAI/Pinecone/Tavily) | ~$0.10 | ~$1 | $0.09/GB after 100 GB free. |
+| **AWS subtotal** | **~$5–8 / mo** | **~$30–45 / mo** | |
+
+### 5.3 External SaaS (not AWS, but in your bill)
+
+| Provider | Light demo | Peak demo | Notes |
+|---|---|---|---|
+| OpenAI (gpt-4o-mini + embeddings) | ~$5–15 | ~$30–60 | Single biggest variable cost. Caching trim recommended. |
+| Pinecone (Starter or pod) | $0 (Starter) | $0–70 | Starter tier covers light demo. |
+| Tavily | $0 (free tier) | $0 | 1,000 searches/mo free. |
+| Gmail SMTP | $0 | $0 | Send-only; volume tiny. |
+| **SaaS subtotal** | **~$5–15 / mo** | **~$30–130 / mo** | |
+
+### 5.4 Bottom line
+
+| Scenario | AWS | SaaS | **Total** | Budget |
+|---|---|---|---|---|
+| Idle | ~$3 | $0 | **~$3 / mo** | ✅ floor cost |
+| Light demo | ~$5–8 | ~$5–15 | **~$10–25 / mo** | ✅ well under $200 cap |
+| Peak demo | ~$30–45 | ~$30–130 | **~$60–175 / mo** | ✅ inside $200 cap |
+
+**Free Tier credit:** new AgentCore customers get $200 — covers ~2 months of light demo entirely AWS-side.
+
+### 5.5 Optimization opportunities
+
+1. **Prompt caching on OpenAI** — system prompt + RAG context don't change between turns; enable caching to cut input-token cost ~50%. *Highest ROI lever.*
+2. **Trim CloudWatch retention from 30 → 14 days** in v1.x — halves log storage cost. Easy.
+3. **Bedrock-backed embeddings (Titan)** — if you ever migrate Pinecone to OpenSearch Serverless, Titan embeddings are cheaper than OpenAI's at scale. Out of v1 scope.
+4. **Right-size Runtime container to 0.5 vCPU + 1 GB** if profiling shows headroom — halves Runtime cost.
+5. **Scheduled scale-down** isn't needed — Runtime scales to zero by default.
+
+### 5.6 Cost guardrails to add in Phase 6
+
+- AWS Budgets alert at $50/mo and $150/mo (SNS to email).
+- Cost anomaly detection on the deploy account.
+- Tag every resource `Project=mia`, `Env=demo` so Cost Explorer can group cleanly.
 
 ## 6. Trade-offs & decisions
 
