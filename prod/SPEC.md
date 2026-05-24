@@ -1,10 +1,21 @@
 # Deployment Spec — Autonomous Market Intelligence Agent on AWS AgentCore
 
-> **Status:** Draft — phases 1 & 2 complete; phases 3–5 in progress.
+> **Status:** ✅ Final — planning phases 1–5 complete. Ready for IaC scaffolding (Phase 6).
 > **Owner:** Yaniv Bohbot
 > **Last updated:** 2026-05-24
 
-This document is the source of truth for the v1 AWS deployment of the agent. IaC, CI/CD, and runbooks under `prod/` will implement what is described here.
+This document is the source of truth for the v1 AWS deployment of the agent. IaC, CI/CD, and runbooks under `prod/` implement what is described here.
+
+## 0. Executive summary
+
+Deploy the existing LangGraph + MCP market-intelligence agent to AWS using **Amazon Bedrock AgentCore Runtime** (agent container) + **AgentCore Gateway** (unified MCP endpoint with three Lambda-backed tool targets) + **AgentCore Memory** (replaces local SQLite checkpointer). External SaaS — OpenAI, Pinecone, Tavily, Gmail — are kept as-is. Region `us-east-1`. No VPC.
+
+- **Scale:** ≤10 internal users, demo.
+- **Cost:** ~$3 idle, ~$10–25 light demo, ~$60–175 peak — under the $200/mo cap. AgentCore $200 Free Tier credits cover ~2 months light.
+- **Security:** 5 architectural findings (none critical) addressed in Section 4. Three per-function Lambda roles, one CMK `alias/mia`, baseline SCPs proposed.
+- **IaC:** AWS CDK in Python. One stack per concern (network-free, so it's mainly compute + identity + storage + observability).
+- **CI/CD:** GitHub Actions with OIDC trust to AWS (no static keys). On push to `master`: test → build ARM64 image → push ECR → `cdk deploy`.
+- **Path to prod:** Phase 6 scaffolds `prod/`, Phase 7 deploys to a sandbox account and smoke-tests every tool end-to-end before cutover.
 
 ---
 
@@ -253,9 +264,108 @@ Container sizing for Runtime: **1 vCPU + 2 GB RAM, ARM64**. Lambda MCP tools: 25
 | Lambda cold start on Gateway tool | Low | Sub-second for these handlers; tolerable. |
 | Secrets leakage in logs | Low | Logger redacts known keys; review pending in Phase 3. |
 
-## 8. Next steps
+## 8. Implementation plan (Phase 6 onward)
 
-1. Phase 3 — Security review of this design.
-2. Phase 4 — Detailed cost estimate.
-3. Phase 5 — Finalize this spec, then scaffold `prod/iac/` (Terraform or CDK — TBD).
-4. Phase 6 — Build + push images, deploy, smoke-test.
+### 8.1 `prod/` folder layout
+
+```
+prod/
+├── SPEC.md                       ← this file
+├── iac/                          ← AWS CDK (Python) app
+│   ├── app.py                    ← cdk app entrypoint
+│   ├── cdk.json
+│   ├── stacks/
+│   │   ├── identity_stack.py     ← KMS CMK, IAM roles, IAM Identity Center bindings
+│   │   ├── storage_stack.py      ← S3 buckets (mia-workspace, mia-data), bucket policies
+│   │   ├── secrets_stack.py      ← Secrets Manager entries (values injected, not in repo)
+│   │   ├── mcp_lambdas_stack.py  ← 3 Lambda functions (yfinance, filesystem, sqlite-crm)
+│   │   ├── gateway_stack.py      ← AgentCore Gateway + 3 LambdaTargetConfigurations
+│   │   ├── runtime_stack.py      ← ECR repo + AgentCore Runtime + AgentCore Memory
+│   │   └── observability_stack.py← CloudWatch log groups, alarms, Budgets, CloudTrail check
+│   └── tests/                    ← cdk snapshot + assertion tests
+├── lambdas/
+│   ├── yfinance/                 ← MCP server packaged as Lambda handler
+│   ├── filesystem/               ← S3-backed; replaces stdio @modelcontextprotocol/server-filesystem
+│   └── sqlite-crm/               ← reads customers.db from S3 at cold start
+├── docker/
+│   └── agent/
+│       ├── Dockerfile            ← ARM64; FastAPI + LangGraph; entrypoint exposes /ping + /invocations on :8080
+│       └── entrypoint.py         ← AgentCore contract adapter around app.api.server
+└── ci/
+    ├── .github/workflows/deploy.yml  (symlinked / copied to repo root .github/)
+    └── README.md                     ← deploy / rollback / smoke-test runbook
+```
+
+### 8.2 Stack dependency graph
+
+```
+identity_stack ─┬─▶ storage_stack
+                ├─▶ secrets_stack
+                ├─▶ mcp_lambdas_stack ─▶ gateway_stack
+                └─▶ runtime_stack ◀──── gateway_stack
+                        │
+                        └────────▶ observability_stack
+```
+
+### 8.3 GitHub Actions pipeline (`deploy.yml`)
+
+Triggers: push to `master`, manual `workflow_dispatch`.
+
+Jobs:
+1. **test** — `uv run pytest tests/ -v` (existing suite + new redaction test).
+2. **build** — `docker buildx build --platform linux/arm64 -t mia-agent:$SHA prod/docker/agent/`. Push to ECR via OIDC role.
+3. **package-lambdas** — zip each `prod/lambdas/*` with deps; upload artifacts.
+4. **deploy** — `cdk deploy --all --require-approval never`. Uses the OIDC role assumed via `aws-actions/configure-aws-credentials@v4`.
+5. **smoke** — `python prod/ci/smoke.py` invokes Runtime via `InvokeAgentRuntime`, asserts each MCP tool is reachable through Gateway.
+
+### 8.4 Code-side prerequisites (do these before Phase 6 IaC)
+
+These touch the existing `market-intelligence-agent/app/` code, not `prod/`:
+
+1. Add `/invocations` handler to `app/api/server.py` (AgentCore contract: POST, JSON body, returns JSON).
+2. Add `CHECKPOINTER_BACKEND={sqlite|agentcore}` env switch in `app/agent/memory/checkpointer.py`.
+3. Add `MCP_TRANSPORT={stdio|gateway}` switch in `app/agent/tools/mcp_clients/registry.py`.
+4. Add `WORKSPACE_BACKEND={local|s3}` switch in `filesystem_client.py`.
+5. Add logger redaction filter in `app/core/logging.py` + unit test (Phase 3 finding F3).
+6. Add OpenAI prompt caching for system prompt + RAG context (Phase 4 optimization #1).
+
+### 8.5 Phase 7 smoke-test checklist
+
+Run against a dev/sandbox AWS account before declaring the demo deployable.
+
+- [ ] `InvokeAgentRuntime` returns a non-error response on a "hello" prompt.
+- [ ] Each of the 3 Gateway tools returns a successful tool call from a synthetic agent run:
+  - [ ] `yfinance_get_ticker_info` for `AAPL`
+  - [ ] `list_directory` against `mia-workspace`
+  - [ ] `read_query` against `customers.db`
+- [ ] HITL interrupt flow works: a side-effect call (e.g., `write_file`) triggers the interrupt; resume with `Command(resume="approve")` succeeds.
+- [ ] AgentCore Memory persists a session across two invocations with the same `session_id`.
+- [ ] Secrets Manager values are read by the Runtime (no env-var fallback used).
+- [ ] CloudWatch Logs show no leaked secret values (redaction filter works).
+- [ ] AWS Budgets alarm fires correctly on a synthetic threshold breach.
+
+### 8.6 Out of scope for v1 (tracked for v1.1+)
+
+- Voice mode (LiveKit worker) on ECS Fargate.
+- Streamlit (or React) UI behind CloudFront + Cognito.
+- Playwright MCP → AgentCore Browser Tool.
+- Pinecone → OpenSearch Serverless (only if data-residency or cost demands it).
+- Multi-region / DR.
+
+---
+
+## Appendix A — Decisions log
+
+| Date | Decision | Rationale |
+|---|---|---|
+| 2026-05-24 | Region `us-east-1` | Widest AgentCore feature availability. |
+| 2026-05-24 | Keep OpenAI (not Bedrock) | Zero code change; cost difference is wash at this scale. |
+| 2026-05-24 | Tight budget $50–$200/mo | Demo / portfolio scale. |
+| 2026-05-24 | v1 scope = text + MCP only | Voice and UI deferred per user request. |
+| 2026-05-24 | Option A architecture | Honors "AgentCore + MCP Gateway" goal. |
+| 2026-05-24 | AgentCore Memory over SQLite-on-EFS | Avoids VPC + NAT GW ~$33/mo. |
+| 2026-05-24 | Three per-function Lambda roles | Smaller blast radius than one shared role. |
+| 2026-05-24 | One CMK `alias/mia` for S3 + Logs | Enables SCP-level KMS enforcement. |
+| 2026-05-24 | No VPC in v1 | All services managed-public; avoids floor cost. |
+| 2026-05-24 | AWS CDK (Python) for IaC | Stays in Python; native AgentCore L2 constructs available. |
+| 2026-05-24 | GitHub Actions + OIDC for CI/CD | No long-lived AWS keys; fits solo dev. |
