@@ -8,6 +8,7 @@ import os
 import aws_cdk as cdk
 
 from stacks.identity_stack import MiaIdentityStack
+from stacks.storage_stack import MiaStorageStack
 
 PROJECT = "mia"
 ENV_NAME = os.environ.get("MIA_ENV", "demo")
@@ -29,6 +30,14 @@ identity = MiaIdentityStack(
     app, f"{PROJECT}-identity-{ENV_NAME}",
     project=PROJECT, env_name=ENV_NAME, env=env,
 )
+
+storage = MiaStorageStack(
+    app, f"{PROJECT}-storage-{ENV_NAME}",
+    project=PROJECT, env_name=ENV_NAME,
+    kms_key=identity.kms_key,
+    env=env,
+)
+storage.add_dependency(identity)
 
 for k, v in common_tags.items():
     cdk.Tags.of(app).add(k, v)
