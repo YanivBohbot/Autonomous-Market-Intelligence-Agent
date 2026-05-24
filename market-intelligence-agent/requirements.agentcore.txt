@@ -1,0 +1,36 @@
+# Slim runtime requirements for AgentCore container (v1: text + MCP gateway only).
+# Excludes livekit-agents (voice), streamlit (UI), yfmcp/mcp-server-sqlite
+# (those run in dedicated MCP Lambdas), and dev tooling.
+
+# Web framework + ASGI
+fastapi>=0.135.0
+uvicorn>=0.38.0
+httpx>=0.28.1
+python-multipart>=0.0.20
+
+# LangGraph + LangChain stack
+langgraph>=1.0.3
+langchain>=1.0.8
+langchain-core>=1.0.0
+langchain-openai>=1.0.3
+langchain-pinecone>=0.2.13
+langchain-mcp-adapters>=0.1.0
+langchain-community>=0.4.1
+
+# MCP client (talks to Gateway over streamable_http)
+mcp>=1.22.0
+
+# LLM + retrieval
+openai>=2.0.0
+tiktoken>=0.12.0
+pinecone>=7.3.0
+tavily-python>=0.7.13
+
+# Tools
+emails>=0.6
+
+# Config + secrets
+pydantic>=2.12.4
+pydantic-settings>=2.12.0
+python-dotenv>=1.2.1
+boto3>=1.35.0
