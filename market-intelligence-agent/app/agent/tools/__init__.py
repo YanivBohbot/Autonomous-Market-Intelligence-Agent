@@ -45,7 +45,7 @@ TOOLS = [
     list_memories_tool,
 ]
 
-READ_ONLY_TOOLS: set[str] = {
+_BASE_READ_ONLY_TOOLS: set[str] = {
     "read_query",
     "yfinance_get_ticker_info",
     "yfinance_get_price_history",
@@ -58,6 +58,11 @@ READ_ONLY_TOOLS: set[str] = {
     "recall_memory",
     "list_memories",
 }
+# Drop browser tool names if the browser MCP isn't loaded so the integrity
+# check below doesn't fire on AgentCore Gateway mode (no browser target).
+READ_ONLY_TOOLS: set[str] = _BASE_READ_ONLY_TOOLS - (
+    set() if _BROWSER_TOOLS else {"browser_navigate", "browser_snapshot", "browser_take_screenshot"}
+)
 
 def _base_name(name: str) -> str:
     """Strip the AgentCore Gateway `<target>___` prefix to the bare tool name."""
