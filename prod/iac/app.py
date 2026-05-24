@@ -10,6 +10,7 @@ import aws_cdk as cdk
 from stacks.gateway_stack import MiaGatewayStack
 from stacks.identity_stack import MiaIdentityStack
 from stacks.mcp_lambdas_stack import MiaMcpLambdasStack
+from stacks.observability_stack import MiaObservabilityStack
 from stacks.runtime_stack import MiaRuntimeStack
 from stacks.secrets_stack import MiaSecretsStack
 from stacks.storage_stack import MiaStorageStack
@@ -80,6 +81,13 @@ runtime = MiaRuntimeStack(
 )
 runtime.add_dependency(secrets)
 runtime.add_dependency(gateway)
+
+observability = MiaObservabilityStack(
+    app, f"{PROJECT}-observability-{ENV_NAME}",
+    project=PROJECT, env_name=ENV_NAME,
+    alert_email=os.environ.get("MIA_ALERT_EMAIL") or None,
+    env=env,
+)
 
 for k, v in common_tags.items():
     cdk.Tags.of(app).add(k, v)
