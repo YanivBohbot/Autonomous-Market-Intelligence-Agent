@@ -19,7 +19,7 @@ from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_secretsmanager as sm
-from constructs import Construct
+from constructs import Construct  # noqa: F401 (re-exported for typing)
 
 # Build context is the agent code directory (one level above prod/).
 # The Dockerfile and entrypoint live next to the code they package; see
@@ -45,16 +45,19 @@ class MiaRuntimeStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # --- AgentCore Memory ----------------------------------------------
+        # AgentCore Memory name pattern: ^[a-zA-Z][a-zA-Z0-9_]{0,47}$
+        # (no hyphens), so underscores instead of hyphens here.
         self.memory = agentcore.Memory(
             self, "MiaMemory",
-            memory_name=f"{project}-memory-{env_name}",
+            memory_name=f"{project}_memory_{env_name}",
             description=f"{project} {env_name} session memory",
             expiration_duration=Duration.days(30),
         )
 
         # --- Agent container image ----------------------------------------
-        self.image = ecr_assets.DockerImageAsset(
-            self, "AgentImage",
+        # AgentRuntimeArtifact.from_asset builds the Docker image, pushes
+        # to a CDK-managed ECR repo, and wires permissions on bind().
+        artifact = agentcore.AgentRuntimeArtifact.from_asset(
             directory=str(AGENT_CODE_DIR),
             file=AGENT_DOCKERFILE,
             platform=ecr_assets.Platform.LINUX_ARM64,
@@ -91,11 +94,10 @@ class MiaRuntimeStack(Stack):
         self.memory.grant(role, "bedrock-agentcore:CreateEvent")
 
         # --- AgentCore Runtime --------------------------------------------
-        artifact = agentcore.AgentRuntimeArtifact.from_container_image(self.image)
-
         self.runtime = agentcore.Runtime(
             self, "MiaRuntime",
-            runtime_name=f"{project}-runtime-{env_name}",
+            # AgentCore Runtime name pattern is the same as Memory (no hyphens).
+            runtime_name=f"{project}_runtime_{env_name}",
             agent_runtime_artifact=artifact,
             execution_role=role,
             description=f"{project} {env_name} agent runtime",
@@ -131,6 +133,3 @@ class MiaRuntimeStack(Stack):
         CfnOutput(self, "MemoryId",
                   value=self.memory.memory_id,
                   export_name=f"{project}-{env_name}-memory-id")
-        CfnOutput(self, "ImageUri",
-                  value=self.image.image_uri,
-                  export_name=f"{project}-{env_name}-agent-image-uri")

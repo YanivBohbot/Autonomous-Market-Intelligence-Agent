@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 
-from aws_cdk import Stack
+from aws_cdk import Duration, Stack
 from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_cloudwatch as cw
 from aws_cdk import aws_cloudwatch_actions as cw_actions
@@ -80,7 +80,7 @@ class MiaObservabilityStack(Stack):
             namespace="AWS/SecretsManager",
             metric_name="AccessDeniedException",
             statistic="Sum",
-            period=cw.Duration.minutes(5),
+            period=Duration.minutes(5),
         )
         alarm = cw.Alarm(
             self, "SecretsAccessDeniedAlarm",

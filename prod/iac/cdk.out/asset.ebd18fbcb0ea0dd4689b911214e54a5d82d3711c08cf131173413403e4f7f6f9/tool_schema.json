@@ -1,0 +1,15 @@
+{
+  "tools": [
+    {
+      "name": "read_query",
+      "description": "Run a read-only SQL query (SELECT/WITH only) against the customers database.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "A SELECT or WITH SQL statement"}
+        },
+        "required": ["query"]
+      }
+    }
+  ]
+}
