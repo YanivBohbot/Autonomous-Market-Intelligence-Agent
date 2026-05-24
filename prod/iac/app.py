@@ -7,6 +7,7 @@ import os
 
 import aws_cdk as cdk
 
+from stacks.gateway_stack import MiaGatewayStack
 from stacks.identity_stack import MiaIdentityStack
 from stacks.mcp_lambdas_stack import MiaMcpLambdasStack
 from stacks.secrets_stack import MiaSecretsStack
@@ -54,6 +55,17 @@ mcp_lambdas = MiaMcpLambdasStack(
     env=env,
 )
 mcp_lambdas.add_dependency(storage)
+
+gateway = MiaGatewayStack(
+    app, f"{PROJECT}-gateway-{ENV_NAME}",
+    project=PROJECT, env_name=ENV_NAME,
+    kms_key=identity.kms_key,
+    yfinance_fn=mcp_lambdas.yfinance_fn,
+    filesystem_fn=mcp_lambdas.filesystem_fn,
+    sqlite_crm_fn=mcp_lambdas.sqlite_crm_fn,
+    env=env,
+)
+gateway.add_dependency(mcp_lambdas)
 
 for k, v in common_tags.items():
     cdk.Tags.of(app).add(k, v)
