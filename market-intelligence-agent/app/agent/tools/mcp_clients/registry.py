@@ -28,9 +28,29 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _server_config() -> dict:
-    """Build the MultiServerMCPClient server config. Centralised so adding a server
-    means changing one dict, not three import sites."""
+def _gateway_config() -> dict:
+    """Single AgentCore Gateway endpoint that proxies all tool servers.
+
+    The MCP-over-HTTPS transport name (`streamable_http`) is the langchain-mcp-adapters
+    name for AgentCore Gateway's MCP endpoint. The Gateway routes by tool name to
+    the underlying Lambda targets (yfinance, filesystem, sqlite-crm), so we register
+    *one* logical server here and the tool list still comes back the same as the
+    stdio path — the agent code doesn't know which transport is in use.
+    """
+    if not settings.AGENTCORE_GATEWAY_URL:
+        raise RuntimeError(
+            "MCP_TRANSPORT=gateway requires AGENTCORE_GATEWAY_URL to be set."
+        )
+    return {
+        "agentcore_gateway": {
+            "transport": "streamable_http",
+            "url": settings.AGENTCORE_GATEWAY_URL,
+        }
+    }
+
+
+def _stdio_config() -> dict:
+    """Local dev: each tool server runs as a stdio subprocess inside this process."""
     workspace_root = settings.WORKSPACE_ROOT.resolve()
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "screenshots").mkdir(parents=True, exist_ok=True)
@@ -73,6 +93,24 @@ def _server_config() -> dict:
             "cwd": str(workspace_root),
         },
     }
+
+
+def _server_config() -> dict:
+    """Return the right MCP server config based on MCP_TRANSPORT.
+
+    `stdio` (default): local subprocess servers — the original behavior, kept for
+    dev and tests. `gateway`: a single AgentCore Gateway HTTPS endpoint that
+    fronts the production tool Lambdas.
+    """
+    transport = settings.MCP_TRANSPORT.lower()
+    if transport == "stdio":
+        return _stdio_config()
+    if transport == "gateway":
+        return _gateway_config()
+    raise ValueError(
+        f"Unknown MCP_TRANSPORT={settings.MCP_TRANSPORT!r}. "
+        "Valid values: 'stdio', 'gateway'."
+    )
 
 
 async def _load_tools() -> tuple[BaseTool, ...]:
