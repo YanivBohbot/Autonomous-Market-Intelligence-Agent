@@ -92,6 +92,14 @@ class MiaRuntimeStack(Stack):
         # Memory r/w
         self.memory.grant_read(role)
         self.memory.grant(role, "bedrock-agentcore:CreateEvent")
+        # Cognito user pool client — needed to read the client secret at
+        # boot so the agent can mint OAuth tokens for the Gateway. The
+        # specific user pool ARN is hardcoded here for the demo; lift to a
+        # proper construct lookup if the gateway stack is rebuilt.
+        role.add_to_policy(iam.PolicyStatement(
+            actions=["cognito-idp:DescribeUserPoolClient"],
+            resources=[f"arn:aws:cognito-idp:{self.region}:{self.account}:userpool/*"],
+        ))
 
         # --- AgentCore Runtime --------------------------------------------
         self.runtime = agentcore.Runtime(
@@ -115,6 +123,15 @@ class MiaRuntimeStack(Stack):
                 "AGENTCORE_GATEWAY_URL": gateway.gateway_url or "",
                 "WORKSPACE_S3_BUCKET": workspace_bucket.bucket_name,
                 "MIA_MEMORY_ID": self.memory.memory_id,
+                # Cognito client-credentials flow against the gateway's
+                # default Cognito authorizer. IDs hardcoded for the demo
+                # gateway; replace with construct outputs if rebuilt.
+                "MIA_COGNITO_USER_POOL_ID": "us-east-1_KxtN9pzgf",
+                "MIA_COGNITO_CLIENT_ID": "7m0gjbpfa66dh85qv3f6c9dfvt",
+                "MIA_COGNITO_TOKEN_URL":
+                    "https://miagatewaydemo-miagateway-d51291ee.auth.us-east-1.amazoncognito.com/oauth2/token",
+                "MIA_COGNITO_SCOPES":
+                    "miagatewaydemo-MiaGateway-D51291EE/read miagatewaydemo-MiaGateway-D51291EE/write",
                 # Secret ARNs — container reads values via boto3 at startup.
                 "OPENAI_API_KEY_ARN": secrets["openai-api-key"].secret_arn,
                 "PINECONE_API_KEY_ARN": secrets["pinecone-api-key"].secret_arn,

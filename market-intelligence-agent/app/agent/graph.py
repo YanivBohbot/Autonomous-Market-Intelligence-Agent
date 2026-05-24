@@ -9,7 +9,7 @@ from app.agent.nodes.rag import retrieve_internal_documentation
 from app.agent.nodes.research import web_search
 from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
-from app.agent.tools import TOOLS, READ_ONLY_TOOLS
+from app.agent.tools import TOOLS, READ_ONLY_TOOLS, is_read_only
 
 
 def decide_next_step(state: AgentState):
@@ -36,7 +36,7 @@ def approval_node(state: AgentState) -> dict:
     last = state["messages"][-1]
     tool_calls = getattr(last, "tool_calls", None) or []
 
-    side_effect_calls = [tc for tc in tool_calls if tc["name"] not in READ_ONLY_TOOLS]
+    side_effect_calls = [tc for tc in tool_calls if not is_read_only(tc["name"])]
     if not side_effect_calls:
         # All read-only — no human approval needed.
         return {}
