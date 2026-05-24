@@ -1,33 +1,57 @@
-"""Async SQLite checkpointer factory.
+"""Checkpointer factory with a pluggable backend.
 
-`AsyncSqliteSaver` is the only SQLite checkpointer LangGraph supports for async
-graph execution (`astream`/`ainvoke`). It must be entered from a running event
-loop, so this module exposes an `@asynccontextmanager` rather than a plain
-function. Callers (FastAPI lifespan, async helper scripts) open the context to
-get back a fully initialized saver and the connection is closed on exit.
+The default `sqlite` backend uses `AsyncSqliteSaver` against a local SQLite file —
+the right choice for local dev where state must survive process restarts.
 
-Per langgraph docs: https://langchain-ai.github.io/langgraph/reference/checkpoints/
+The `memory` backend uses LangGraph's in-process `InMemorySaver`. State is lost
+when the container stops. This is the v1 production choice for AgentCore Runtime:
+each AgentCore session lives inside a single container instance, so we don't need
+cross-process persistence — session continuity is handled by AgentCore itself
+keying the same `thread_id` to the same warm container. A future revision will
+add an `agentcore` backend that persists facts to the AgentCore Memory service
+via boto3, when an official LangGraph adapter ships.
+
+Selected via `CHECKPOINTER_BACKEND` env: `sqlite` (default) | `memory`.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def create_checkpointer(
     db_path: str | None = None,
-) -> AsyncIterator[AsyncSqliteSaver]:
-    """Open an `AsyncSqliteSaver` via the canonical `from_conn_string` entry."""
-    path = db_path or settings.CHECKPOINT_DB_PATH
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    async with AsyncSqliteSaver.from_conn_string(path) as saver:
-        yield saver
+) -> AsyncIterator[BaseCheckpointSaver]:
+    backend = settings.CHECKPOINTER_BACKEND.lower()
+
+    if backend == "sqlite":
+        path = db_path or settings.CHECKPOINT_DB_PATH
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        logger.info("checkpointer backend=sqlite path=%s", path)
+        async with AsyncSqliteSaver.from_conn_string(path) as saver:
+            yield saver
+        return
+
+    if backend == "memory":
+        logger.info("checkpointer backend=memory (state lost on restart)")
+        yield InMemorySaver()
+        return
+
+    raise ValueError(
+        f"Unknown CHECKPOINTER_BACKEND={settings.CHECKPOINTER_BACKEND!r}. "
+        "Valid values: 'sqlite', 'memory'."
+    )

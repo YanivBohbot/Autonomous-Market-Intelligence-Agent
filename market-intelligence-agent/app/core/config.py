@@ -23,7 +23,12 @@ class Settings(BaseSettings):
     DEEPGRAM_API_KEY: str
     ELEVENLABS_API_KEY: str
     LOG_LEVEL: str = "INFO"
+    CHECKPOINTER_BACKEND: str = "sqlite"  # "sqlite" | "memory"
     CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
+    MCP_TRANSPORT: str = "stdio"  # "stdio" | "gateway"
+    AGENTCORE_GATEWAY_URL: str = ""  # required when MCP_TRANSPORT=gateway
+    WORKSPACE_BACKEND: str = "local"  # "local" | "s3" (consumed by the filesystem Lambda)
+    WORKSPACE_S3_BUCKET: str = ""  # required when WORKSPACE_BACKEND=s3
     API_URL: str = "http://127.0.0.1:8000"
     YFINANCE_TIMEOUT_S: int = 10
     WORKSPACE_ROOT: Path = Path("data/workspace")
