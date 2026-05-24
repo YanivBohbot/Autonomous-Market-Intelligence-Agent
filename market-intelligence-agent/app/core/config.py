@@ -17,11 +17,14 @@ class Settings(BaseSettings):
     EMAIL_PASSWORD: str
     EMAIL_SMTP_SERVER: str
     EMAIL_SMTP_PORT: int
-    LIVEKIT_URL: str
-    LIVEKIT_API_KEY: str
-    LIVEKIT_API_SECRET: str
-    DEEPGRAM_API_KEY: str
-    ELEVENLABS_API_KEY: str
+    # Voice mode (LiveKit + Deepgram + ElevenLabs) — only required when
+    # the voice worker runs. The AgentCore text runtime never imports
+    # app.voice.*, so defaults to "" keep the FastAPI app boot-able.
+    LIVEKIT_URL: str = ""
+    LIVEKIT_API_KEY: str = ""
+    LIVEKIT_API_SECRET: str = ""
+    DEEPGRAM_API_KEY: str = ""
+    ELEVENLABS_API_KEY: str = ""
     LOG_LEVEL: str = "INFO"
     CHECKPOINTER_BACKEND: str = "sqlite"  # "sqlite" | "memory"
     CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
