@@ -137,12 +137,14 @@ def part_one_playground_style() -> None:
     case("playground:write_file → interrupt (turn 1)",
          r.get("status") == "interrupted", r)
 
-    # Different runtimeSessionId — the playground bug
+    # Different runtimeSessionId — used to be the playground bug
+    # (in-memory backend lost state when a different container handled
+    # the resume). With the durable AgentCore Memory backend, the resume
+    # now works regardless of which container handles it.
     pg_b = _new_runtime_session()
     r = invoke(pg_b, {"resume": "approve"})
-    # We EXPECT this to fail — confirming the user's earlier 500
-    ok = "_error" in r and "500" in r["_error"]
-    case("playground:write_file → approve on FRESH session (expected FAIL)",
+    ok = r.get("status") == "completed"
+    case("playground:write_file → approve on FRESH session (durable saver)",
          ok, r)
 
 
