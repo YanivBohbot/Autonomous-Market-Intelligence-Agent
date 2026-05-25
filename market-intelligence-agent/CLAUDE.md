@@ -70,7 +70,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 
 | Tool name | File | Type | What it does |
 |---|---|---|---|
-| `send_email` | `app/agent/tools/emails.py` | side-effect | SMTP send via Gmail. Simulates if credentials are placeholder. |
+| `send_email` | `app/agent/tools/emails.py` | side-effect | Sends via **Amazon SES** (boto3) using the verified `EMAIL_SENDER` identity. Simulates if `EMAIL_SENDER` is empty or an `@example.com` placeholder. SMTP fields kept optional for legacy local dev only. |
 | `read_query` | `app/agent/tools/mcp_clients/mcp_client.py` | read-only | MCP stdio client → `mcp-server-sqlite` → `read_query` against `customers.db`. |
 | `yfinance_get_ticker_info` | `app/agent/tools/mcp_clients/yfinance_client.py` | read-only | MCP stdio client → `yfmcp` → `get_ticker_info(ticker)`. |
 | `yfinance_get_price_history` | same | read-only | `get_price_history(ticker, period="1mo")`. |
