@@ -13,10 +13,14 @@ class Settings(BaseSettings):
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str
     TAVILY_API_KEY: str
-    EMAIL_SENDER: str
-    EMAIL_PASSWORD: str
-    EMAIL_SMTP_SERVER: str
-    EMAIL_SMTP_PORT: int
+    EMAIL_SENDER: str = ""
+    # Legacy SMTP credentials — no longer required after the move to Amazon
+    # SES in prod (app/agent/tools/emails.py). Kept optional so local dev
+    # .env files that still set them don't trip pydantic validation, and so
+    # the simulation gate still has a string to inspect.
+    EMAIL_PASSWORD: str = ""
+    EMAIL_SMTP_SERVER: str = ""
+    EMAIL_SMTP_PORT: int = 0
     # Voice mode (LiveKit + Deepgram + ElevenLabs) — only required when
     # the voice worker runs. The AgentCore text runtime never imports
     # app.voice.*, so defaults to "" keep the FastAPI app boot-able.
