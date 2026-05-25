@@ -87,7 +87,16 @@ async def invocations(
         )
 
     agent_app = request.app.state.agent_app
-    config = {"configurable": {"thread_id": session_id}}
+    # AgentCoreMemorySaver requires both thread_id and actor_id. We use a
+    # fixed actor_id for v1 — every session shares the same actor namespace.
+    # A multi-tenant version would derive actor_id from the authenticated
+    # user once Cognito sign-in is wired into the runtime contract.
+    config = {
+        "configurable": {
+            "thread_id": session_id,
+            "actor_id": "mia-agent",
+        }
+    }
 
     if payload.resume is not None:
         decision = payload.resume.strip().lower()

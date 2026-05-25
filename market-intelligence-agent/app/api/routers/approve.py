@@ -26,7 +26,12 @@ def _safe_content(state: dict) -> str:
 @router.post("/approve", response_model=ChatResponse)
 async def approve_endpoint(request: Request, payload: ApproveRequest):
     agent_app = request.app.state.agent_app
-    config = {"configurable": {"thread_id": payload.thread_id}}
+    config = {
+        "configurable": {
+            "thread_id": payload.thread_id,
+            "actor_id": "mia-agent",
+        }
+    }
     snapshot = await agent_app.aget_state(config)
     if not snapshot.next:
         return {

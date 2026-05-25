@@ -27,7 +27,14 @@ async def is_interrupted(agent_app, thread_id: str) -> tuple[bool, str | None]:
     task waiting to be retried after an unrelated exception) must NOT trigger a
     verbal "Say yes or no" prompt.
     """
-    snapshot = await agent_app.aget_state({"configurable": {"thread_id": thread_id}})
+    snapshot = await agent_app.aget_state(
+        {
+            "configurable": {
+                "thread_id": thread_id,
+                "actor_id": "mia-agent",
+            }
+        }
+    )
     if not snapshot.next or "approval" not in snapshot.next:
         return False, None
     last = snapshot.values["messages"][-1]
@@ -40,5 +47,10 @@ async def is_interrupted(agent_app, thread_id: str) -> tuple[bool, str | None]:
 
 async def resume_with(agent_app, thread_id: str, verdict: str) -> dict:
     """Resume the paused graph with 'approve' or 'reject'. Returns final state."""
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "actor_id": "mia-agent",
+        }
+    }
     return await agent_app.ainvoke(Command(resume=verdict), config)

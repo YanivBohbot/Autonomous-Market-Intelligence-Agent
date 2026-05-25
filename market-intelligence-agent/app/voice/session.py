@@ -214,7 +214,12 @@ def build_voice_session(agent_app, thread_id: str) -> AgentSession:
         ),
         llm=_LangGraphAdapter(
             graph=agent_app,
-            config={"configurable": {"thread_id": thread_id}},
+            config={
+                "configurable": {
+                    "thread_id": thread_id,
+                    "actor_id": "mia-agent",
+                }
+            },
         ),
         # Deepgram Aura-2 instead of ElevenLabs: the supplied ElevenLabs API key
         # is on the free tier and returns HTTP 402 ("paid_plan_required") for

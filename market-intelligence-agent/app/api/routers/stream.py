@@ -17,7 +17,12 @@ async def stream_endpoint(
     request: Request, payload: StreamRequest
 ) -> AsyncIterable[ServerSentEvent]:
     agent_app = request.app.state.agent_app
-    config = {"configurable": {"thread_id": payload.thread_id}}
+    config = {
+        "configurable": {
+            "thread_id": payload.thread_id,
+            "actor_id": "mia-agent",
+        }
+    }
     inputs = {"question": payload.query}
 
     try:
