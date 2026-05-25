@@ -79,5 +79,5 @@ async def create_checkpointer(
 
     raise ValueError(
         f"Unknown CHECKPOINTER_BACKEND={settings.CHECKPOINTER_BACKEND!r}. "
-        "Valid values: 'sqlite', 'memory'."
+        "Valid values: 'sqlite', 'memory', 'agentcore'."
     )
