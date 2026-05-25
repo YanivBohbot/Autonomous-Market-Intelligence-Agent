@@ -78,8 +78,15 @@ async def invocations(
     payload: InvocationRequest,
     x_amzn_bedrock_agentcore_runtime_session_id: Optional[str] = Header(default=None),
 ) -> InvocationResponse:
-    agent_app = request.app.state.agent_app
     session_id = _session_id(payload, x_amzn_bedrock_agentcore_runtime_session_id)
+    if payload.resume is None and payload.prompt is None:
+        return InvocationResponse(
+            response="prompt or resume is required",
+            status="completed",
+            session_id=session_id,
+        )
+
+    agent_app = request.app.state.agent_app
     config = {"configurable": {"thread_id": session_id}}
 
     if payload.resume is not None:
@@ -88,14 +95,8 @@ async def invocations(
             logger.warning("invalid resume value=%s; defaulting to reject", decision)
             decision = "reject"
         final_state = await agent_app.ainvoke(Command(resume=decision), config)
-    elif payload.prompt is not None:
-        final_state = await agent_app.ainvoke({"question": payload.prompt}, config)
     else:
-        return InvocationResponse(
-            response="prompt or resume is required",
-            status="completed",
-            session_id=session_id,
-        )
+        final_state = await agent_app.ainvoke({"question": payload.prompt}, config)
 
     snapshot = await agent_app.aget_state(config)
     if snapshot.next:
