@@ -3,13 +3,25 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from app.agent.state import AgentState
 from app.agent.nodes.rag import retrieve_internal_documentation
 from app.agent.nodes.research import web_search
 from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
 from app.agent.tools import TOOLS, READ_ONLY_TOOLS, is_read_only
+
+
+def record_question(state: AgentState) -> dict:
+    """Persist the user's turn as a HumanMessage so it shows up in checkpointed
+    history. Without this, state.question is only used by the RAG/web nodes
+    and never reaches state.messages, so cross-turn recall ("what did I ask
+    before?") is impossible — the LLM only sees its own past responses.
+    """
+    q = state.get("question")
+    if not q:
+        return {}
+    return {"messages": [HumanMessage(content=q)]}
 
 
 def decide_next_step(state: AgentState):
@@ -87,6 +99,7 @@ def route_after_approval(state: AgentState):
 
 
 workflow = StateGraph(AgentState)
+workflow.add_node("record_question", record_question)
 workflow.add_node("rag", retrieve_internal_documentation)
 workflow.add_node("grader", grade_documents)
 workflow.add_node("web_search", web_search)
@@ -94,7 +107,8 @@ workflow.add_node("generate", generate_answer)
 workflow.add_node("approval", approval_node)
 workflow.add_node("tools", ToolNode(TOOLS))
 
-workflow.add_edge(START, "rag")
+workflow.add_edge(START, "record_question")
+workflow.add_edge("record_question", "rag")
 workflow.add_edge("rag", "grader")
 workflow.add_conditional_edges(
     "grader",
