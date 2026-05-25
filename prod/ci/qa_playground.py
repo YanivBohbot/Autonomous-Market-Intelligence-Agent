@@ -130,21 +130,35 @@ def part_one_playground_style() -> None:
     case("playground:identity anchored",
          r.get("status") == "completed" and "market intelligence" in (r.get("response") or "").lower(), r)
 
-    # Now: HITL — the failure mode the user saw
-    print("\n--- HITL probe (expected to FAIL in playground style) ---")
-    pg_a = _new_runtime_session()
-    r = invoke(pg_a, {"prompt": 'Please write a file named "pg_test.txt" with content "playground style".'})
+    # Now: HITL — the exact scenario the user hit in the AWS Console
+    # playground. The console UI generates a fresh runtimeSessionId per
+    # "Run" click, but the user pastes the same body.session_id on both
+    # calls. Our agentcore.py router prefers body.session_id over the
+    # runtime-session header, so thread_id stays constant — and with the
+    # durable AgentCore Memory checkpointer the second container can
+    # load the checkpoint the first one wrote.
+    body_session = f"playground-hitl-{uuid.uuid4()}"
+    print("\n--- HITL probe (durable checkpointer must keep state across containers) ---")
+    print(f"        body.session_id={body_session}")
+    r = invoke(
+        _new_runtime_session(),
+        {
+            "prompt": 'Please write a file named "pg_test.txt" with content "playground style".',
+            "session_id": body_session,
+        },
+    )
     case("playground:write_file → interrupt (turn 1)",
          r.get("status") == "interrupted", r)
 
-    # Different runtimeSessionId — used to be the playground bug
-    # (in-memory backend lost state when a different container handled
-    # the resume). With the durable AgentCore Memory backend, the resume
-    # now works regardless of which container handles it.
-    pg_b = _new_runtime_session()
-    r = invoke(pg_b, {"resume": "approve"})
+    # Different runtimeSessionId (mimics a second console click), but
+    # same body.session_id. With the durable saver this resume now
+    # succeeds even though a different container is handling it.
+    r = invoke(
+        _new_runtime_session(),
+        {"resume": "approve", "session_id": body_session},
+    )
     ok = r.get("status") == "completed"
-    case("playground:write_file → approve on FRESH session (durable saver)",
+    case("playground:write_file → approve on FRESH runtimeSessionId (durable saver)",
          ok, r)
 
 
