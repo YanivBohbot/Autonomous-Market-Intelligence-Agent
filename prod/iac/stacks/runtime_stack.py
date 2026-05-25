@@ -154,7 +154,11 @@ class MiaRuntimeStack(Stack):
                 "OPENAI_MODEL": "gpt-4o-mini",
                 "OPENAI_EMBEDDING_MODEL": "text-embedding-3-small",
                 "PINECONE_INDEX_NAME": f"{project}-rag",
-                "EMAIL_SENDER": "mia-agent@example.com",
+                # Real Gmail sender — the matching App Password lives in
+                # the mia/email-password Secret. Keep this address aligned
+                # with whichever Gmail account generated the App Password,
+                # or the SMTP login will fail.
+                "EMAIL_SENDER": "yanivbohbot5@gmail.com",
                 "EMAIL_SMTP_SERVER": "smtp.gmail.com",
                 "EMAIL_SMTP_PORT": "587",
                 "LOG_LEVEL": "INFO",
