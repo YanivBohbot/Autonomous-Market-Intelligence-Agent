@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Intelligence Agent — Production AI on AWS Bedrock AgentCore</title>
+<meta name="description" content="An autonomous market-research agent built on LangGraph and deployed on Amazon Bedrock AgentCore. Real-time stock data, CRM intelligence, document research, and human-gated actions — all under one production runtime.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,200..900,0..100,0..1;1,9..144,200..900,0..100,0..1&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+    --ink: #0b0a09;
+    --paper: #f3ece0;
+    --paper-dim: #cbc4b6;
+    --paper-faint: #8a8479;
+    --rule: #2a2724;
+    --surface: #131210;
+    --surface-2: #1c1a17;
+    --vermillion: #e6532b;
+    --vermillion-glow: rgba(230, 83, 43, 0.18);
+    --signal: #f0e6c8;
+
+    --font-display: 'Fraunces', 'Iowan Old Style', 'Hoefler Text', Georgia, serif;
+    --font-body: 'Source Serif 4', 'Iowan Old Style', Georgia, serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+
+    --measure: 68ch;
+    --gutter: clamp(20px, 5vw, 80px);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-body);
+    font-size: 18px;
+    line-height: 1.55;
+    font-feature-settings: 'liga', 'kern', 'onum';
+    text-rendering: geometricPrecision;
+    overflow-x: hidden;
+    /* Subtle paper-grain noise overlay built from inline SVG, projected onto everything */
+    position: relative;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.95  0 0 0 0 0.91  0 0 0 0 0.82  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/></svg>");
+    opacity: 0.07;
+    mix-blend-mode: screen;
+    z-index: 1;
+}
+
+/* ============ Layout ============ */
+
+.shell {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 var(--gutter);
+    position: relative;
+    z-index: 2;
+}
+
+.nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 28px 0;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+}
+.nav__brand {
+    color: var(--paper);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.nav__brand-mark {
+    width: 14px;
+    height: 14px;
+    background: var(--vermillion);
+    border-radius: 50%;
+    box-shadow: 0 0 28px var(--vermillion-glow);
+}
+.nav__links { display: flex; gap: 28px; }
+.nav__links a {
+    color: var(--paper-faint);
+    text-decoration: none;
+    position: relative;
+    transition: color .25s ease;
+}
+.nav__links a:hover { color: var(--vermillion); }
+.nav__links a::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 100%;
+    bottom: -4px;
+    height: 1px;
+    background: currentColor;
+    transition: right .35s cubic-bezier(.6,.05,.05,1);
+}
+.nav__links a:hover::after { right: 0; }
+
+/* ============ Hero ============ */
+
+.hero {
+    padding: 140px 0 100px;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+}
+
+.hero__meta {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    margin-bottom: 60px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+}
+.hero__meta-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--vermillion);
+    border-radius: 50%;
+}
+.hero__meta-status {
+    color: var(--paper);
+    border: 1px solid var(--rule);
+    padding: 6px 12px;
+    border-radius: 100px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.hero__meta-status::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: #6dbe45;
+    border-radius: 50%;
+    box-shadow: 0 0 12px rgba(109, 190, 69, 0.6);
+}
+
+.hero__title {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: clamp(48px, 9vw, 142px);
+    line-height: 0.92;
+    letter-spacing: -0.035em;
+    font-variation-settings: 'opsz' 144, 'SOFT' 100;
+    color: var(--paper);
+    margin-bottom: 48px;
+    max-width: 18ch;
+}
+.hero__title em {
+    font-style: italic;
+    font-weight: 300;
+    color: var(--vermillion);
+    font-variation-settings: 'opsz' 144, 'SOFT' 100, 'WONK' 1;
+}
+.hero__title span {
+    display: block;
+    overflow: hidden;
+}
+.hero__title span > span {
+    display: inline-block;
+    transform: translateY(110%);
+    animation: rise .9s cubic-bezier(.2,.7,.2,1) forwards;
+}
+.hero__title span:nth-child(1) > span { animation-delay: 0.1s; }
+.hero__title span:nth-child(2) > span { animation-delay: 0.22s; }
+.hero__title span:nth-child(3) > span { animation-delay: 0.34s; }
+
+@keyframes rise {
+    from { transform: translateY(110%); }
+    to   { transform: translateY(0); }
+}
+
+.hero__lede {
+    font-family: var(--font-body);
+    font-size: clamp(20px, 1.8vw, 26px);
+    line-height: 1.4;
+    color: var(--paper-dim);
+    max-width: 56ch;
+    font-weight: 300;
+    opacity: 0;
+    animation: fade .9s .55s ease forwards;
+}
+.hero__lede strong {
+    font-weight: 500;
+    color: var(--paper);
+    font-style: italic;
+}
+
+@keyframes fade { to { opacity: 1; } }
+
+.hero__stats {
+    margin-top: 80px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    opacity: 0;
+    animation: fade .9s .75s ease forwards;
+}
+.hero__stat {
+    padding: 28px 24px 28px 0;
+    border-right: 1px solid var(--rule);
+}
+.hero__stat:last-child { border-right: 0; }
+.hero__stat-value {
+    font-family: var(--font-display);
+    font-size: 56px;
+    line-height: 1;
+    font-weight: 300;
+    color: var(--paper);
+    letter-spacing: -0.02em;
+    font-variation-settings: 'opsz' 60;
+    margin-bottom: 12px;
+}
+.hero__stat-value em {
+    font-style: italic;
+    color: var(--vermillion);
+    font-variation-settings: 'opsz' 60, 'WONK' 1;
+}
+.hero__stat-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+}
+
+/* ============ Section building blocks ============ */
+
+.section {
+    padding: 140px 0;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+}
+
+.section__header {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) 4fr;
+    gap: 48px;
+    margin-bottom: 80px;
+    align-items: baseline;
+}
+
+.section__index {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--vermillion);
+}
+
+.section__title {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: clamp(40px, 6vw, 84px);
+    line-height: 0.98;
+    letter-spacing: -0.025em;
+    font-variation-settings: 'opsz' 96;
+    max-width: 18ch;
+}
+.section__title em {
+    font-style: italic;
+    color: var(--vermillion);
+    font-variation-settings: 'opsz' 96, 'WONK' 1;
+}
+
+.section__intro {
+    font-size: 21px;
+    line-height: 1.55;
+    color: var(--paper-dim);
+    max-width: var(--measure);
+    margin-top: 32px;
+    grid-column: 2 / -1;
+}
+.section__intro:first-letter {
+    font-family: var(--font-display);
+    float: left;
+    font-size: 5em;
+    line-height: 0.85;
+    margin: 0.1em 0.08em 0 -0.02em;
+    color: var(--vermillion);
+    font-weight: 300;
+    font-variation-settings: 'opsz' 144;
+}
+
+/* Section title row helpers (reusable) */
+.row { display: grid; grid-template-columns: minmax(120px, 1fr) 4fr; gap: 48px; }
+
+/* ============ Story ============ */
+#story .section__intro { font-size: 22px; }
+#story p + p { margin-top: 24px; }
+
+/* ============ Capabilities ============ */
+
+.cap-grid {
+    grid-column: 2 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0;
+    margin-top: 24px;
+    border-top: 1px solid var(--rule);
+}
+
+.cap {
+    padding: 36px 32px 36px 0;
+    border-bottom: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
+    gap: 20px;
+    align-items: start;
+    position: relative;
+}
+.cap:nth-child(odd) { padding-right: 48px; border-right: 1px solid var(--rule); }
+.cap:nth-child(even) { padding-left: 32px; }
+.cap__icon {
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--vermillion);
+    background: var(--surface);
+    transition: transform .4s cubic-bezier(.2,.7,.2,1), border-color .3s;
+}
+.cap:hover .cap__icon { transform: translateY(-2px); border-color: var(--vermillion); }
+.cap__name {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 400;
+    color: var(--paper);
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+    line-height: 1.1;
+    font-variation-settings: 'opsz' 30;
+}
+.cap__sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+    margin-bottom: 12px;
+}
+.cap__sub.is-hitl { color: var(--vermillion); }
+.cap__desc {
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--paper-dim);
+    max-width: 52ch;
+}
+.cap__num {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--paper-faint);
+    align-self: start;
+}
+
+/* ============ Architecture ============ */
+
+.arch-wrap {
+    grid-column: 1 / -1;
+    margin-top: 24px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 56px;
+    overflow: hidden;
+    position: relative;
+}
+
+.arch-wrap svg { display: block; width: 100%; height: auto; }
+
+.arch-key {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 28px;
+    margin-top: 48px;
+    padding-top: 36px;
+    border-top: 1px solid var(--rule);
+}
+.arch-key__item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+.arch-key__num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--vermillion);
+    letter-spacing: 0.08em;
+    margin-top: 5px;
+}
+.arch-key__text {
+    font-size: 14px;
+    color: var(--paper-dim);
+    line-height: 1.45;
+}
+.arch-key__text strong {
+    font-family: var(--font-display);
+    display: block;
+    font-size: 18px;
+    color: var(--paper);
+    font-weight: 400;
+    margin-bottom: 4px;
+}
+
+/* ============ Engineering wins (problem / solution cards) ============ */
+
+.wins {
+    grid-column: 2 / -1;
+    margin-top: 24px;
+}
+.win {
+    padding: 64px 0;
+    border-top: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 64px;
+    align-items: start;
+}
+.win:last-child { border-bottom: 1px solid var(--rule); }
+
+.win__title {
+    font-family: var(--font-display);
+    font-size: 36px;
+    font-weight: 300;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    margin-bottom: 16px;
+    font-variation-settings: 'opsz' 60;
+}
+.win__title em {
+    font-style: italic;
+    color: var(--vermillion);
+    font-variation-settings: 'opsz' 60, 'WONK' 1;
+}
+.win__tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--vermillion);
+    margin-bottom: 24px;
+}
+
+.win__body p { color: var(--paper-dim); margin-bottom: 18px; line-height: 1.6; }
+.win__body p:last-child { margin-bottom: 0; }
+.win__body strong { color: var(--paper); font-weight: 500; }
+.win__body code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--signal);
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--rule);
+}
+
+.win__quote {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 22px;
+    line-height: 1.35;
+    color: var(--paper);
+    padding: 32px 28px;
+    border-left: 2px solid var(--vermillion);
+    background: linear-gradient(95deg, rgba(230,83,43,0.06) 0%, transparent 60%);
+    margin-top: 12px;
+    position: relative;
+    font-variation-settings: 'opsz' 36, 'WONK' 1;
+}
+.win__quote::before {
+    content: '“';
+    position: absolute;
+    top: -14px;
+    left: 22px;
+    font-size: 64px;
+    line-height: 1;
+    color: var(--vermillion);
+    font-family: var(--font-display);
+    font-style: normal;
+}
+.win__metrics {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+}
+.win__metric { }
+.win__metric-value {
+    font-family: var(--font-display);
+    font-size: 32px;
+    color: var(--paper);
+    font-weight: 300;
+    line-height: 1;
+    font-variation-settings: 'opsz' 40;
+    margin-bottom: 6px;
+}
+.win__metric-value em { font-style: italic; color: var(--vermillion); font-variation-settings: 'opsz' 40, 'WONK' 1; }
+.win__metric-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--paper-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+/* ============ Tools flow (HITL illustration) ============ */
+
+.flow {
+    grid-column: 2 / -1;
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    align-items: center;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    padding: 28px;
+}
+.flow__step {
+    text-align: center;
+    padding: 16px 12px;
+    position: relative;
+}
+.flow__step-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--paper-faint);
+    letter-spacing: 0.1em;
+    margin-bottom: 14px;
+    text-transform: uppercase;
+}
+.flow__step-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    color: var(--paper);
+    font-weight: 400;
+    margin-bottom: 6px;
+    line-height: 1.2;
+    font-variation-settings: 'opsz' 24;
+}
+.flow__step-desc {
+    font-size: 13px;
+    color: var(--paper-faint);
+    line-height: 1.4;
+}
+.flow__step.is-accent .flow__step-title { color: var(--vermillion); }
+.flow__step.is-accent::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border: 1px dashed var(--vermillion);
+    border-radius: 4px;
+    opacity: 0.5;
+}
+.flow__sep {
+    align-self: center;
+    color: var(--paper-faint);
+    font-family: var(--font-mono);
+    font-size: 22px;
+    display: flex;
+    justify-content: center;
+    padding: 0 8px;
+}
+
+/* ============ Stack ============ */
+
+.stack-grid {
+    grid-column: 2 / -1;
+    margin-top: 24px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0;
+    border: 1px solid var(--rule);
+}
+.stack-cell {
+    padding: 24px 28px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.stack-cell__cat {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--paper-faint);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+.stack-cell__name {
+    font-family: var(--font-display);
+    font-size: 19px;
+    color: var(--paper);
+    font-weight: 400;
+    line-height: 1.15;
+    font-variation-settings: 'opsz' 24;
+}
+
+/* ============ QA story ============ */
+
+.qa-compare {
+    grid-column: 2 / -1;
+    margin-top: 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+.qa-side {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 36px;
+    position: relative;
+}
+.qa-side.is-after { border-color: rgba(230, 83, 43, 0.4); }
+.qa-side.is-after::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border: 1px solid var(--vermillion);
+    border-radius: 6px;
+    opacity: 0.3;
+    pointer-events: none;
+}
+.qa-side__tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+    margin-bottom: 16px;
+}
+.qa-side.is-after .qa-side__tag { color: var(--vermillion); }
+.qa-side__head {
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 300;
+    line-height: 1.05;
+    color: var(--paper);
+    margin-bottom: 16px;
+    font-variation-settings: 'opsz' 40;
+}
+.qa-side__head em { font-style: italic; color: var(--vermillion); font-variation-settings: 'opsz' 40, 'WONK' 1; }
+.qa-side__sub {
+    font-size: 14px;
+    color: var(--paper-dim);
+    margin-bottom: 24px;
+    line-height: 1.5;
+}
+.qa-bar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+}
+.qa-bar__cell {
+    flex: 1;
+    height: 10px;
+    background: var(--rule);
+    border-radius: 1px;
+}
+.qa-bar__cell.is-on { background: var(--vermillion); }
+.qa-bar__cell.is-hallucinated {
+    background: repeating-linear-gradient(45deg, var(--rule), var(--rule) 3px, var(--vermillion) 3px, var(--vermillion) 4px);
+}
+.qa-suite-list {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--paper-dim);
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 8px;
+}
+.qa-suite-list li { display: flex; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px dashed var(--rule); }
+.qa-suite-list li:last-child { border-bottom: 0; }
+.qa-suite-list .count { color: var(--paper); }
+.qa-suite-list .count.is-real { color: var(--vermillion); }
+
+/* ============ Code blocks ============ */
+
+.code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 24px 28px;
+    color: var(--signal);
+    overflow-x: auto;
+    line-height: 1.7;
+    margin-top: 24px;
+}
+.code .c-key { color: var(--vermillion); }
+.code .c-str { color: #b9c9a7; }
+.code .c-com { color: var(--paper-faint); font-style: italic; }
+
+/* ============ Footer ============ */
+
+.footer {
+    padding: 120px 0 80px;
+    border-top: 1px solid var(--rule);
+    background: linear-gradient(180deg, transparent 0%, rgba(230, 83, 43, 0.03) 100%);
+}
+.footer__sig {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 5vw, 56px);
+    line-height: 1.1;
+    color: var(--paper);
+    font-weight: 300;
+    max-width: 24ch;
+    font-variation-settings: 'opsz' 72;
+    margin-bottom: 48px;
+}
+.footer__sig em { font-style: italic; color: var(--vermillion); font-variation-settings: 'opsz' 72, 'WONK' 1; }
+.footer__meta {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 24px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+    padding-top: 28px;
+    border-top: 1px solid var(--rule);
+}
+.footer__meta a {
+    color: var(--paper);
+    text-decoration: none;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 2px;
+    transition: border-color .3s, color .3s;
+}
+.footer__meta a:hover { color: var(--vermillion); border-bottom-color: var(--vermillion); }
+
+/* ============ Reveal on scroll ============ */
+[data-reveal] {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 1.0s cubic-bezier(.2,.7,.2,1), transform 1.0s cubic-bezier(.2,.7,.2,1);
+}
+[data-reveal].is-in {
+    opacity: 1;
+    transform: translateY(0);
+}
+[data-reveal][data-delay="1"] { transition-delay: .1s; }
+[data-reveal][data-delay="2"] { transition-delay: .2s; }
+[data-reveal][data-delay="3"] { transition-delay: .3s; }
+
+/* ============ Responsive ============ */
+@media (max-width: 980px) {
+    .section__header,
+    .row { grid-template-columns: 1fr; gap: 24px; }
+    .cap-grid { grid-template-columns: 1fr; grid-column: 1 / -1; }
+    .cap:nth-child(odd) { padding-right: 0; border-right: 0; }
+    .cap:nth-child(even) { padding-left: 0; }
+    .win { grid-template-columns: 1fr; gap: 32px; }
+    .flow { grid-template-columns: 1fr; gap: 16px; grid-column: 1 / -1; }
+    .flow__sep { transform: rotate(90deg); padding: 0; }
+    .qa-compare { grid-template-columns: 1fr; grid-column: 1 / -1; }
+    .wins { grid-column: 1 / -1; }
+    .arch-wrap { padding: 28px; }
+    .stack-grid { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 520px) {
+    .nav__links { display: none; }
+    .hero { padding: 80px 0 60px; }
+    .hero__stats { grid-template-columns: 1fr 1fr; }
+    .hero__stat { border-right: 0 !important; }
+    .stack-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="shell">
+    <nav class="nav">
+        <div class="nav__brand">
+            <span class="nav__brand-mark"></span>
+            <span>Market Intelligence Agent</span>
+        </div>
+        <div class="nav__links">
+            <a href="#story">Story</a>
+            <a href="#capabilities">Capabilities</a>
+            <a href="#architecture">Architecture</a>
+            <a href="#wins">Engineering</a>
+            <a href="#stack">Stack</a>
+        </div>
+    </nav>
+</header>
+
+<!-- =================== HERO =================== -->
+<section class="shell hero">
+    <div class="hero__meta">
+        <span class="hero__meta-dot"></span>
+        <span>Case study · 2026 · Yaniv Bohbot</span>
+        <span class="hero__meta-status">Live on AWS · us-east-1</span>
+    </div>
+
+    <h1 class="hero__title">
+        <span><span>A research</span></span>
+        <span><span>analyst that <em>thinks</em></span></span>
+        <span><span>before it acts.</span></span>
+    </h1>
+
+    <p class="hero__lede">
+        An autonomous market-research agent built on <strong>LangGraph</strong>, deployed serverlessly on
+        <strong>Amazon Bedrock AgentCore</strong>. Real-time stock data, customer CRM, document research,
+        workspace operations, persistent memory and email — all gated by human-in-the-loop approval, all
+        durable across containers.
+    </p>
+
+    <div class="hero__stats">
+        <div class="hero__stat">
+            <div class="hero__stat-value"><em>13</em></div>
+            <div class="hero__stat-label">Production tools</div>
+        </div>
+        <div class="hero__stat">
+            <div class="hero__stat-value">6</div>
+            <div class="hero__stat-label">CDK stacks</div>
+        </div>
+        <div class="hero__stat">
+            <div class="hero__stat-value">18 / 18</div>
+            <div class="hero__stat-label">Live QA suite</div>
+        </div>
+        <div class="hero__stat">
+            <div class="hero__stat-value"><em>~4 min</em></div>
+            <div class="hero__stat-label">Push → deployed</div>
+        </div>
+    </div>
+</section>
+
+<!-- =================== STORY =================== -->
+<section class="shell section" id="story">
+    <div class="section__header" data-reveal>
+        <div class="section__index">§ 01 — The brief</div>
+        <h2 class="section__title">A single operator with <em>analyst-grade</em> reach.</h2>
+    </div>
+
+    <div class="row" data-reveal data-delay="1">
+        <div></div>
+        <div>
+            <p class="section__intro">
+                The brief was deceptively simple. A junior analyst spends most of a research session juggling
+                tabs — a price tracker for the equity, a CRM for the customer book, a vector store for internal
+                notes, a workspace for draft briefs, an inbox for the eventual report. An agent that
+                <em>orchestrates</em> all of that — fetching real numbers, citing real customers, writing real
+                files, sending real email — would compress hours into minutes. But only if the human stays in
+                control of every action that touches the outside world.
+            </p>
+            <p style="margin-top: 28px; color: var(--paper-dim); font-size: 18px; max-width: var(--measure);">
+                What shipped is a multi-step LangGraph state machine running on Amazon Bedrock AgentCore Runtime,
+                exposing thirteen tools across five domains, with every side-effect routed through an explicit
+                interrupt-and-approve checkpoint. Read-only research happens immediately; anything that changes
+                the world pauses and asks. Both halves are durable across containers and across sessions.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- =================== CAPABILITIES =================== -->
+<section class="shell section" id="capabilities">
+    <div class="section__header" data-reveal>
+        <div class="section__index">§ 02 — What the agent does</div>
+        <h2 class="section__title">Thirteen tools, five <em>domains</em>, one operator.</h2>
+    </div>
+
+    <div class="row">
+        <div></div>
+        <p class="section__intro" data-reveal data-delay="1">
+            Eight read-only tools execute on demand. Three side-effect tools pause the graph and surface a
+            human-approval request. Two more — browser and voice — are designed and queued for the next wave.
+            Every tool name, schema, and behaviour is reviewed at the agent boundary; nothing reaches the
+            world without explicit consent.
+        </p>
+    </div>
+
+    <div class="cap-grid">
+
+        <div class="cap" data-reveal data-delay="1">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 17l5-5 4 4 7-9"></path>
+                    <path d="M14 7h5v5"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Ticker Info</div>
+                <div class="cap__sub">Read-only · Yahoo Finance · Lambda</div>
+                <div class="cap__desc">Current price, day high/low, sector, market cap and P/E ratios for any ticker.</div>
+            </div>
+            <div class="cap__num">01</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="1">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 12l3-6 4 12 4-8 4 6 3-4"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Price History</div>
+                <div class="cap__sub">Read-only · Yahoo Finance · Lambda</div>
+                <div class="cap__desc">OHLCV series for any period — 1d through max — for trend and volatility analysis.</div>
+            </div>
+            <div class="cap__num">02</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="2">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M4 5h16v3H4z"></path><path d="M4 11h16v3H4z"></path><path d="M4 17h10v3H4z"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Ticker News</div>
+                <div class="cap__sub">Read-only · Yahoo Finance · Lambda</div>
+                <div class="cap__desc">Recent headlines with sources and publish timestamps, scored for relevance.</div>
+            </div>
+            <div class="cap__num">03</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="2">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <ellipse cx="12" cy="6" rx="8" ry="2.5"></ellipse>
+                    <path d="M4 6v6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5V6"></path>
+                    <path d="M4 12v6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-6"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">CRM Query</div>
+                <div class="cap__sub">Read-only · SQLite · S3 · Lambda</div>
+                <div class="cap__desc">Read-only SQL against the customer book. Defence-in-depth: SELECT/WITH only, opened RO.</div>
+            </div>
+            <div class="cap__num">04</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="3">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 6h6l2 2h10v12H3z"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">List Workspace</div>
+                <div class="cap__sub">Read-only · S3 · Lambda</div>
+                <div class="cap__desc">Lists files in the analyst's S3-backed workspace bucket with size and mtime.</div>
+            </div>
+            <div class="cap__num">05</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="3">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M14 3H6v18h12V7z"></path><path d="M14 3v4h4"></path><path d="M9 13h6M9 17h4"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Read Text File</div>
+                <div class="cap__sub">Read-only · S3 · Lambda</div>
+                <div class="cap__desc">Pulls a UTF-8 text artifact from the workspace bucket into the agent's context.</div>
+            </div>
+            <div class="cap__num">06</div>
+        </div>
+
+        <div class="cap" data-reveal>
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M3 12h18M12 3a13 13 0 010 18M12 3a13 13 0 000 18"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Memory Recall</div>
+                <div class="cap__sub">Read-only · LangGraph Store</div>
+                <div class="cap__desc">Fetches a previously-saved user fact by key — preferences, defaults, exclusions.</div>
+            </div>
+            <div class="cap__num">07</div>
+        </div>
+
+        <div class="cap" data-reveal>
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="5" width="18" height="14" rx="2"/>
+                    <path d="M3 9h18M7 13h7"/>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">List Memories</div>
+                <div class="cap__sub">Read-only · LangGraph Store</div>
+                <div class="cap__desc">Returns the complete set of saved facts at the start of complex multi-step tasks.</div>
+            </div>
+            <div class="cap__num">08</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="1">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M12 4v16M4 12h16"/>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Write File</div>
+                <div class="cap__sub is-hitl">Side-effect · HITL approval · S3</div>
+                <div class="cap__desc">Saves a brief, CSV, or evidence file into the workspace bucket. Gated by interrupt().</div>
+            </div>
+            <div class="cap__num">09</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="1">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 5l9 7 9-7"/>
+                    <path d="M3 5h18v14H3z"/>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Send Email</div>
+                <div class="cap__sub is-hitl">Side-effect · HITL approval · Amazon SES</div>
+                <div class="cap__desc">Delivers a report or notification through SES, scoped to a verified sender identity.</div>
+            </div>
+            <div class="cap__num">10</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="2">
+            <div class="cap__icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M12 2L4 7v8l8 5 8-5V7z"/>
+                    <path d="M4 7l8 5 8-5"/>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Save Memory</div>
+                <div class="cap__sub is-hitl">Side-effect · HITL approval · LangGraph Store</div>
+                <div class="cap__desc">Persists a durable user fact: preferred period, excluded assets, default recipient.</div>
+            </div>
+            <div class="cap__num">11</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="2" style="opacity: 0.55;">
+            <div class="cap__icon" style="border-style: dashed;">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M3 9h18M9 3v18"/>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Browser <span style="font-size: 11px; color: var(--paper-faint); font-family: var(--font-mono);">(Phase 8)</span></div>
+                <div class="cap__sub">Designed · AgentCore Browser · Playwright</div>
+                <div class="cap__desc">Navigate, snapshot, screenshot JS-rendered pages when API data is insufficient.</div>
+            </div>
+            <div class="cap__num">12</div>
+        </div>
+
+        <div class="cap" data-reveal data-delay="3" style="opacity: 0.55;">
+            <div class="cap__icon" style="border-style: dashed;">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M12 3a4 4 0 014 4v5a4 4 0 01-8 0V7a4 4 0 014-4z"/>
+                    <path d="M5 11v1a7 7 0 0014 0v-1M12 19v3"/>
+                </svg>
+            </div>
+            <div>
+                <div class="cap__name">Voice mode <span style="font-size: 11px; color: var(--paper-faint); font-family: var(--font-mono);">(Phase 9)</span></div>
+                <div class="cap__sub">Designed · LiveKit · Deepgram · ElevenLabs</div>
+                <div class="cap__desc">Same LangGraph workflow, different transport. STT → graph → TTS, with HITL verbalised.</div>
+            </div>
+            <div class="cap__num">13</div>
+        </div>
+
+    </div>
+</section>
+
+<!-- =================== ARCHITECTURE =================== -->
+<section class="shell section" id="architecture">
+    <div class="section__header" data-reveal>
+        <div class="section__index">§ 03 — Architecture</div>
+        <h2 class="section__title">Six stacks, one <em>graph</em>, zero servers.</h2>
+    </div>
+
+    <div class="row">
+        <div></div>
+        <p class="section__intro" data-reveal data-delay="1">
+            The entire deployment is defined in AWS CDK — six stacks composing storage, secrets, MCP-as-Lambda
+            tools, a Cognito-gated Gateway, the AgentCore Runtime hosting the agent container, and an
+            observability layer. The agent itself is a LangGraph state machine: retrieval first, then research,
+            then generation, with an approval node sitting in front of every side-effect tool.
+        </p>
+    </div>
+
+    <div class="row" data-reveal data-delay="2">
+        <div></div>
+        <div class="arch-wrap">
+            <!-- Architecture SVG -->
+            <svg viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <style>
+                        .a-box { fill: #1c1a17; stroke: #2a2724; stroke-width: 1.5; }
+                        .a-box-accent { fill: #1c1a17; stroke: #e6532b; stroke-width: 1.5; }
+                        .a-text { font-family: 'Source Serif 4', Georgia, serif; fill: #f3ece0; font-size: 16px; }
+                        .a-text-sm { font-family: 'JetBrains Mono', monospace; fill: #8a8479; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+                        .a-text-num { font-family: 'JetBrains Mono', monospace; fill: #e6532b; font-size: 11px; letter-spacing: 0.08em; }
+                        .a-line { stroke: #2a2724; stroke-width: 1.5; fill: none; }
+                        .a-line-accent { stroke: #e6532b; stroke-width: 1.5; fill: none; }
+                        .a-line-flow { stroke: #6e6f75; stroke-width: 1; fill: none; stroke-dasharray: 4 4; }
+                        .a-dot { fill: #e6532b; }
+                    </style>
+                    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+                        <path d="M0,0 L0,6 L8,3 z" fill="#e6532b"/>
+                    </marker>
+                    <marker id="arrow-muted" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+                        <path d="M0,0 L0,6 L8,3 z" fill="#6e6f75"/>
+                    </marker>
+                </defs>
+
+                <!-- User -->
+                <g>
+                    <rect x="40" y="40" width="200" height="80" rx="3" class="a-box"/>
+                    <text x="60" y="68" class="a-text-sm">CLIENT</text>
+                    <text x="60" y="95" class="a-text">Analyst · CLI · Playground</text>
+                    <text x="60" y="113" class="a-text" style="font-size: 13px; fill: #8a8479;">Streamlit · LiveKit room (designed)</text>
+                </g>
+
+                <!-- Arrow: client → Runtime -->
+                <path d="M 240 80 L 410 80" class="a-line-accent" marker-end="url(#arrow)"/>
+                <text x="270" y="68" class="a-text-num">invoke-agent-runtime</text>
+
+                <!-- AgentCore Runtime -->
+                <g>
+                    <rect x="410" y="40" width="320" height="160" rx="3" class="a-box-accent"/>
+                    <text x="430" y="68" class="a-text-sm" style="fill: #e6532b;">▸ AGENTCORE RUNTIME</text>
+                    <text x="430" y="98" class="a-text" style="font-size: 22px; font-family: 'Fraunces', serif; font-style: italic;">LangGraph state machine</text>
+                    <text x="430" y="125" class="a-text" style="font-size: 13px; fill: #cbc4b6;">rag → grader → web_search → generate</text>
+                    <text x="430" y="143" class="a-text" style="font-size: 13px; fill: #cbc4b6;">          → approval → tools → generate</text>
+                    <text x="430" y="175" class="a-text-sm">CHECKPOINTER_BACKEND = agentcore</text>
+                </g>
+
+                <!-- Arrow: Runtime → Gateway -->
+                <path d="M 730 100 L 850 100" class="a-line-accent" marker-end="url(#arrow)"/>
+                <text x="745" y="92" class="a-text-num">MCP / OAuth</text>
+
+                <!-- Gateway -->
+                <g>
+                    <rect x="850" y="60" width="290" height="90" rx="3" class="a-box"/>
+                    <text x="870" y="88" class="a-text-sm">AGENTCORE GATEWAY</text>
+                    <text x="870" y="115" class="a-text">MCP over HTTPS</text>
+                    <text x="870" y="135" class="a-text-sm">Cognito client_credentials</text>
+                </g>
+
+                <!-- 3 Lambda targets -->
+                <g>
+                    <!-- Yfinance -->
+                    <rect x="850" y="200" width="90" height="70" rx="3" class="a-box"/>
+                    <text x="868" y="225" class="a-text-sm">λ TOOL</text>
+                    <text x="868" y="247" class="a-text" style="font-size: 14px;">Yahoo</text>
+                    <text x="868" y="262" class="a-text" style="font-size: 14px;">Finance</text>
+
+                    <!-- CRM -->
+                    <rect x="950" y="200" width="90" height="70" rx="3" class="a-box"/>
+                    <text x="968" y="225" class="a-text-sm">λ TOOL</text>
+                    <text x="968" y="247" class="a-text" style="font-size: 14px;">SQLite</text>
+                    <text x="968" y="262" class="a-text" style="font-size: 14px;">CRM</text>
+
+                    <!-- Filesystem -->
+                    <rect x="1050" y="200" width="90" height="70" rx="3" class="a-box"/>
+                    <text x="1068" y="225" class="a-text-sm">λ TOOL</text>
+                    <text x="1068" y="247" class="a-text" style="font-size: 14px;">S3 Work-</text>
+                    <text x="1068" y="262" class="a-text" style="font-size: 14px;">space</text>
+                </g>
+
+                <!-- Connectors from Gateway to Lambdas -->
+                <path d="M 895 150 L 895 200" class="a-line-flow"/>
+                <path d="M 995 150 L 995 200" class="a-line-flow"/>
+                <path d="M 1095 150 L 1095 200" class="a-line-flow"/>
+
+                <!-- Below the runtime: Memory + Stores -->
+                <g>
+                    <rect x="410" y="240" width="155" height="80" rx="3" class="a-box"/>
+                    <text x="430" y="268" class="a-text-sm">AGENTCORE MEMORY</text>
+                    <text x="430" y="295" class="a-text" style="font-size: 14px;">Durable checkpoint</text>
+                    <text x="430" y="312" class="a-text" style="font-size: 14px;">+ episodic store</text>
+
+                    <rect x="575" y="240" width="155" height="80" rx="3" class="a-box"/>
+                    <text x="595" y="268" class="a-text-sm">BEDROCK · OPENAI</text>
+                    <text x="595" y="295" class="a-text" style="font-size: 14px;">GPT-4o-mini</text>
+                    <text x="595" y="312" class="a-text" style="font-size: 14px;">text-embedding-3-small</text>
+                </g>
+
+                <path d="M 570 200 L 510 240" class="a-line"/>
+                <path d="M 570 200 L 640 240" class="a-line"/>
+
+                <!-- Right column: SES -->
+                <g>
+                    <rect x="40" y="240" width="320" height="80" rx="3" class="a-box"/>
+                    <text x="60" y="268" class="a-text-sm">AMAZON SES</text>
+                    <text x="60" y="295" class="a-text" style="font-size: 14px;">send_email · verified identity ARN</text>
+                    <text x="60" y="312" class="a-text" style="font-size: 13px; fill: #8a8479;">us-east-1 · sandbox 200/day</text>
+                </g>
+                <path d="M 410 130 L 200 240" class="a-line-flow"/>
+
+                <!-- Bottom: external research -->
+                <g>
+                    <rect x="40" y="360" width="320" height="80" rx="3" class="a-box"/>
+                    <text x="60" y="388" class="a-text-sm">RETRIEVAL</text>
+                    <text x="60" y="415" class="a-text" style="font-size: 14px;">Pinecone (RAG) · Tavily (web)</text>
+                    <text x="60" y="432" class="a-text" style="font-size: 13px; fill: #8a8479;">Falls back when index is cold</text>
+                </g>
+                <path d="M 200 320 L 200 360" class="a-line-flow"/>
+
+                <!-- Bottom block: IaC / CI -->
+                <g>
+                    <rect x="410" y="360" width="730" height="80" rx="3" class="a-box"/>
+                    <text x="430" y="388" class="a-text-sm">DELIVERY · INFRA-AS-CODE</text>
+                    <text x="430" y="415" class="a-text" style="font-size: 15px;">AWS CDK · 6 stacks · GitHub Actions OIDC · ECR · CloudWatch · X-Ray</text>
+                </g>
+                <path d="M 570 320 L 570 360" class="a-line-flow"/>
+                <path d="M 1000 270 L 1000 360" class="a-line-flow"/>
+
+                <!-- Trust / approval annotation -->
+                <g>
+                    <rect x="410" y="480" width="730" height="100" rx="3" fill="#0b0a09" stroke="#e6532b" stroke-width="1.5" stroke-dasharray="6 4"/>
+                    <text x="430" y="510" class="a-text-sm" style="fill: #e6532b;">HUMAN-IN-THE-LOOP CHECKPOINT</text>
+                    <text x="430" y="540" class="a-text" style="font-style: italic; font-family: 'Fraunces', serif;">Every side-effect tool call pauses the graph,</text>
+                    <text x="430" y="560" class="a-text" style="font-style: italic; font-family: 'Fraunces', serif;">surfaces the pending operation, waits for /approve or /reject.</text>
+                </g>
+                <path d="M 570 200 L 570 480" class="a-line-accent" stroke-dasharray="4 4"/>
+                <circle cx="570" cy="480" r="4" class="a-dot"/>
+            </svg>
+
+            <div class="arch-key">
+                <div class="arch-key__item">
+                    <span class="arch-key__num">01</span>
+                    <div class="arch-key__text">
+                        <strong>AgentCore Runtime</strong>
+                        Serverless container hosting LangGraph. Same image runs locally; same /invocations contract.
+                    </div>
+                </div>
+                <div class="arch-key__item">
+                    <span class="arch-key__num">02</span>
+                    <div class="arch-key__text">
+                        <strong>Gateway + 3 Lambdas</strong>
+                        MCP-over-HTTPS abstraction over yfinance, SQLite CRM and S3 workspace. Cognito-authenticated.
+                    </div>
+                </div>
+                <div class="arch-key__item">
+                    <span class="arch-key__num">03</span>
+                    <div class="arch-key__text">
+                        <strong>AgentCore Memory</strong>
+                        Durable checkpoint store. Containers become stateless — HITL approve survives any router decision.
+                    </div>
+                </div>
+                <div class="arch-key__item">
+                    <span class="arch-key__num">04</span>
+                    <div class="arch-key__text">
+                        <strong>Amazon SES</strong>
+                        IAM-scoped send via boto3. Verified sender identity. Sandbox today, prod-access ready.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- =================== ENGINEERING WINS =================== -->
+<section class="shell section" id="wins">
+    <div class="section__header" data-reveal>
+        <div class="section__index">§ 04 — Engineering decisions</div>
+        <h2 class="section__title">The hard parts, <em>made hard</em> on purpose.</h2>
+    </div>
+
+    <div class="row">
+        <div></div>
+        <p class="section__intro" data-reveal data-delay="1">
+            Four pieces of work define the shape of this system. They were not on the original product spec —
+            they emerged from production, from incidents, from a QA pass that refused to accept silence.
+        </p>
+    </div>
+
+    <div class="wins">
+
+        <!-- Win 1: HITL -->
+        <div class="win" data-reveal>
+            <div>
+                <div class="win__tag">Decision · 01</div>
+                <h3 class="win__title">An <em>atomic</em> approval gate, not a chat about it.</h3>
+                <div class="win__body">
+                    <p>
+                        When the agent decides to call a side-effect tool — write a file, save a memory, send an
+                        email — the LangGraph node <code>approval</code> calls <code>interrupt()</code>. The graph
+                        pauses, the runtime returns <code>status: "interrupted"</code> with the pending operation
+                        in the response body. Nothing has happened yet.
+                    </p>
+                    <p>
+                        The caller resumes with <code>Command(resume="approve")</code> or
+                        <code>"reject"</code>. The decision is <strong>atomic across the whole batch</strong> —
+                        a single reject cancels every pending call in the turn, even read-only ones, because
+                        partial execution is the worst of both worlds.
+                    </p>
+                </div>
+                <div class="win__quote">
+                    The agent will not invent a way to act. It will tell you what it wants to do, in your own
+                    schema, and wait for you to type the word.
+                </div>
+            </div>
+            <div>
+                <!-- HITL flow illustration -->
+                <div class="flow">
+                    <div class="flow__step">
+                        <div class="flow__step-num">Turn 1</div>
+                        <div class="flow__step-title">User asks</div>
+                        <div class="flow__step-desc">"Send the brief to the team."</div>
+                    </div>
+                    <div class="flow__sep">→</div>
+                    <div class="flow__step is-accent">
+                        <div class="flow__step-num">Pause</div>
+                        <div class="flow__step-title">Interrupt</div>
+                        <div class="flow__step-desc">pending_tool_calls<br>= [send_email{...}]</div>
+                    </div>
+                    <div class="flow__sep">→</div>
+                    <div class="flow__step">
+                        <div class="flow__step-num">Turn 2</div>
+                        <div class="flow__step-title">Approve</div>
+                        <div class="flow__step-desc">Tool runs · SES MessageId returned</div>
+                    </div>
+                </div>
+
+                <div class="win__metrics">
+                    <div class="win__metric">
+                        <div class="win__metric-value"><em>3</em></div>
+                        <div class="win__metric-label">HITL-gated tools</div>
+                    </div>
+                    <div class="win__metric">
+                        <div class="win__metric-value"><em>1</em></div>
+                        <div class="win__metric-label">Atomic verdict per batch</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Win 2: Durable checkpointer -->
+        <div class="win" data-reveal>
+            <div>
+                <div class="win__tag">Decision · 02</div>
+                <h3 class="win__title">A checkpoint store that <em>follows</em> the agent, not the container.</h3>
+                <div class="win__body">
+                    <p>
+                        The first deploy used an in-memory checkpointer. Then the AWS Console Runtime Playground
+                        crashed every <code>/approve</code> with a 500. The console mints a new
+                        <code>runtimeSessionId</code> per "Run" click — different container per click, no shared
+                        RAM, no checkpoint.
+                    </p>
+                    <p>
+                        We swapped <code>InMemorySaver</code> for <strong>AgentCoreMemorySaver</strong> — the
+                        AWS-maintained <code>BaseCheckpointSaver</code> backed by the AgentCore Memory service.
+                        Same construct that was already provisioned for episodic memory. Zero new infra. State
+                        keyed by <code>(actor_id, thread_id)</code> reads from any container in the fleet.
+                    </p>
+                </div>
+                <div class="win__quote">
+                    The container is now stateless with respect to the conversation. The conversation lives in
+                    Memory. Any worker can pick up any thread.
+                </div>
+            </div>
+            <div>
+                <!-- Container fleet diagram -->
+                <svg viewBox="0 0 540 360" style="width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); padding: 16px; box-sizing: border-box;">
+                    <defs>
+                        <marker id="ar2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#e6532b"/>
+                        </marker>
+                    </defs>
+                    <!-- Three containers -->
+                    <g>
+                        <rect x="40" y="40" width="120" height="80" rx="3" fill="#1c1a17" stroke="#2a2724"/>
+                        <text x="60" y="70" font-family="JetBrains Mono" font-size="11" fill="#8a8479" letter-spacing="0.08em">CONTAINER A</text>
+                        <text x="60" y="98" font-family="Source Serif 4" font-size="14" fill="#f3ece0">turn 1 ▸ interrupt</text>
+                    </g>
+                    <g>
+                        <rect x="200" y="40" width="120" height="80" rx="3" fill="#1c1a17" stroke="#2a2724"/>
+                        <text x="220" y="70" font-family="JetBrains Mono" font-size="11" fill="#8a8479" letter-spacing="0.08em">CONTAINER B</text>
+                        <text x="220" y="98" font-family="Source Serif 4" font-size="14" fill="#f3ece0">turn 2 ▸ approve</text>
+                    </g>
+                    <g>
+                        <rect x="360" y="40" width="120" height="80" rx="3" fill="#1c1a17" stroke="#2a2724"/>
+                        <text x="380" y="70" font-family="JetBrains Mono" font-size="11" fill="#8a8479" letter-spacing="0.08em">CONTAINER C</text>
+                        <text x="380" y="98" font-family="Source Serif 4" font-size="14" fill="#f3ece0">turn 3 ▸ recall</text>
+                    </g>
+
+                    <!-- Arrows down to memory -->
+                    <path d="M 100 120 L 220 200" stroke="#e6532b" stroke-width="1.5" fill="none" stroke-dasharray="4 4"/>
+                    <path d="M 260 120 L 270 200" stroke="#e6532b" stroke-width="1.5" fill="none" stroke-dasharray="4 4"/>
+                    <path d="M 420 120 L 320 200" stroke="#e6532b" stroke-width="1.5" fill="none" stroke-dasharray="4 4"/>
+
+                    <!-- AgentCore Memory -->
+                    <rect x="120" y="200" width="300" height="100" rx="3" fill="#1c1a17" stroke="#e6532b" stroke-width="1.5"/>
+                    <text x="140" y="228" font-family="JetBrains Mono" font-size="11" fill="#e6532b" letter-spacing="0.1em">AGENTCORE MEMORY</text>
+                    <text x="140" y="258" font-family="Fraunces" font-style="italic" font-size="22" fill="#f3ece0">Single source of truth</text>
+                    <text x="140" y="280" font-family="JetBrains Mono" font-size="11" fill="#8a8479">(actor_id, thread_id) → checkpoint</text>
+
+                    <text x="60" y="335" font-family="JetBrains Mono" font-size="10" fill="#8a8479" letter-spacing="0.08em">FRESH RUNTIMESESSIONID PER CLICK · CHECKPOINT STILL FOUND</text>
+                </svg>
+
+                <div class="win__metrics">
+                    <div class="win__metric">
+                        <div class="win__metric-value"><em>500 → 200</em></div>
+                        <div class="win__metric-label">Playground resume status</div>
+                    </div>
+                    <div class="win__metric">
+                        <div class="win__metric-value">0</div>
+                        <div class="win__metric-label">New AWS resources required</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Win 3: OIDC CI/CD -->
+        <div class="win" data-reveal>
+            <div>
+                <div class="win__tag">Decision · 03</div>
+                <h3 class="win__title">Zero static credentials between <em>commit</em> and AWS.</h3>
+                <div class="win__body">
+                    <p>
+                        GitHub Actions assumes an IAM role via OIDC. No long-lived access keys, no rotation
+                        ritual. The trust policy on <code>mia-github-deploy</code> only allows assumption from
+                        this repo, on the master branch — anyone else is denied at the STS layer.
+                    </p>
+                    <p>
+                        The role's permission is intentionally tiny: it can assume the four CDK bootstrap
+                        roles. CDK then does the actual work with its own least-privilege chain. Push → test →
+                        deploy → smoke. Roughly four minutes, no human in the loop.
+                    </p>
+                </div>
+<pre class="code"><span class="c-com"># trust-github-oidc.json — branch-scoped</span>
+<span class="c-key">"sub"</span>: <span class="c-str">"repo:YanivBohbot/Autonomous-Market-Intelligence-Agent:ref:refs/heads/master"</span>
+
+<span class="c-com"># Role's only inline permission:</span>
+<span class="c-key">"Action"</span>: <span class="c-str">"sts:AssumeRole"</span>
+<span class="c-key">"Resource"</span>: <span class="c-str">"arn:aws:iam::***:role/cdk-hnb659fds-*-us-east-1"</span></pre>
+            </div>
+            <div>
+                <div class="win__quote">
+                    The fastest secret to manage is the one that doesn't exist. OIDC removed the rotation
+                    schedule entirely. Push to master, the deploy is signed by a token that lives six minutes.
+                </div>
+
+                <div class="win__metrics">
+                    <div class="win__metric">
+                        <div class="win__metric-value">~4<em>m</em></div>
+                        <div class="win__metric-label">Push → smoke-verified</div>
+                    </div>
+                    <div class="win__metric">
+                        <div class="win__metric-value">0</div>
+                        <div class="win__metric-label">Static access keys</div>
+                    </div>
+                    <div class="win__metric">
+                        <div class="win__metric-value">master</div>
+                        <div class="win__metric-label">Only deployable branch</div>
+                    </div>
+                    <div class="win__metric">
+                        <div class="win__metric-value">3</div>
+                        <div class="win__metric-label">Jobs · test, deploy, smoke</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Win 4: SES migration -->
+        <div class="win" data-reveal>
+            <div>
+                <div class="win__tag">Decision · 04</div>
+                <h3 class="win__title">Migrated email from <em>SMTP+passwords</em> to SES + IAM.</h3>
+                <div class="win__body">
+                    <p>
+                        The original send_email tool used smtplib against Gmail with an App Password rotated
+                        into Secrets Manager. The setup hid two compounding bugs: <code>SMTP_SSL</code> was
+                        being called on port 587 (a TLS-upgrade port), and the simulation gate didn't catch
+                        the <code>@example.com</code> placeholder sender. Both invisible until the first real
+                        send.
+                    </p>
+                    <p>
+                        Swapped to <strong>boto3 SES</strong>. No port. No password. The runtime role is scoped
+                        to a specific verified sender identity ARN — <code>ses:SendEmail</code> on one
+                        identity, nothing else. Boto3 is lazy-imported inside the function so the slim-image
+                        dependency stays out of the dev test environment.
+                    </p>
+                </div>
+            </div>
+            <div>
+                <div class="win__quote">
+                    The probe returned a SES MessageId. Then the email arrived. Two pieces of evidence — one
+                    from AWS, one from a real inbox — closed the loop.
+                </div>
+
+                <div class="win__metrics">
+                    <div class="win__metric">
+                        <div class="win__metric-value">~140<em>ms</em></div>
+                        <div class="win__metric-label">Invoke → SES MessageId</div>
+                    </div>
+                    <div class="win__metric">
+                        <div class="win__metric-value"><em>1</em></div>
+                        <div class="win__metric-label">IAM action, scoped to one identity</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+<!-- =================== QA STORY =================== -->
+<section class="shell section" id="qa">
+    <div class="section__header" data-reveal>
+        <div class="section__index">§ 05 — Quality</div>
+        <h2 class="section__title">A smoke test that <em>lied</em>, and a QA pass that didn't.</h2>
+    </div>
+
+    <div class="row">
+        <div></div>
+        <p class="section__intro" data-reveal data-delay="1">
+            The original smoke test was four cases, all green. It asserted only that the agent's response
+            <code>status</code> was <code>completed</code> or <code>interrupted</code>. The agent met that bar
+            by gracefully apologising when tools were broken, or by hallucinating plausible numbers from its
+            training data. Real assertions had to ground in real tool output.
+        </p>
+    </div>
+
+    <div class="qa-compare">
+        <div class="qa-side" data-reveal data-delay="1">
+            <div class="qa-side__tag">Before</div>
+            <div class="qa-side__head">Smoke test: <em>4 / 4 green</em>. <br>Production: every tool quietly broken.</div>
+            <div class="qa-side__sub">
+                Lambdas returned <code style="background: transparent; border: 0; color: var(--paper-faint);">tool=None</code> because Gateway
+                puts the tool name in the Lambda <em>client context</em>, not the event body. The LLM met the
+                status check anyway — by inventing a NVDA price.
+            </div>
+            <div class="qa-bar">
+                <div class="qa-bar__cell is-on"></div>
+                <div class="qa-bar__cell is-hallucinated"></div>
+                <div class="qa-bar__cell is-hallucinated"></div>
+                <div class="qa-bar__cell is-hallucinated"></div>
+            </div>
+            <ul class="qa-suite-list">
+                <li><span>smoke.py · status checks</span><span class="count">4 / 4</span></li>
+                <li><span>actual tool execution</span><span class="count" style="color: #8a8479;">1 / 4 real</span></li>
+                <li><span>hallucinated tool output</span><span class="count">3 / 4</span></li>
+                <li><span>persona drift on greeting</span><span class="count">yes</span></li>
+                <li><span>cross-turn memory recall</span><span class="count">broken</span></li>
+            </ul>
+        </div>
+
+        <div class="qa-side is-after" data-reveal data-delay="2">
+            <div class="qa-side__tag">After</div>
+            <div class="qa-side__head">Grounded QA: <em>18 / 18</em>.<br>Real data, every assertion.</div>
+            <div class="qa-side__sub">
+                Every assertion now grounds in a fact pulled from a real backing store — a known customer name
+                from <code style="background: transparent; border: 0; color: var(--paper-faint);">customers.db</code>,
+                a SES MessageId, a verified file round-trip, a recalled memory value.
+            </div>
+            <div class="qa-bar">
+                <div class="qa-bar__cell is-on"></div>
+                <div class="qa-bar__cell is-on"></div>
+                <div class="qa-bar__cell is-on"></div>
+                <div class="qa-bar__cell is-on"></div>
+            </div>
+            <ul class="qa-suite-list">
+                <li><span>qa_full.py · sticky session</span><span class="count is-real">18 / 18</span></li>
+                <li><span>qa_playground.py · fresh-session HITL</span><span class="count is-real">18 / 18</span></li>
+                <li><span>probe_email.py · live SES send</span><span class="count is-real">MessageId returned</span></li>
+                <li><span>probe_playground.py · console UI mimic</span><span class="count is-real">6 / 6</span></li>
+                <li><span>cross-container HITL approve</span><span class="count is-real">verified live</span></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="row" style="margin-top: 64px;">
+        <div></div>
+        <div data-reveal data-delay="3" style="max-width: var(--measure);">
+            <p style="font-style: italic; font-family: var(--font-display); font-size: 22px; color: var(--paper); line-height: 1.4; padding-left: 20px; border-left: 2px solid var(--vermillion);">
+                Status-equal-completed is not a quality gate. If a model can satisfy your assertion by saying
+                "I'm sorry, I can't access that right now," then the assertion is grounded in apology, not in
+                the system. Pull a specific fact out of the underlying data store and assert on it.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- =================== STACK =================== -->
+<section class="shell section" id="stack">
+    <div class="section__header" data-reveal>
+        <div class="section__index">§ 06 — Stack</div>
+        <h2 class="section__title">What it's <em>built</em> with.</h2>
+    </div>
+
+    <div class="stack-grid">
+        <div class="stack-cell" data-reveal><div class="stack-cell__cat">Orchestration</div><div class="stack-cell__name">LangGraph</div></div>
+        <div class="stack-cell" data-reveal><div class="stack-cell__cat">Tool binding</div><div class="stack-cell__name">LangChain</div></div>
+        <div class="stack-cell" data-reveal data-delay="1"><div class="stack-cell__cat">Hosting</div><div class="stack-cell__name">Bedrock AgentCore</div></div>
+        <div class="stack-cell" data-reveal data-delay="1"><div class="stack-cell__cat">Runtime API</div><div class="stack-cell__name">FastAPI</div></div>
+        <div class="stack-cell" data-reveal data-delay="1"><div class="stack-cell__cat">LLM</div><div class="stack-cell__name">OpenAI GPT-4o-mini</div></div>
+        <div class="stack-cell" data-reveal data-delay="2"><div class="stack-cell__cat">Vector DB</div><div class="stack-cell__name">Pinecone</div></div>
+        <div class="stack-cell" data-reveal data-delay="2"><div class="stack-cell__cat">Web Research</div><div class="stack-cell__name">Tavily</div></div>
+        <div class="stack-cell" data-reveal data-delay="2"><div class="stack-cell__cat">MCP Tools</div><div class="stack-cell__name">AWS Lambda</div></div>
+        <div class="stack-cell" data-reveal data-delay="3"><div class="stack-cell__cat">Tool API</div><div class="stack-cell__name">AgentCore Gateway</div></div>
+        <div class="stack-cell" data-reveal data-delay="3"><div class="stack-cell__cat">State</div><div class="stack-cell__name">AgentCore Memory</div></div>
+        <div class="stack-cell" data-reveal data-delay="3"><div class="stack-cell__cat">Email</div><div class="stack-cell__name">Amazon SES</div></div>
+        <div class="stack-cell" data-reveal><div class="stack-cell__cat">Storage</div><div class="stack-cell__name">Amazon S3</div></div>
+        <div class="stack-cell" data-reveal><div class="stack-cell__cat">Auth</div><div class="stack-cell__name">Amazon Cognito</div></div>
+        <div class="stack-cell" data-reveal data-delay="1"><div class="stack-cell__cat">Secrets</div><div class="stack-cell__name">Secrets Manager</div></div>
+        <div class="stack-cell" data-reveal data-delay="1"><div class="stack-cell__cat">IaC</div><div class="stack-cell__name">AWS CDK · Python</div></div>
+        <div class="stack-cell" data-reveal data-delay="2"><div class="stack-cell__cat">CI/CD</div><div class="stack-cell__name">GitHub Actions · OIDC</div></div>
+        <div class="stack-cell" data-reveal data-delay="2"><div class="stack-cell__cat">Observability</div><div class="stack-cell__name">CloudWatch · X-Ray</div></div>
+        <div class="stack-cell" data-reveal data-delay="2"><div class="stack-cell__cat">Voice (designed)</div><div class="stack-cell__name">LiveKit · Deepgram · ElevenLabs</div></div>
+    </div>
+</section>
+
+<!-- =================== FOOTER =================== -->
+<section class="shell footer">
+    <p class="footer__sig" data-reveal>
+        Read-only research, <em>gated</em> action, durable memory.<br>
+        That's the agent.
+    </p>
+    <div class="footer__meta">
+        <div>© 2026 · Yaniv Bohbot · Autonomous Market Intelligence Agent</div>
+        <div>
+            <a href="https://github.com/YanivBohbot/Autonomous-Market-Intelligence-Agent" target="_blank" rel="noopener">→ Source on GitHub</a>
+        </div>
+    </div>
+</section>
+
+<script>
+// Intersection-based scroll reveal
+(function () {
+    const items = document.querySelectorAll('[data-reveal]');
+    if (!('IntersectionObserver' in window)) {
+        items.forEach(el => el.classList.add('is-in'));
+        return;
+    }
+    const io = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('is-in');
+                io.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.14, rootMargin: '0px 0px -8% 0px' });
+    items.forEach(el => io.observe(el));
+})();
+
+// Smooth scroll for in-page links (browsers do this already but force smooth for old anchors)
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', (e) => {
+        const id = a.getAttribute('href').slice(1);
+        const el = document.getElementById(id);
+        if (el) {
+            e.preventDefault();
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    });
+});
+</script>
+
+</body>
+</html>
