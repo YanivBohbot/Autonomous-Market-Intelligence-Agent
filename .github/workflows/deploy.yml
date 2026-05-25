@@ -17,7 +17,7 @@ permissions:
 env:
   AWS_REGION: us-east-1
   MIA_ENV: demo
-  CDK_VERSION: 2.170.0
+  CDK_VERSION: 2.1124.1
 
 jobs:
   test:

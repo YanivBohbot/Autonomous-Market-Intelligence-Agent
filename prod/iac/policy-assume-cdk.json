@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssumeCDKBootstrapRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:aws:iam::584246028688:role/cdk-hnb659fds-deploy-role-584246028688-us-east-1",
+        "arn:aws:iam::584246028688:role/cdk-hnb659fds-file-publishing-role-584246028688-us-east-1",
+        "arn:aws:iam::584246028688:role/cdk-hnb659fds-image-publishing-role-584246028688-us-east-1",
+        "arn:aws:iam::584246028688:role/cdk-hnb659fds-lookup-role-584246028688-us-east-1"
+      ]
+    },
+    {
+      "Sid": "ReadCloudFormationExports",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:ListExports",
+        "cloudformation:DescribeStacks"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "InvokeAgentForSmokeTest",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:InvokeAgentRuntime",
+      "Resource": "arn:aws:bedrock-agentcore:us-east-1:584246028688:runtime/*"
+    }
+  ]
+}
