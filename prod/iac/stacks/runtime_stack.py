@@ -89,9 +89,17 @@ class MiaRuntimeStack(Stack):
         data_bucket.grant_read(role)
         # Gateway invoke
         gateway.grant_invoke(role)
-        # Memory r/w
+        # Memory r/w — `AgentCoreMemorySaver` needs CreateEvent (write a
+        # checkpoint), ListEvents (load checkpoint history), and
+        # RetrieveMemories (long-term retrieval, also used by store).
+        # Scoped to the specific memory ARN by the construct.
         self.memory.grant_read(role)
-        self.memory.grant(role, "bedrock-agentcore:CreateEvent")
+        self.memory.grant(
+            role,
+            "bedrock-agentcore:CreateEvent",
+            "bedrock-agentcore:ListEvents",
+            "bedrock-agentcore:RetrieveMemories",
+        )
         # Cognito user pool client — needed to read the client secret at
         # boot so the agent can mint OAuth tokens for the Gateway. The
         # specific user pool ARN is hardcoded here for the demo; lift to a
@@ -116,7 +124,12 @@ class MiaRuntimeStack(Stack):
             tracing_enabled=False,
             environment_variables={
                 # Backend switches set in app/ during Phase 6a:
-                "CHECKPOINTER_BACKEND": "memory",
+                # Durable checkpoint store via AgentCoreMemorySaver — required
+                # for HITL approve/reject to work across container instances
+                # (the AgentCore Runtime Playground generates a new
+                # runtimeSessionId per click; in-memory state cannot survive).
+                # Flip back to "memory" for a quick rollback without code changes.
+                "CHECKPOINTER_BACKEND": "agentcore",
                 "MCP_TRANSPORT": "gateway",
                 "WORKSPACE_BACKEND": "s3",
                 # Runtime-resolved values:
