@@ -1,17 +1,19 @@
 """Checkpointer factory with a pluggable backend.
 
-The default `sqlite` backend uses `AsyncSqliteSaver` against a local SQLite file —
-the right choice for local dev where state must survive process restarts.
+Backends, selected via `CHECKPOINTER_BACKEND` env:
 
-The `memory` backend uses LangGraph's in-process `InMemorySaver`. State is lost
-when the container stops. This is the v1 production choice for AgentCore Runtime:
-each AgentCore session lives inside a single container instance, so we don't need
-cross-process persistence — session continuity is handled by AgentCore itself
-keying the same `thread_id` to the same warm container. A future revision will
-add an `agentcore` backend that persists facts to the AgentCore Memory service
-via boto3, when an official LangGraph adapter ships.
-
-Selected via `CHECKPOINTER_BACKEND` env: `sqlite` (default) | `memory`.
+- `sqlite` (default): `AsyncSqliteSaver` against a local SQLite file —
+  right choice for local dev where state must survive process restarts.
+- `memory`: LangGraph's in-process `InMemorySaver`. State is lost when
+  the container stops AND when AgentCore routes a follow-up call to a
+  different container. Use only for tests / very-short single-turn
+  flows.
+- `agentcore`: `AgentCoreMemorySaver` (from `langgraph-checkpoint-aws`),
+  backed by an AgentCore Memory resource. Durable across containers —
+  the right choice for any AgentCore Runtime deployment that does
+  multi-turn or HITL. Requires `MIA_MEMORY_ID` and AWS creds with
+  `bedrock-agentcore:CreateEvent`, `ListEvents`, `RetrieveMemories`
+  on the memory ARN.
 """
 
 from __future__ import annotations
@@ -52,6 +54,27 @@ async def create_checkpointer(
     if backend == "memory":
         logger.info("checkpointer backend=memory (state lost on restart)")
         yield InMemorySaver()
+        return
+
+    if backend == "agentcore":
+        # Durable, multi-container checkpointer backed by AgentCore Memory.
+        # Required when running on AgentCore Runtime so that HITL resume and
+        # cross-turn recall work regardless of which container handles which
+        # turn. See docs/superpowers/specs/2026-05-25-durable-checkpointer-design.md.
+        from langgraph_checkpoint_aws import AgentCoreMemorySaver
+
+        memory_id = os.environ.get("MIA_MEMORY_ID")
+        if not memory_id:
+            raise RuntimeError(
+                "CHECKPOINTER_BACKEND=agentcore requires MIA_MEMORY_ID env var "
+                "(set automatically by the runtime CDK stack)."
+            )
+        region = os.environ.get("AWS_REGION", "us-east-1")
+        logger.info(
+            "checkpointer backend=agentcore memory_id=%s region=%s",
+            memory_id, region,
+        )
+        yield AgentCoreMemorySaver(memory_id, region_name=region)
         return
 
     raise ValueError(
