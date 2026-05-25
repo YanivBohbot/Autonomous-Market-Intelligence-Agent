@@ -18,8 +18,6 @@ from __future__ import annotations
 import logging
 import os
 
-import boto3
-from botocore.exceptions import BotoCoreError, ClientError
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
@@ -53,6 +51,13 @@ def send_email_tool(recipient: str, subject: str, body: str) -> str:
     if _is_placeholder_sender(sender):
         logger.warning("SEND_EMAIL: simulation mode — sender %r looks placeholder", sender)
         return f"SIMULATION SUCCÈS : Email virtuellement envoyé à {recipient} avec le sujet '{subject}'."
+
+    # Lazy import: boto3 / botocore live in the slim AgentCore container
+    # image but aren't in the local dev dep tree (pyproject.toml). Importing
+    # at module level breaks pytest collection. Local dev hits the
+    # simulation gate above and never reaches this point.
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
 
     region = os.environ.get("AWS_REGION", "us-east-1")
     client = boto3.client("ses", region_name=region)
