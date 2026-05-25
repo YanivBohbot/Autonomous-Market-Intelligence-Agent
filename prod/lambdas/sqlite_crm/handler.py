@@ -59,9 +59,17 @@ _DISPATCH = {
 }
 
 
+def _tool_name_from_context(context) -> str | None:
+    try:
+        raw = context.client_context.custom["bedrockAgentCoreToolName"]
+    except (AttributeError, KeyError, TypeError):
+        return None
+    return raw.split("___", 1)[1] if "___" in raw else raw
+
+
 def lambda_handler(event, context):
-    tool = event.get("tool")
-    args = event.get("args") or {}
+    tool = _tool_name_from_context(context)
+    args = event if isinstance(event, dict) else {}
     logger.info("sqlite-crm lambda invoked: tool=%s", tool)
     fn = _DISPATCH.get(tool)
     if fn is None:
