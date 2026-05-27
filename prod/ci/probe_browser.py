@@ -42,7 +42,7 @@ def invoke(query: str) -> dict:
     resp = rt.invoke_agent_runtime(
         agentRuntimeArn=RUNTIME_ARN,
         runtimeSessionId=rs,
-        payload=json.dumps({"query": query, "session_id": BODY_SID}).encode("utf-8"),
+        payload=json.dumps({"prompt": query, "session_id": BODY_SID}).encode("utf-8"),
         contentType="application/json",
         accept="application/json",
     )
