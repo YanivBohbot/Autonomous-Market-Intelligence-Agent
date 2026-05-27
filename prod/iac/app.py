@@ -7,6 +7,7 @@ import os
 
 import aws_cdk as cdk
 
+from stacks.browser_stack import MiaBrowserStack
 from stacks.gateway_stack import MiaGatewayStack
 from stacks.mcp_lambdas_stack import MiaMcpLambdasStack
 from stacks.observability_stack import MiaObservabilityStack
@@ -37,6 +38,11 @@ storage = MiaStorageStack(
 
 secrets = MiaSecretsStack(
     app, f"{PROJECT}-secrets-{ENV_NAME}",
+    project=PROJECT, env_name=ENV_NAME, env=env,
+)
+
+browser = MiaBrowserStack(
+    app, f"{PROJECT}-browser-{ENV_NAME}",
     project=PROJECT, env_name=ENV_NAME, env=env,
 )
 
