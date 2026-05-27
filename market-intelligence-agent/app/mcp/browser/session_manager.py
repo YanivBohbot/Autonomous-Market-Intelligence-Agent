@@ -138,3 +138,27 @@ class BrowserSessionManager:
             self._session.session_id,
             self.thread_id,
         )
+
+    def evict_if_idle(self) -> None:
+        """Stop the session if it has been idle longer than idle_ttl_s."""
+        with self._lock:
+            if self._session is None:
+                return
+            idle_for = time.monotonic() - self._session.last_activity_s
+            if idle_for >= self.idle_ttl_s:
+                self._stop_locked()
+
+    def stop(self) -> None:
+        """Unconditionally stop the current session."""
+        with self._lock:
+            self._stop_locked()
+
+    def _stop_locked(self) -> None:
+        """Stop the session; caller must hold self._lock."""
+        if self._session is None:
+            return
+        try:
+            self._client.stop()  # real SDK: stop() takes no args, uses instance state
+        except Exception as exc:
+            logger.warning("client.stop failed (continuing): %r", exc)
+        self._session = None

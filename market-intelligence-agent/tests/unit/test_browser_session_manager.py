@@ -88,3 +88,33 @@ def test_connect_playwright_failure_cleans_up_server_session(fake_browser_client
         fake_browser_client.stop.assert_called_once()
         # Session must remain None — no partial state left behind.
         assert mgr._session is None
+
+
+def test_evict_if_idle_stops_session_past_ttl(fake_browser_client, fake_playwright_page):
+    """If now() - last_activity > idle_ttl_s, evict_if_idle stops the session.
+    Next get_page() must lazy-start a fresh one."""
+    with patch(
+        "app.mcp.browser.session_manager.BrowserClient",
+        return_value=fake_browser_client,
+    ), patch(
+        "app.mcp.browser.session_manager._connect_playwright",
+        return_value=(MagicMock(), MagicMock(), fake_playwright_page),
+    ):
+        from app.mcp.browser import session_manager as sm
+        clock = {"t": 1000.0}
+        with patch.object(sm.time, "monotonic", side_effect=lambda: clock["t"]):
+            mgr = sm.BrowserSessionManager(
+                browser_arn="arn:1", thread_id="t1", idle_ttl_s=300,
+            )
+            mgr.get_page()  # session #1 starts at t=1000
+
+            clock["t"] = 1100.0  # 100s later — under TTL
+            mgr.evict_if_idle()
+            assert fake_browser_client.stop.call_count == 0  # adapt: client method is `stop`, not `stop_session`
+
+            clock["t"] = 1500.0  # 500s later — past TTL
+            mgr.evict_if_idle()
+            assert fake_browser_client.stop.call_count == 1
+
+            mgr.get_page()  # forces session #2
+            assert fake_browser_client.start.call_count == 2
