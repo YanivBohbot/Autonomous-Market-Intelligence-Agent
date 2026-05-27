@@ -48,8 +48,13 @@ def _navigate_impl(url: str) -> str:
 
 def _snapshot_impl() -> str:
     def op(page):
-        tree = page.accessibility.snapshot() or {}
-        return _flatten(tree)
+        # Playwright Python 1.46+ removed page.accessibility.snapshot(). Fall back to
+        # the visible body text — same purpose (give the LLM a readable page summary)
+        # without the accessibility-tree shape.
+        try:
+            return page.locator("body").inner_text(timeout=10000)
+        except Exception:
+            return page.content()  # last resort: raw HTML
     return _manager().with_retry(op)
 
 
