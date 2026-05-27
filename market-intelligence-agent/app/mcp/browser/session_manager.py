@@ -101,9 +101,17 @@ class BrowserSessionManager:
             self.browser_arn,
         )
         # start() sets self._client.identifier and self._client.session_id,
-        # and returns the session_id string.
+        # and returns the session_id string. The SDK expects the bare
+        # browser id (last segment after `:browser-custom/`), not the
+        # full ARN — passing the full ARN makes AWS construct a doubled
+        # `browser-custom/<arn>` resource and IAM denies StartBrowserSession.
+        identifier = (
+            self.browser_arn.rsplit("/", 1)[-1]
+            if "/" in self.browser_arn
+            else self.browser_arn
+        )
         self._client.start(
-            identifier=self.browser_arn,
+            identifier=identifier,
             session_timeout_seconds=1800,
         )
 
