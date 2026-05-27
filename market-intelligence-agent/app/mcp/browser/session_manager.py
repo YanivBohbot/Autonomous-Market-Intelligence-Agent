@@ -65,12 +65,15 @@ class BrowserSessionManager:
         self.thread_id = thread_id
         self.idle_ttl_s = idle_ttl_s
 
-        region = (
-            os.environ.get("AWS_REGION")
-            or os.environ.get("AWS_DEFAULT_REGION")
-            or "us-east-1"
+        _aws_region = os.environ.get("AWS_REGION") or os.environ.get(
+            "AWS_DEFAULT_REGION"
         )
-        self._client = BrowserClient(region)
+        if not _aws_region:
+            logger.warning(
+                "AWS_REGION/AWS_DEFAULT_REGION unset, defaulting to us-east-1"
+            )
+            _aws_region = "us-east-1"
+        self._client = BrowserClient(_aws_region)
         self._session: _Session | None = None
         self._lock = threading.Lock()
 
@@ -108,7 +111,20 @@ class BrowserSessionManager:
         # build a SigV4-signed WSS URL.
         ws_url, headers = self._client.generate_ws_headers()
 
-        browser, context, page = _connect_playwright(ws_url, headers)
+        try:
+            browser, context, page = _connect_playwright(ws_url, headers)
+        except Exception:
+            # Server-side session is live but Playwright failed to connect.
+            # Best-effort cleanup to avoid an orphaned session on re-entry.
+            try:
+                self._client.stop()
+            except Exception:
+                logger.warning(
+                    "Failed to stop AgentCore Browser session after Playwright "
+                    "connect error (thread=%s); session may remain active server-side",
+                    self.thread_id,
+                )
+            raise
 
         self._session = _Session(
             session_id=self._client.session_id,
