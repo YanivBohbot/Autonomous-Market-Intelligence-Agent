@@ -73,16 +73,19 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **File:** `app/agent/tools/mcp_clients/browser_client.py` (selects from registry)
 - **What:** Spawns `@playwright/mcp` as a stdio subprocess (with headless Chromium), navigates the active browser tab to the given URL, returns page metadata.
 - **Why:** The agent's reach was bounded by what Tavily snippets and yfinance metadata could surface. With `browser_navigate` it can open the actual Reuters article, the actual investor-relations page, the actual competitor pricing tier — and feed that into the synthesis step instead of guessing from headlines.
+- **Production backend:** Amazon Bedrock AgentCore Browser via a custom stdio MCP server in `app/mcp/browser/`. Selected via `BROWSER_BACKEND=agentcore`. Dev uses `@playwright/mcp`. See `docs/superpowers/specs/2026-05-27-agentcore-browser-design.md`.
 
 ### 10. `browser_snapshot`
 - **File:** same as `browser_navigate`
 - **What:** Returns the current page as an accessibility tree — structured text plus element refs (`button [ref=e2]`, `link [ref=e3]`, etc.). No raw HTML.
 - **Why:** This is the "extract text" capability. Accessibility-tree output is LLM-friendly: cheap on tokens, semantically labelled, ignores the markup soup. Pair with `browser_navigate` to do the equivalent of "open page X and read it to me."
+- **Production backend:** Amazon Bedrock AgentCore Browser via a custom stdio MCP server in `app/mcp/browser/`. Selected via `BROWSER_BACKEND=agentcore`. Dev uses `@playwright/mcp`. See `docs/superpowers/specs/2026-05-27-agentcore-browser-design.md`.
 
 ### 11. `browser_take_screenshot`
 - **File:** same as `browser_navigate`
 - **What:** Captures a PNG of the current page. Saves into `data/workspace/screenshots/<filename>` via the server's `--output-dir` flag. Optional `fullPage` argument captures beyond the viewport.
 - **Why:** Visual evidence for HITL review. When the agent proposes a `write_file` or `send_email`, attaching a screenshot reference (`see screenshots/acme-2026-05-12.png`) lets the human reviewer cross-check the claim against the source page in one click. Screenshots are bypassed by `READ_ONLY_TOOLS` — they go into a dedicated subfolder so the workspace root stays clean for user-facing briefs.
+- **Production backend:** Amazon Bedrock AgentCore Browser via a custom stdio MCP server in `app/mcp/browser/`. Selected via `BROWSER_BACKEND=agentcore`. Dev uses `@playwright/mcp`. See `docs/superpowers/specs/2026-05-27-agentcore-browser-design.md`.
 
 ### 12. `recall_memory`
 - **File:** `app/agent/tools/memory.py`

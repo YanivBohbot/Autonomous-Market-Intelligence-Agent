@@ -7,6 +7,7 @@ import os
 
 import aws_cdk as cdk
 
+from stacks.browser_stack import MiaBrowserStack
 from stacks.gateway_stack import MiaGatewayStack
 from stacks.mcp_lambdas_stack import MiaMcpLambdasStack
 from stacks.observability_stack import MiaObservabilityStack
@@ -40,6 +41,11 @@ secrets = MiaSecretsStack(
     project=PROJECT, env_name=ENV_NAME, env=env,
 )
 
+browser = MiaBrowserStack(
+    app, f"{PROJECT}-browser-{ENV_NAME}",
+    project=PROJECT, env_name=ENV_NAME, env=env,
+)
+
 mcp_lambdas = MiaMcpLambdasStack(
     app, f"{PROJECT}-mcp-lambdas-{ENV_NAME}",
     project=PROJECT, env_name=ENV_NAME,
@@ -66,10 +72,12 @@ runtime = MiaRuntimeStack(
     data_bucket=storage.data_bucket,
     secrets=secrets.secrets,
     gateway=gateway.gateway,
+    browser_arn=browser.browser_arn,
     env=env,
 )
 runtime.add_dependency(secrets)
 runtime.add_dependency(gateway)
+runtime.add_dependency(browser)
 
 observability = MiaObservabilityStack(
     app, f"{PROJECT}-observability-{ENV_NAME}",

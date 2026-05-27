@@ -35,3 +35,8 @@ pydantic>=2.12.4
 pydantic-settings>=2.12.0
 python-dotenv>=1.2.1
 boto3>=1.35.0
+
+# AgentCore Browser — SigV4 WebSocket client + Playwright (managed Chromium
+# runs in AgentCore Browser, so no Chromium binary install in this image).
+bedrock-agentcore>=1.11.0
+playwright>=1.46.0

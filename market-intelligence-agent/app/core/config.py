@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     AGENTCORE_GATEWAY_URL: str = ""  # required when MCP_TRANSPORT=gateway
     WORKSPACE_BACKEND: str = "local"  # "local" | "s3" (consumed by the filesystem Lambda)
     WORKSPACE_S3_BUCKET: str = ""  # required when WORKSPACE_BACKEND=s3
+    BROWSER_BACKEND: str = "local"  # "local" | "agentcore"
+    BROWSER_TOOL_ID: str | None = None  # AgentCore Browser ARN, required when BROWSER_BACKEND=agentcore
+    BROWSER_IDLE_TTL_S: int = 300
     API_URL: str = "http://127.0.0.1:8000"
     YFINANCE_TIMEOUT_S: int = 10
     WORKSPACE_ROOT: Path = Path("data/workspace")

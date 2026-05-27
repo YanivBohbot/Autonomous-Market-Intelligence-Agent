@@ -89,6 +89,48 @@ def _gateway_config() -> dict:
     return {"agentcore_gateway": cfg}
 
 
+def _browser_entry(workspace_root) -> dict:
+    """Return the 'browser' MCP server entry — local @playwright/mcp by default,
+    custom AgentCore Browser MCP server when BROWSER_BACKEND=agentcore.
+
+    The browser is always a local stdio subprocess: even in gateway mode the
+    Playwright / AgentCore Browser client runs in-process (it is not a Lambda
+    target behind the Gateway), so both transport branches call this helper.
+    """
+    backend = (settings.BROWSER_BACKEND or "local").lower()
+    if backend == "agentcore":
+        if not settings.BROWSER_TOOL_ID:
+            raise RuntimeError(
+                "BROWSER_BACKEND=agentcore requires BROWSER_TOOL_ID to be set."
+            )
+        env = dict(os.environ)
+        env["BROWSER_TOOL_ID"] = settings.BROWSER_TOOL_ID
+        env["BROWSER_IDLE_TTL_S"] = str(settings.BROWSER_IDLE_TTL_S)
+        env.setdefault("BROWSER_THREAD_ID", "default")
+        return {
+            "command": "python",
+            "args": ["-m", "app.mcp.browser.server"],
+            "transport": "stdio",
+            "env": env,
+            "cwd": str(workspace_root),
+        }
+    # local (default): Playwright MCP via npx
+    return {
+        "command": "npx",
+        "args": [
+            "-y", "@playwright/mcp@latest",
+            "--browser", "chromium",
+            "--headless",
+            "--output-dir", str(workspace_root / "screenshots"),
+        ],
+        "transport": "stdio",
+        "env": dict(os.environ),
+        # cwd = workspace_root so any relative path the LLM passes to
+        # browser_take_screenshot lands inside the workspace, not the project root.
+        "cwd": str(workspace_root),
+    }
+
+
 def _stdio_config() -> dict:
     """Local dev: each tool server runs as a stdio subprocess inside this process."""
     workspace_root = settings.WORKSPACE_ROOT.resolve()
@@ -118,20 +160,7 @@ def _stdio_config() -> dict:
             # root), which is outside the allowed directory and the server rejects them.
             "cwd": str(workspace_root),
         },
-        "browser": {
-            "command": "npx",
-            "args": [
-                "-y", "@playwright/mcp@latest",
-                "--browser", "chromium",
-                "--headless",
-                "--output-dir", str(workspace_root / "screenshots"),
-            ],
-            "transport": "stdio",
-            "env": dict(os.environ),
-            # cwd = workspace_root so any relative path the LLM passes to
-            # browser_take_screenshot lands inside the workspace, not the project root.
-            "cwd": str(workspace_root),
-        },
+        "browser": _browser_entry(workspace_root),
     }
 
 
@@ -140,13 +169,20 @@ def _server_config() -> dict:
 
     `stdio` (default): local subprocess servers — the original behavior, kept for
     dev and tests. `gateway`: a single AgentCore Gateway HTTPS endpoint that
-    fronts the production tool Lambdas.
+    fronts the production tool Lambdas. In gateway mode, the browser tool is
+    still a local stdio subprocess (not a Lambda target), so it is merged in
+    alongside the gateway entry.
     """
     transport = settings.MCP_TRANSPORT.lower()
     if transport == "stdio":
         return _stdio_config()
     if transport == "gateway":
-        return _gateway_config()
+        workspace_root = settings.WORKSPACE_ROOT.resolve()
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        (workspace_root / "screenshots").mkdir(parents=True, exist_ok=True)
+        cfg = _gateway_config()
+        cfg["browser"] = _browser_entry(workspace_root)
+        return cfg
     raise ValueError(
         f"Unknown MCP_TRANSPORT={settings.MCP_TRANSPORT!r}. "
         "Valid values: 'stdio', 'gateway'."
