@@ -118,3 +118,35 @@ def test_evict_if_idle_stops_session_past_ttl(fake_browser_client, fake_playwrig
 
             mgr.get_page()  # forces session #2
             assert fake_browser_client.start.call_count == 2
+
+
+def test_auto_reconnect_on_disconnect(fake_browser_client):
+    """If the cached page raises ConnectionError on use, the manager must drop
+    the session and restart on the next get_page() call. Up to 3 retries before
+    surfacing the error."""
+    from app.mcp.browser import session_manager as sm
+
+    bad_page = MagicMock(name="DeadPage")
+    bad_page.evaluate.side_effect = ConnectionError("ws closed")
+    good_page = MagicMock(name="LivePage")
+
+    with patch(
+        "app.mcp.browser.session_manager.BrowserClient",
+        return_value=fake_browser_client,
+    ), patch(
+        "app.mcp.browser.session_manager._connect_playwright",
+        side_effect=[
+            (MagicMock(), MagicMock(), bad_page),
+            (MagicMock(), MagicMock(), good_page),
+        ],
+    ):
+        mgr = sm.BrowserSessionManager(
+            browser_arn="arn:1", thread_id="t1", idle_ttl_s=300,
+        )
+
+        def health_check(p):
+            p.evaluate("1")  # raises on dead, returns on good
+
+        result = mgr.with_retry(health_check, max_attempts=3)
+        assert fake_browser_client.start.call_count == 2
+        assert result is None  # health_check returned None on the live page

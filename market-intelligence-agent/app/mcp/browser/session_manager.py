@@ -162,3 +162,22 @@ class BrowserSessionManager:
         except Exception as exc:
             logger.warning("client.stop failed (continuing): %r", exc)
         self._session = None
+
+    _RECONNECT_EXCEPTIONS = (ConnectionError, OSError)
+
+    def with_retry(self, op, *, max_attempts: int = 3):
+        """Run op(page); on ConnectionError/OSError, drop the session and retry.
+        Raises the last exception if all attempts fail."""
+        last: BaseException | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return op(self.get_page())
+            except self._RECONNECT_EXCEPTIONS as exc:
+                last = exc
+                logger.warning(
+                    "browser op failed (attempt %d/%d): %r", attempt, max_attempts, exc
+                )
+                with self._lock:
+                    self._stop_locked()
+        assert last is not None
+        raise last
