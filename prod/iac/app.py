@@ -72,10 +72,12 @@ runtime = MiaRuntimeStack(
     data_bucket=storage.data_bucket,
     secrets=secrets.secrets,
     gateway=gateway.gateway,
+    browser_arn=browser.browser_arn,
     env=env,
 )
 runtime.add_dependency(secrets)
 runtime.add_dependency(gateway)
+runtime.add_dependency(browser)
 
 observability = MiaObservabilityStack(
     app, f"{PROJECT}-observability-{ENV_NAME}",

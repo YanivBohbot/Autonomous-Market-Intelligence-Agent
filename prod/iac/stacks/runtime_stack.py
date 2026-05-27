@@ -40,6 +40,7 @@ class MiaRuntimeStack(Stack):
         data_bucket: s3.IBucket,
         secrets: dict[str, sm.ISecret],
         gateway: agentcore.IGateway,
+        browser_arn: str,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -97,6 +98,20 @@ class MiaRuntimeStack(Stack):
         data_bucket.grant_read(role)
         # Gateway invoke
         gateway.grant_invoke(role)
+        # AgentCore Browser data-plane: start/stop/get sessions plus the
+        # ConnectBrowserAutomationStream WebSocket data-plane call. The arn
+        # is the CustomBrowser ARN minted by MiaBrowserStack.
+        role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "bedrock-agentcore:StartBrowserSession",
+                    "bedrock-agentcore:StopBrowserSession",
+                    "bedrock-agentcore:GetBrowserSession",
+                    "bedrock-agentcore:ConnectBrowserAutomationStream",
+                ],
+                resources=[browser_arn],
+            )
+        )
         # Memory r/w — `AgentCoreMemorySaver` needs CreateEvent (write a
         # checkpoint), ListEvents (load checkpoint history), and
         # RetrieveMemories (long-term retrieval, also used by store).
@@ -144,6 +159,9 @@ class MiaRuntimeStack(Stack):
             description=f"{project} {env_name} agent runtime",
             tracing_enabled=False,
             environment_variables={
+                "BROWSER_BACKEND": "agentcore",
+                "BROWSER_TOOL_ID": browser_arn,
+                "BROWSER_IDLE_TTL_S": "300",
                 "CHECKPOINTER_BACKEND": "agentcore",
                 "MCP_TRANSPORT": "gateway",
                 "WORKSPACE_BACKEND": "s3",
