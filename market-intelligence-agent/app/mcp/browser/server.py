@@ -74,22 +74,30 @@ def _flatten(node: dict, depth: int = 0) -> str:
     return "\n".join(out)
 
 
+# Tool wrappers are async because FastMCP runs them inside an asyncio loop.
+# The underlying _impl functions use Playwright's *sync* API, which refuses to
+# run inside an asyncio loop. asyncio.to_thread shoves the sync work onto a
+# worker thread so Playwright sees a clean sync context. Keeps the _impl
+# functions test-friendly without an async-Playwright rewrite.
+import asyncio
+
+
 @mcp.tool()
-def browser_navigate(url: str) -> str:
+async def browser_navigate(url: str) -> str:
     """Navigate the persistent browser tab to a URL."""
-    return _navigate_impl(url)
+    return await asyncio.to_thread(_navigate_impl, url)
 
 
 @mcp.tool()
-def browser_snapshot() -> str:
+async def browser_snapshot() -> str:
     """Return the current page as a flattened accessibility tree."""
-    return _snapshot_impl()
+    return await asyncio.to_thread(_snapshot_impl)
 
 
 @mcp.tool()
-def browser_take_screenshot(filename: str) -> str:
+async def browser_take_screenshot(filename: str) -> str:
     """Save a PNG into workspace screenshots/ and return its workspace-relative path."""
-    return _screenshot_impl(filename)
+    return await asyncio.to_thread(_screenshot_impl, filename)
 
 
 def _on_signal(signum, _frame):
