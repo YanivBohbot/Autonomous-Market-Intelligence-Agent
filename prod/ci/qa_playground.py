@@ -206,6 +206,69 @@ def part_two_sticky_session() -> None:
          r.get("status") == "completed" and "sticky_test" in (r.get("response") or "").lower(), r)
 
 
+def part_three_browser() -> None:
+    """Cases 19-20: browser tools — read-only snapshot and HITL screenshot→brief."""
+    print("\n\n>>> PART 3: BROWSER TOOLS (cases 19-20)\n")
+
+    # Case 19 — read-only browser flow: navigate then snapshot.
+    # browser_navigate and browser_snapshot are both in READ_ONLY_TOOLS, so
+    # the graph should complete without an interrupt.
+    rs19 = _new_runtime_session()
+    r = invoke(
+        rs19,
+        {
+            "prompt": (
+                "Use browser_navigate to open https://example.com, "
+                "then call browser_snapshot and tell me what the page title is."
+            )
+        },
+    )
+    resp_text = (r.get("response") or "").lower()
+    case(
+        "case-19: browser_navigate + browser_snapshot → 'Example Domain' in response",
+        r.get("status") == "completed" and "example domain" in resp_text,
+        r,
+    )
+
+    # Case 20 — browser → screenshot → write_file with HITL approve.
+    # Turn 1: ask agent to open example.com, screenshot it as evidence.png,
+    #         and write example_brief.md referencing the screenshot.
+    #         write_file is a side-effect tool → expect status=="interrupted".
+    rs20 = _new_runtime_session()
+    r = invoke(
+        rs20,
+        {
+            "prompt": (
+                "Open https://example.com with browser_navigate, take a screenshot "
+                "named 'evidence.png' with browser_take_screenshot, then write a "
+                "short file called 'example_brief.md' that describes the page and "
+                "references the screenshot. Do all of this now."
+            )
+        },
+    )
+    pending = r.get("pending_tool_calls") or []
+    pending_names = [tc.get("name", "") for tc in pending]
+    pending_args = str([tc.get("args", {}) for tc in pending]).lower()
+    case(
+        "case-20 turn-1: write_file gates on HITL → interrupted",
+        r.get("status") == "interrupted" and bool(pending),
+        r,
+    )
+
+    # Turn 2: approve — same runtimeSessionId so the checkpoint is reachable.
+    r = invoke(rs20, {"resume": "approve"})
+    completed_text = (r.get("response") or "").lower()
+    args_mention = "evidence.png" in pending_args or "example_brief" in pending_args
+    response_mention = (
+        "evidence.png" in completed_text or "example_brief" in completed_text
+    )
+    case(
+        "case-20 turn-2: approve → completed, response/args mention evidence.png or example_brief.md",
+        r.get("status") == "completed" and (args_mention or response_mention),
+        r,
+    )
+
+
 def main() -> int:
     print(f"runtime = {RUNTIME_ARN}")
     print(f"region  = {REGION}")
@@ -213,6 +276,8 @@ def main() -> int:
     part_one_playground_style()
     hr()
     part_two_sticky_session()
+    hr()
+    part_three_browser()
     hr()
 
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
