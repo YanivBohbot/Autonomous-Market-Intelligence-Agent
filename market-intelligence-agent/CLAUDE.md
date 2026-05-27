@@ -40,7 +40,7 @@ TAVILY_API_KEY
 EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT
 ```
 
-Optional with defaults: `LOG_LEVEL` (INFO), `API_URL` (http://localhost:8000), `YFINANCE_TIMEOUT_S` (10), `WORKSPACE_ROOT` (data/workspace).
+Optional with defaults: `LOG_LEVEL` (INFO), `API_URL` (http://localhost:8000), `YFINANCE_TIMEOUT_S` (10), `WORKSPACE_ROOT` (data/workspace), `BROWSER_BACKEND` (local), `BROWSER_TOOL_ID` (none — required when `BROWSER_BACKEND=agentcore`), `BROWSER_IDLE_TTL_S` (300).
 
 The email tool falls back to a simulation (no real send) when `EMAIL_SENDER` still contains `"ton_email"`.
 
