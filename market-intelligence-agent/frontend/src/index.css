@@ -3,4 +3,53 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; }
-body { @apply bg-terminal-bg text-terminal-text font-sans antialiased; margin: 0; }
+body {
+  @apply bg-terminal-bg text-terminal-text font-sans antialiased;
+  margin: 0;
+}
+
+/* Custom scrollbar — narrow, subtle */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #1c2733;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover { background: #2d3f52; }
+
+/* Scan-line overlay on the header bar */
+.scan-lines {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+}
+
+/* Streaming caret */
+.streaming-caret::after {
+  content: "▌";
+  @apply text-terminal-accent animate-blink-caret;
+}
+
+/* Prose overrides for chat messages */
+.chat-prose {
+  @apply text-sm leading-relaxed;
+}
+.chat-prose p { @apply mb-1 last:mb-0; }
+.chat-prose code {
+  @apply rounded bg-black/30 px-1 py-0.5 font-mono text-xs text-terminal-accent;
+}
+.chat-prose pre {
+  @apply my-2 overflow-x-auto rounded border border-terminal-border bg-black/40 p-3 font-mono text-xs;
+}
+.chat-prose pre code { @apply bg-transparent p-0; }
+.chat-prose strong { @apply text-terminal-text font-semibold; }
+.chat-prose a { @apply text-terminal-accent underline; }
+.chat-prose ul { @apply ml-4 list-disc; }
+.chat-prose ol { @apply ml-4 list-decimal; }
+.chat-prose h1, .chat-prose h2, .chat-prose h3 {
+  @apply font-semibold text-terminal-text mt-3 mb-1;
+}
