@@ -19,6 +19,9 @@ uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
 # Run the Streamlit frontend (port 8080)
 uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
 
+# Run the React dev console (port 5173) — proxies to the backend on :8000
+cd frontend && npm install && npm run dev
+
 # Smoke-test the agent
 uv run python test_agent.py
 
