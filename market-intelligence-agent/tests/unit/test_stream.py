@@ -26,17 +26,22 @@ def _parse_sse(body: str):
 
 
 class _FakeAgentApp:
-    """Stand-in for agent_app with controllable astream + get_state."""
+    """Stand-in for agent_app with controllable multi-mode astream + get_state."""
 
-    def __init__(self, tokens, next_after=(), state_messages=None):
+    def __init__(self, tokens, updates=(), next_after=(), state_messages=None):
+        # tokens: list[(AIMessageChunk, meta_dict)] -> emitted as ("messages", (tok, meta))
+        # updates: list[dict]                        -> emitted as ("updates", {node: state})
         self._tokens = tokens
+        self._updates = updates
         self._next_after = next_after
         self._state_messages = state_messages or []
 
     def astream(self, inputs, config, stream_mode):
         async def gen():
+            for upd in self._updates:
+                yield "updates", upd
             for tok, meta in self._tokens:
-                yield tok, meta
+                yield "messages", (tok, meta)
 
         return gen()
 
@@ -68,6 +73,35 @@ def test_stream_happy_path_yields_token_then_done():
     token_events = [(e, d) for e, d in events if e == "token"]
     assert [d["token"] for _, d in token_events] == ["Hello", " ", "world"]
 
+    assert events[-1][0] == "done"
+
+
+def test_stream_emits_node_events_for_graph_updates():
+    tokens = [
+        (AIMessageChunk(content="Hi"), {"langgraph_node": "generate"}),
+    ]
+    tool_msg = AIMessage(
+        content="",
+        tool_calls=[
+            {"id": "c1", "name": "yfinance_get_ticker_info", "args": {"ticker": "AMZN"}}
+        ],
+    )
+    updates = [
+        {"rag": {"messages": []}},
+        {"generate": {"messages": [tool_msg]}},
+    ]
+    fake = _FakeAgentApp(tokens, updates=updates, next_after=())
+
+    app.state.agent_app = fake
+    client = TestClient(app)
+    response = client.post("/stream", json={"query": "AMZN?", "thread_id": "t-node"})
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+
+    node_events = [d for e, d in events if e == "node"]
+    assert {"node": "rag", "tool_calls": None} in node_events
+    assert {"node": "generate", "tool_calls": ["yfinance_get_ticker_info"]} in node_events
     assert events[-1][0] == "done"
 
 

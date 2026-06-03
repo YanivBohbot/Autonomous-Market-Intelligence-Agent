@@ -12,6 +12,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _tool_names_from_update(update) -> list[str] | None:
+    """Pull tool-call names off the last message in a node's state update."""
+    if not isinstance(update, dict):
+        return None
+    messages = update.get("messages")
+    if not messages:
+        return None
+    last = messages[-1]
+    tool_calls = getattr(last, "tool_calls", None)
+    if not tool_calls:
+        return None
+    return [tc["name"] for tc in tool_calls]
+
+
 @router.post("/stream", response_class=EventSourceResponse)
 async def stream_endpoint(
     request: Request, payload: StreamRequest
@@ -26,16 +40,29 @@ async def stream_endpoint(
     inputs = {"question": payload.query}
 
     try:
-        async for token, meta in agent_app.astream(
-            inputs, config, stream_mode="messages"
+        async for mode, chunk in agent_app.astream(
+            inputs, config, stream_mode=["updates", "messages"]
         ):
-            if (
-                isinstance(token, AIMessageChunk)
-                and meta.get("langgraph_node") == "generate"
-                and token.content
-                and not getattr(token, "tool_call_chunks", None)
-            ):
-                yield ServerSentEvent(data={"token": token.content}, event="token")
+            if mode == "updates":
+                for node_name, update in chunk.items():
+                    yield ServerSentEvent(
+                        data={
+                            "node": node_name,
+                            "tool_calls": _tool_names_from_update(update),
+                        },
+                        event="node",
+                    )
+            elif mode == "messages":
+                token, meta = chunk
+                if (
+                    isinstance(token, AIMessageChunk)
+                    and meta.get("langgraph_node") == "generate"
+                    and token.content
+                    and not getattr(token, "tool_call_chunks", None)
+                ):
+                    yield ServerSentEvent(
+                        data={"token": token.content}, event="token"
+                    )
 
         snapshot = await agent_app.aget_state(config)
         if snapshot.next:
