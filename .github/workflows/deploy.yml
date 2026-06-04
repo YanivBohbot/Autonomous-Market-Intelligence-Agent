@@ -6,6 +6,11 @@ on:
     branches: [master]
     paths:
       - "market-intelligence-agent/**"
+      # Local-dev-only and docs paths don't affect the AWS artifact — exclude
+      # so frontend/docs changes don't trigger a full prod deploy. (Later
+      # patterns override earlier ones, so these negations win.)
+      - "!market-intelligence-agent/frontend/**"
+      - "!market-intelligence-agent/docs/**"
       - "prod/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
