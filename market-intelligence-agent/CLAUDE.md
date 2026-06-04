@@ -92,23 +92,25 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 
 ### Human-in-the-Loop (HITL) flow
 
-1. `POST /chat` (in `app/api/routers/stream.py`) — runs the graph until `interrupt()` fires, returns `status: "interrupted"` with the pending tool-call payload. Streaming variant exposed at `/chat/stream`.
+1. `POST /stream` (in `app/api/routers/stream.py`) — SSE; streams `node`/`token` events as the graph runs, then a terminal `interrupted` event (`{action, next_step}`) when `interrupt()` fires, or `done` on normal completion. There is no non-streaming `/chat` endpoint.
 2. `POST /approve` (in `app/api/routers/approve.py`) — resumes via `Command(resume="approve")` or `Command(resume="reject")`. The decision is a single global verdict that `approval_node` broadcasts across every pending side-effect call in the batch. Per-call approve/reject is not currently supported by the router contract.
 3. Multiple side-effect calls in one batch share the single global decision; on reject, **all** tool calls in the batch (read-only included) are cancelled with `ToolMessage("Action cancelled by user.")`. Unknown / malformed resume payloads fail closed (cancel).
 4. Session state persists across server restarts via the SQLite checkpointer keyed on `thread_id`.
 
 ### API routers (`app/api/routers/`)
 
-- `health.py` — `/health` returns version + status.
-- `stream.py` — `/chat` (one-shot) and `/chat/stream` (SSE).
+- `health.py` — `/health` returns version + status (also `/ping` + `/invocations` for the AgentCore runtime contract).
+- `stream.py` — `/stream` (SSE one-shot run; emits `node`, `token`, then `interrupted`/`done`/`error` events).
 - `approve.py` — `/approve` for HITL resume.
+- `livekit_token.py` — `/livekit/token` mints room-join JWTs.
 - `_helpers.py` — shared graph-invocation utilities.
 
 ### API models (`app/api/models/models.py`)
 
-- `ChatRequest`: `query: str`, `thread_id: str = "default_thread"`
-- `ChatResponse`: `response: str`, `status: "completed"|"interrupted"`, `next_step: str|None`, `pending_tool_calls: list|None`
-- `ApproveRequest`: `thread_id: str`, `approved: bool` (single global verdict for the whole interrupted batch)
+- `StreamRequest`: `query: str`, `thread_id: str = "default_thread"` — body for `/stream`.
+- `ChatResponse`: `response: str`, `status: str` (`"completed"|"interrupted"`), `next_step: str|None` — returned by `/approve`.
+- `ApproveRequest`: `thread_id: str`, `approved: bool` (single global verdict for the whole interrupted batch).
+- `HealthResponse`, `LiveKitTokenRequest`/`LiveKitTokenResponse` round out the schema.
 
 ### Voice mode (`app/voice/` + Streamlit panel)
 
