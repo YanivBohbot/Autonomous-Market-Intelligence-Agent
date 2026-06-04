@@ -1,2 +1,5 @@
-aws-cdk-lib>=2.170.0
+# Pinned to a version whose cloud-assembly schema matches the CDK CLI in
+# .github/workflows/deploy.yml (CDK_VERSION). Bump both together to avoid
+# "schema version mismatch" synth failures from CLI<->lib drift.
+aws-cdk-lib==2.258.0
 constructs>=10.0.0,<11.0.0
