@@ -133,6 +133,27 @@ uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
 
 Open the UI at **http://localhost:8080**. Health check at **http://localhost:8000/health**, OpenAPI docs at **http://localhost:8000/docs**.
 
+#### React dev console (alternative frontend)
+
+A richer local-dev UI — token streaming, human-in-the-loop approval, and a live agent-activity rail. Requires the backend running on `:8000`. From `market-intelligence-agent/frontend/`:
+
+```bash
+npm install   # first time only
+npm run dev
+```
+
+Open the dev console at **http://localhost:5173**. The Vite dev server proxies `/stream`, `/approve`, `/health`, and `/livekit` to the backend. See `frontend/README.md` for details.
+
+#### Voice mode
+
+Talk to the agent over LiveKit (Deepgram STT → LangGraph → ElevenLabs TTS). Requires the voice keys in `.env` (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`) and the LiveKit worker running alongside the backend. From `market-intelligence-agent/` in a separate terminal:
+
+```bash
+uv run python -m app.voice.worker dev
+```
+
+Then enable voice with the **🎤** toggle in the Streamlit sidebar, or open the voice panel in the React dev console. Full setup, audio routing, and troubleshooting in `docs/VOICE.md`.
+
 ### 3. **Run in Docker**
 
 ```bash
