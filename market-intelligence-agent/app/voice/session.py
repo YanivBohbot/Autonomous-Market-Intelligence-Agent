@@ -21,6 +21,21 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from app.core.config import settings
 
+import sys
+from langchain_core.callbacks.base import BaseCallbackHandler
+
+
+class _ToolCallLogger(BaseCallbackHandler):
+    """Print every LangGraph tool invocation to stderr so a voice QA session
+    can SEE which tool fired and what it returned. Visibility only."""
+
+    def on_tool_start(self, serialized, input_str, **kwargs) -> None:
+        name = (serialized or {}).get("name", "?")
+        print(f"[voice.tool] CALL  {name}  args={input_str}", file=sys.stderr, flush=True)
+
+    def on_tool_end(self, output, **kwargs) -> None:
+        print(f"[voice.tool] DONE  {str(output)[:240]}", file=sys.stderr, flush=True)
+
 
 class _StreamWithQuestion(lk_langchain.LangGraphStream):
     """Inject `question` (from the last HumanMessage) into the graph input.
@@ -218,7 +233,8 @@ def build_voice_session(agent_app, thread_id: str) -> AgentSession:
                 "configurable": {
                     "thread_id": thread_id,
                     "actor_id": "mia-agent",
-                }
+                },
+                "callbacks": [_ToolCallLogger()],
             },
         ),
         # Deepgram Aura-2 instead of ElevenLabs: the supplied ElevenLabs API key

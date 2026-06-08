@@ -55,6 +55,21 @@ async def entrypoint(ctx: JobContext) -> None:
         )
         _trace("session.start() done, sending greeting")
 
+        # Surface the conversation as plain text so we can SEE each turn in the
+        # worker log (the audio is the real channel; this is just for visibility).
+        @session.on("user_input_transcribed")
+        def _on_user_transcript(ev) -> None:
+            if getattr(ev, "is_final", False):
+                _trace(f"USER >>> {ev.transcript}")
+
+        @session.on("conversation_item_added")
+        def _on_item(ev) -> None:
+            item = ev.item
+            role = getattr(item, "role", "?")
+            text = getattr(item, "text_content", None) or getattr(item, "content", "")
+            if role == "assistant" and text:
+                _trace(f"AGENT <<< {text}")
+
         # Use `say()` (direct TTS, bypasses LLM) instead of `generate_reply()` so
         # the greeting does not run the LangGraph workflow. The graph is slow
         # (RAG + grader + LLM), and if the user speaks during the greeting,
