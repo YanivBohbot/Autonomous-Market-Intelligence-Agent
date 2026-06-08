@@ -21,6 +21,9 @@ def create_dummy_db():
         (1, "Yaniv Bohbot", "yanivbohbot5@gmail.com", "VIP", 15000.50),
         (2, "Alice Dupont", "alice@example.com", "Standard", 120.00),
         (3, "Bob Martin", "bob@example.com", "Premium", 4500.00),
+        (4, "Martin Levy", "MartinLevy@example.com", "Premium", 84740.00),
+        (5, "Yann Checkroun", "yanoosss@example.com", "Premium", 4500.00),
+        (6, "JAmes Bond", "jamesbond@example.com", "Premium", 4500.00),
     ]
 
     cursor.executemany(
