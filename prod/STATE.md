@@ -14,7 +14,9 @@
 | Cognito user pool | `us-east-1_KxtN9pzgf` |
 | S3 buckets | `mia-data-584246028688` (CRM read-only), `mia-workspace-584246028688` (filesystem RW) |
 | Lambdas | `mia-mcp-yfinance-demo`, `mia-mcp-sqlite-crm-demo`, `mia-mcp-filesystem-demo` |
-| Stacks | `mia-storage-demo`, `mia-secrets-demo`, `mia-mcp-lambdas-demo`, `mia-gateway-demo`, `mia-runtime-demo`, `mia-observability-demo` |
+| AgentCore Browser (Custom) | `arn:aws:bedrock-agentcore:us-east-1:584246028688:browser-custom/mia_browser_demo-3zRFIUdmM7` |
+| Browser recordings bucket | `mia-browser-recordings-584246028688-us-east-1` (KMS, 30-day lifecycle) |
+| Stacks | `mia-storage-demo`, `mia-secrets-demo`, `mia-mcp-lambdas-demo`, `mia-gateway-demo`, `mia-runtime-demo`, `mia-observability-demo`, `mia-browser-demo` |
 | Deploy pipeline | GitHub Actions OIDC via `mia-github-deploy` IAM role (master branch only) |
 
 ## What the agent can do (13 tools)
@@ -40,9 +42,18 @@
 | `save_memory` | LangGraph `BaseStore` | Persist a user fact (key + value) |
 | `send_email` | **Amazon SES** via boto3 | Send a plain-text email (sandbox: sender + recipient must be verified) |
 
+### Browser (Phase 8 — Amazon Bedrock AgentCore Browser, deployed 2026-05-27)
+
+| Tool | Backend | What it does |
+|---|---|---|
+| `browser_navigate` | Custom stdio MCP server in `app/mcp/browser/` → AgentCore Browser (managed Chromium) | Navigate the page to a URL |
+| `browser_snapshot` | same | Return the body inner text of the current page |
+| `browser_take_screenshot` | same | Save a PNG into the workspace; AgentCore session recording captured separately to S3 |
+
+**Known v1 limitation — cross-call tab state.** `langchain-mcp-adapters` 0.1.0 spawns one stdio subprocess per tool call, so each `browser_*` call gets a fresh `BrowserSessionManager` → fresh `StartBrowserSession` → fresh tab. Multi-step browser flows (navigate → snapshot in separate tool calls) don't carry tab state. Single-call use works; chained workflows are a Phase 8.1 follow-up (move to a long-lived MCP server transport, or persist the AgentCore session id in checkpoint state and resume it on next call).
+
 ## Tools NOT yet in production (designed, deferred)
 
-- **Browser** (`browser_navigate`, `browser_snapshot`, `browser_take_screenshot`) — Phase 8
 - **Voice mode** (LiveKit + Deepgram + ElevenLabs worker) — Phase 9
 
 ## Container env vars (`mia-runtime-demo` AgentCore Runtime)
