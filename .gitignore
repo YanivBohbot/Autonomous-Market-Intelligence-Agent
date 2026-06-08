@@ -1,1 +1,7 @@
 .worktrees/
+
+# Claude Code local config + agent state (machine-local, not shared)
+.claude/
+
+# Editor
+.vscode/

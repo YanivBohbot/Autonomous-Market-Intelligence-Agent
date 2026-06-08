@@ -33,3 +33,8 @@ data/workspace/screenshots/*
 
 # Claude Code local config
 .claude/
+
+# Local dev runtime logs
+.logs.json
+.logs_backend.txt
+.logs_frontend.txt
