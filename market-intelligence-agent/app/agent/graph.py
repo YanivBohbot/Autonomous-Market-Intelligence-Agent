@@ -105,7 +105,7 @@ workflow.add_node("grader", grade_documents)
 workflow.add_node("web_search", web_search)
 workflow.add_node("generate", generate_answer)
 workflow.add_node("approval", approval_node)
-workflow.add_node("tools", ToolNode(TOOLS))
+workflow.add_node("tools", ToolNode(TOOLS, handle_tool_errors=True))
 
 workflow.add_edge(START, "record_question")
 workflow.add_edge("record_question", "rag")
