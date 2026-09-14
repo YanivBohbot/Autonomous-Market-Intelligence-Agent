@@ -84,8 +84,12 @@ def _poll_voice_transcript():
         )
         for m in new_messages:
             st.session_state.messages.append({"role": m["role"], "content": m["content"]})
-            with st.chat_message(m["role"]):
-                st.markdown(m["content"])
+        # A fragment's own rendered output is replaced on its next tick, not
+        # accumulated — drawing the bubble here would vanish ~1s later when
+        # this tick finds nothing new. Force a full rerun instead, so the
+        # top-level history loop (which reads session_state, not a
+        # per-tick delta) renders it permanently.
+        st.rerun()
 
     # A pause can be triggered by a voice turn, which Streamlit has no other
     # way to learn about — worker.py runs as a background task with no
