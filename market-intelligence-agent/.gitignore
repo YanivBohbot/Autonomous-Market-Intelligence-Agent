@@ -38,3 +38,14 @@ data/workspace/screenshots/*
 .logs.json
 .logs_backend.txt
 .logs_frontend.txt
+
+# Root-level npm packages (e.g. CopilotKit exploration)
+node_modules/
+package.json
+package-lock.json
+
+# playwright-cli skill artifacts
+.playwright-cli/
+
+# QA test screenshots
+qa_final_state.png
