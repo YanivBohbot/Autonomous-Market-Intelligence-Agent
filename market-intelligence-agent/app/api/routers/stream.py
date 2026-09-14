@@ -3,8 +3,9 @@ from collections.abc import AsyncIterable
 
 from fastapi import APIRouter, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessageChunk, ToolMessage
 
+from app.agent.tools.mcp_clients.browser_client import SCREENSHOT_TOOL_NAME
 from app.api.models.models import StreamRequest
 from app.api.routers._helpers import get_action_description
 
@@ -24,6 +25,20 @@ def _tool_names_from_update(update) -> list[str] | None:
     if not tool_calls:
         return None
     return [tc["name"] for tc in tool_calls]
+
+
+def _screenshot_urls_from_update(update) -> list[str]:
+    """Pull workspace-relative screenshot paths off any browser_take_screenshot
+    ToolMessage in a node's state update, as URLs the /workspace router serves."""
+    if not isinstance(update, dict):
+        return []
+    messages = update.get("messages") or []
+    urls = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and msg.name == SCREENSHOT_TOOL_NAME:
+            filename = str(msg.content).rsplit("/", 1)[-1]
+            urls.append(f"/workspace/screenshots/{filename}")
+    return urls
 
 
 @router.post("/stream", response_class=EventSourceResponse)
@@ -52,6 +67,8 @@ async def stream_endpoint(
                         },
                         event="node",
                     )
+                    for url in _screenshot_urls_from_update(update):
+                        yield ServerSentEvent(data={"url": url}, event="screenshot")
             elif mode == "messages":
                 token, meta = chunk
                 if (

@@ -54,6 +54,8 @@ with st.sidebar:
 # --- Affichage de l'historique ---
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
+        for url in msg.get("image_urls") or []:
+            st.image(f"{API_URL}{url}")
         st.markdown(msg["content"])
 
 
@@ -121,6 +123,7 @@ if prompt := st.chat_input(
     with st.chat_message("assistant"):
         placeholder = st.empty()
         accumulated = ""
+        image_urls = []
         try:
             with requests.post(
                 f"{API_URL}/stream",
@@ -140,6 +143,11 @@ if prompt := st.chat_input(
                         if current_event == "token":
                             accumulated += payload.get("token", "")
                             placeholder.markdown(accumulated + "▌")
+                        elif current_event == "screenshot":
+                            url = payload.get("url")
+                            if url:
+                                image_urls.append(url)
+                                st.image(f"{API_URL}{url}")
                         elif current_event == "interrupted":
                             st.session_state.awaiting_approval = True
                             st.session_state.last_action = payload.get("action", "")
@@ -148,7 +156,11 @@ if prompt := st.chat_input(
                         elif current_event == "done":
                             placeholder.markdown(accumulated)
                             st.session_state.messages.append(
-                                {"role": "assistant", "content": accumulated}
+                                {
+                                    "role": "assistant",
+                                    "content": accumulated,
+                                    "image_urls": image_urls,
+                                }
                             )
                         elif current_event == "error":
                             st.error(f"❌ {payload.get('error', 'Erreur inconnue')}")

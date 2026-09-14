@@ -2,7 +2,7 @@ import json
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
 from app.api.server import app
 
@@ -177,6 +177,40 @@ def test_stream_does_not_emit_interrupted_for_non_approval_pause():
     assert events[-1][0] == "done"
     interrupted_events = [e for e, _ in events if e == "interrupted"]
     assert interrupted_events == []
+
+
+def test_stream_emits_screenshot_event_for_browser_take_screenshot_result():
+    tokens = [
+        (AIMessageChunk(content="Here it is"), {"langgraph_node": "generate"}),
+    ]
+    shot_msg = ToolMessage(
+        content="screenshots/evidence.png",
+        name="browser_take_screenshot",
+        tool_call_id="call_1",
+    )
+    other_msg = ToolMessage(
+        content="Navigated to https://example.com",
+        name="browser_navigate",
+        tool_call_id="call_0",
+    )
+    updates = [
+        {"tools": {"messages": [other_msg, shot_msg]}},
+    ]
+    fake = _FakeAgentApp(tokens, updates=updates, next_after=())
+
+    app.state.agent_app = fake
+    client = TestClient(app)
+    response = client.post(
+        "/stream",
+        json={"query": "show me the page", "thread_id": "t-screenshot"},
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+
+    screenshot_events = [d for e, d in events if e == "screenshot"]
+    assert screenshot_events == [{"url": "/workspace/screenshots/evidence.png"}]
+    assert events[-1][0] == "done"
 
 
 class _ExplodingAgentApp:

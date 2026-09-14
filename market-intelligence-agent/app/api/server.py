@@ -12,6 +12,7 @@ from app.api.routers.approve import router as approve_router
 from app.api.routers.gptlive_session import router as gptlive_session_router
 from app.api.routers.health import router as health_router
 from app.api.routers.stream import router as stream_router
+from app.api.routers.workspace import router as workspace_router
 from app.voice.graph import build_voice_agent_app
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -49,3 +50,4 @@ app.include_router(approve_router)
 app.include_router(stream_router)
 app.include_router(gptlive_session_router)
 app.include_router(agentcore_router)
+app.include_router(workspace_router)
