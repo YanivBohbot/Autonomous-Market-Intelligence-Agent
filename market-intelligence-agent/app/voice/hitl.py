@@ -7,11 +7,13 @@ from langgraph.types import Command
 logger = logging.getLogger(__name__)
 
 _AFFIRMATIVE = re.compile(
-    r"\b(yes|yeah|yep|sure|ok(ay)?|approve|go ahead|do it|confirm)\b|(כן|בטח|אישור|לך על זה|תעשה את זה)",
+    r"\b(yes|yeah|yep|sure|ok(ay)?|approve|go ahead|do it|confirm"
+    r"|כן|בטח|אישור|לך על זה|תעשה את זה)\b",
     re.I,
 )
 _NEGATIVE = re.compile(
-    r"\b(no|nope|cancel|stop|don'?t|reject|deny)\b|(לא|בטל|עצור|תבטל)",
+    r"\b(no|nope|cancel|stop|don'?t|reject|deny"
+    r"|לא|בטל|עצור|תבטל)\b",
     re.I,
 )
 
