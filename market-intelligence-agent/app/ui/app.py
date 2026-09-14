@@ -19,7 +19,12 @@ if "voice_transcript_last_id" not in st.session_state:
     st.session_state.voice_transcript_last_id = 0
 
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = [
+        {
+            "role": "assistant",
+            "content": "שלום, אני עוזר המודיעין העסקי שלך. איך אוכל לעזור?",
+        }
+    ]
 
 if "awaiting_approval" not in st.session_state:
     st.session_state.awaiting_approval = False
