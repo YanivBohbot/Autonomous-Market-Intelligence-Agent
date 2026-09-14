@@ -23,12 +23,24 @@ class HealthResponse(BaseModel):
     version: str
 
 
-class LiveKitTokenRequest(BaseModel):
-    identity: str
-    room: str = "market-intel-voice"
+class GptLiveSessionRequest(BaseModel):
+    sdp: str
+    thread_id: Optional[str] = None
 
 
-class LiveKitTokenResponse(BaseModel):
-    token: str
-    url: str
-    room: str
+class GptLiveSessionResponse(BaseModel):
+    session_id: str
+    sdp: str
+
+
+class VoiceTranscriptEntry(BaseModel):
+    id: int
+    role: str
+    content: str
+
+
+class VoiceTranscriptResponse(BaseModel):
+    messages: list[VoiceTranscriptEntry]
+    last_id: int
+    paused: bool
+    action: Optional[str] = None
