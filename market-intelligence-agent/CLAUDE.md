@@ -102,7 +102,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 - `health.py` — `/health` returns version + status (also `/ping` + `/invocations` for the AgentCore runtime contract).
 - `stream.py` — `/stream` (SSE one-shot run; emits `node`, `token`, then `interrupted`/`done`/`error` events).
 - `approve.py` — `/approve` for HITL resume.
-- `livekit_token.py` — `/livekit/token` mints room-join JWTs.
+- `gptlive_session.py` — `POST /gptlive/session` proxies the browser's WebRTC SDP offer to OpenAI (`client.live.create`) and spawns the voice delegation worker as a background task.
 - `_helpers.py` — shared graph-invocation utilities.
 
 ### API models (`app/api/models/models.py`)
@@ -110,26 +110,33 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 - `StreamRequest`: `query: str`, `thread_id: str = "default_thread"` — body for `/stream`.
 - `ChatResponse`: `response: str`, `status: str` (`"completed"|"interrupted"`), `next_step: str|None` — returned by `/approve`.
 - `ApproveRequest`: `thread_id: str`, `approved: bool` (single global verdict for the whole interrupted batch).
-- `HealthResponse`, `LiveKitTokenRequest`/`LiveKitTokenResponse` round out the schema.
+- `HealthResponse`, `GptLiveSessionRequest`/`GptLiveSessionResponse` round out the schema.
 
 ### Voice mode (`app/voice/` + Streamlit panel)
 
-A separate `livekit-agents` worker process (`uv run python -m app.voice.worker dev`)
-joins LiveKit Cloud rooms and runs the pipeline
-`Deepgram STT → langchain.LLMAdapter(graph=agent_app) → ElevenLabs TTS`. The
-worker imports the **same** compiled LangGraph workflow as the FastAPI app —
-RAG, grader, tools, and HITL behave identically; only the transport differs.
+OpenAI **GPT-Live** in client-delegation mode. There is no separate worker process:
+the browser opens a WebRTC session directly with OpenAI (offer/answer proxied through
+`POST /gptlive/session` so the API key stays server-side), and the FastAPI process
+spawns a background `asyncio` task (`app.voice.worker.run_delegation_worker`) that
+attaches to that session over a **sideband** WebSocket
+(`client.live.sideband.connect(session_id=...)`). GPT-Live handles audio I/O and
+transport entirely; the delegation worker only sees `session.delegation.created`
+events and the buffered `session.input_transcript.delta` text, and replies via
+`connection.session.commentary.append(...)`. It invokes the **same** compiled
+LangGraph voice workflow (`app.voice.graph.build_voice_agent_app`, built once in
+`server.py`'s lifespan alongside the text graph) — tools and HITL behave identically
+to text mode; only the transport differs.
 
-- `app/voice/worker.py` — entrypoint; `agents.cli.run_app`.
-- `app/voice/session.py` — `MarketIntelAssistant` + `AgentSession` factory.
-- `app/voice/hitl.py` — verbalizes interrupts and maps yes/no to `Command(resume=…)`.
-- `app/api/routers/livekit_token.py` — `POST /livekit/token` mints room-join JWTs.
-- `app/ui/voice_panel.py` — `render_voice_panel()` injects a LiveKit JS client into
-  the existing Streamlit app via `st.components.v1.html`. Activated by the
+- `app/voice/worker.py` — `run_delegation_worker(session_id, thread_id, agent_app)`: the sideband event loop.
+- `app/voice/session.py` — transport-agnostic helpers: `VOICE_INSTRUCTIONS`, `_ToolCallLogger`, `strip_binary_score_prefix`.
+- `app/voice/hitl.py` — verbalizes interrupts and maps yes/no (English or Hebrew כן/לא) to `Command(resume=…)`.
+- `app/api/routers/gptlive_session.py` — `POST /gptlive/session` bootstraps the session.
+- `app/ui/voice_panel.py` — `render_voice_panel()` embeds the browser-side WebRTC client
+  (`RTCPeerConnection` + `getUserMedia`) via `st.components.v1.html`. Activated by the
   `🎤 Enable voice` sidebar toggle in `app/ui/app.py`. Voice and text sessions
-  use different `thread_id`s (`voice-<room>` vs `web_session_<uuid>`).
+  use different `thread_id`s (`voice-<gpt_live_session_id>` vs `web_session_<uuid>`).
 
-See `docs/VOICE.md` for env vars and run order.
+See `docs/VOICE.md` for env vars, run order, and the Hebrew-support caveat.
 
 ### Data ingestion (`app/ingest.py`)
 

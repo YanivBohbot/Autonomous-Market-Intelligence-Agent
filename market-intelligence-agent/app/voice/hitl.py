@@ -6,8 +6,14 @@ from langgraph.types import Command
 
 logger = logging.getLogger(__name__)
 
-_AFFIRMATIVE = re.compile(r"\b(yes|yeah|yep|sure|ok(ay)?|approve|go ahead|do it|confirm)\b", re.I)
-_NEGATIVE = re.compile(r"\b(no|nope|cancel|stop|don'?t|reject|deny)\b", re.I)
+_AFFIRMATIVE = re.compile(
+    r"\b(yes|yeah|yep|sure|ok(ay)?|approve|go ahead|do it|confirm)\b|(כן|בטח|אישור|לך על זה|תעשה את זה)",
+    re.I,
+)
+_NEGATIVE = re.compile(
+    r"\b(no|nope|cancel|stop|don'?t|reject|deny)\b|(לא|בטל|עצור|תבטל)",
+    re.I,
+)
 
 
 def classify_verdict(utterance: str) -> str | None:

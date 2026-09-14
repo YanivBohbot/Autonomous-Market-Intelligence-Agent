@@ -1,100 +1,114 @@
-"""LiveKit Agents worker. Run with:
+"""GPT-Live delegation worker.
 
-    uv run python -m app.voice.worker dev
-
-For production-style worker (multi-room):
-
-    uv run python -m app.voice.worker start
+Attaches to a GPT-Live session (client-delegation mode) over a sideband
+WebSocket and bridges its `session.delegation.created` events to the
+compiled LangGraph voice workflow (`app.voice.graph`). Spawned as a
+background asyncio task per session by
+`app/api/routers/gptlive_session.py` right after the browser's WebRTC leg
+is created — there is no separate worker process to run.
 """
-
-import asyncio
 import logging
 import sys
-import uuid
 
-from dotenv import load_dotenv
-from livekit import agents, rtc
-from livekit.agents import JobContext, RoomInputOptions
+from langchain_core.messages import HumanMessage
+from openai import AsyncOpenAI
 
-from app.agent.memory.checkpointer import create_checkpointer
-from app.agent.memory.store import create_store
-from app.voice.graph import build_voice_agent_app
-from app.voice.session import MarketIntelAssistant, build_voice_session
+from app.core.config import settings
+from app.voice import transcript_store
+from app.voice.hitl import classify_verdict, is_interrupted, resume_with
+from app.voice.session import _ToolCallLogger, strip_binary_score_prefix
 
-load_dotenv()
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice.worker")
+
+_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+GREETING = "שלום, אני עוזר המודיעין העסקי שלך. איך אוכל לעזור?"
 
 
 def _trace(msg: str) -> None:
-    """Print to stderr unconditionally so we can debug subprocess startup
-    even if the standard logger gets reconfigured by livekit-agents."""
+    """Print to stderr unconditionally so a voice QA session can see each
+    delegation turn in the server log."""
     print(f"[voice.worker] {msg}", file=sys.stderr, flush=True)
 
 
-async def entrypoint(ctx: JobContext) -> None:
-    _trace(f"entrypoint START room={ctx.room.name}")
+def _extract_reply(state: dict) -> str | None:
+    for msg in reversed(state.get("messages", [])):
+        content = getattr(msg, "content", None)
+        if content and not getattr(msg, "tool_calls", None):
+            return strip_binary_score_prefix(str(content))
+    return None
 
-    async with create_checkpointer() as checkpointer:
-        _trace("checkpointer open, building graph")
-        store = create_store()
-        agent_app = build_voice_agent_app(checkpointer, store)
-        # Unique per session so a cancelled / errored graph never poisons future
-        # sessions in the same room. LiveKit reuses room names across reconnects.
-        thread_id = f"voice-{ctx.room.name}-{uuid.uuid4().hex[:8]}"
-        session = build_voice_session(agent_app, thread_id)
-        _trace(f"session built, starting (thread_id={thread_id})")
 
-        await ctx.connect()
-        _trace("ctx.connect() done")
-
-        await session.start(
-            agent=MarketIntelAssistant(agent_app, thread_id),
-            room=ctx.room,
-            room_input_options=RoomInputOptions(close_on_disconnect=False),
+async def _handle_delegation(
+    connection, agent_app, thread_id: str, delegation_id: str, question: str
+) -> None:
+    config = {
+        "configurable": {"thread_id": thread_id, "actor_id": "mia-agent"},
+        "callbacks": [_ToolCallLogger()],
+    }
+    paused, action = await is_interrupted(agent_app, thread_id)
+    if paused:
+        verdict = classify_verdict(question)
+        if verdict is None:
+            confirmation = f"I need confirmation before {action}. Say yes or no."
+            await connection.session.commentary.append(
+                delegation_id=delegation_id,
+                content=confirmation,
+            )
+            transcript_store.append(thread_id, "assistant", confirmation)
+            return
+        state = await resume_with(agent_app, thread_id, verdict)
+    else:
+        state = await agent_app.ainvoke(
+            {"messages": [HumanMessage(content=question)], "question": question},
+            config,
         )
-        _trace("session.start() done, sending greeting")
-
-        # Surface the conversation as plain text so we can SEE each turn in the
-        # worker log (the audio is the real channel; this is just for visibility).
-        @session.on("user_input_transcribed")
-        def _on_user_transcript(ev) -> None:
-            if getattr(ev, "is_final", False):
-                _trace(f"USER >>> {ev.transcript}")
-
-        @session.on("conversation_item_added")
-        def _on_item(ev) -> None:
-            item = ev.item
-            role = getattr(item, "role", "?")
-            text = getattr(item, "text_content", None) or getattr(item, "content", "")
-            if role == "assistant" and text:
-                _trace(f"AGENT <<< {text}")
-
-        # Use `say()` (direct TTS, bypasses LLM) instead of `generate_reply()` so
-        # the greeting does not run the LangGraph workflow. The graph is slow
-        # (RAG + grader + LLM), and if the user speaks during the greeting,
-        # the in-flight graph execution gets cancelled mid-run and the
-        # checkpointer is left in a `CancelledError` state that poisons every
-        # subsequent turn.
-        await session.say("Hi, I'm your market intelligence assistant. How can I help?")
-        _trace("greeting sent, waiting for room disconnect")
-
-        # Keep the entrypoint alive (and the checkpointer connection open) for the
-        # whole room lifetime. Exit when either the room disconnects OR the last
-        # remote participant leaves (so the agent doesn't linger in a now-empty
-        # room and prevent LiveKit from dispatching a new worker on the next
-        # Connect).
-        disconnected = asyncio.Event()
-        ctx.room.on("disconnected", lambda *_a, **_k: disconnected.set())
-        ctx.room.on(
-            "participant_disconnected",
-            lambda *_a, **_k: disconnected.set() if len(ctx.room.remote_participants) == 0 else None,
-        )
-        if ctx.room.connection_state == rtc.ConnectionState.CONN_DISCONNECTED:
-            disconnected.set()
-        await disconnected.wait()
-        _trace(f"entrypoint END room={ctx.room.name}")
+    reply = _extract_reply(state)
+    if reply:
+        await connection.session.commentary.append(delegation_id=delegation_id, content=reply)
+        transcript_store.append(thread_id, "assistant", reply)
 
 
-if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+async def run_delegation_worker(session_id: str, thread_id: str, agent_app) -> None:
+    """Run until the GPT-Live session closes (WebRTC leg disconnects).
+
+    A delegation event carries no task text — only metadata — so this
+    buffers `session.input_transcript.delta` fragments and treats the
+    accumulated transcript as the question when
+    `session.delegation.created` fires.
+    """
+    _trace(f"attaching sideband session_id={session_id} thread_id={thread_id}")
+    transcript_buffer = ""
+    async with _client.live.sideband.connect(session_id=session_id) as connection:
+        # Bypass the graph for the greeting — same rationale as the old
+        # LiveKit worker's session.say(): the graph is slow (LLM + tools),
+        # and if the user speaks during the greeting an in-flight run
+        # getting cancelled can leave the checkpointer in a bad state.
+        await connection.session.commentary.append(delegation_id=None, content=GREETING)
+        transcript_store.append(thread_id, "assistant", GREETING)
+
+        async for event in connection:
+            if event.type == "session.input_transcript.delta":
+                transcript_buffer += event.delta
+            elif event.type == "session.delegation.created":
+                question = transcript_buffer.strip()
+                transcript_buffer = ""
+                _trace(f"delegation.created id={event.delegation.id} question={question!r}")
+                if question:
+                    transcript_store.append(thread_id, "user", question)
+                try:
+                    await _handle_delegation(
+                        connection, agent_app, thread_id, event.delegation.id, question
+                    )
+                except Exception:
+                    logger.exception("voice delegation failed (session=%s)", session_id)
+                    await connection.session.commentary.append(
+                        delegation_id=event.delegation.id,
+                        content="Sorry, something went wrong handling that. Please try again.",
+                    )
+            elif event.type == "error":
+                logger.warning("GPT-Live sideband error (session=%s): %s", session_id, event)
+            elif event.type == "session.closed":
+                _trace(f"session closed session_id={session_id} reason={event.reason}")
+                break
+    _trace(f"worker exiting session_id={session_id}")

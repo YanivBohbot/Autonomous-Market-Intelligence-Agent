@@ -1,77 +1,92 @@
 # Voice Mode
 
-LiveKit-based voice I/O over the existing LangGraph workflow.
+OpenAI GPT-Live (client delegation) over the existing LangGraph workflow.
 
 ## Required env (added to `.env`)
 
 ```
-LIVEKIT_URL=wss://your-project.livekit.cloud
-LIVEKIT_API_KEY=...
-LIVEKIT_API_SECRET=...
-DEEPGRAM_API_KEY=...
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM   # optional, defaults to Rachel
+OPENAI_API_KEY=...            # already required for text mode; reused for voice
+OPENAI_LIVE_MODEL=gpt-live-1  # optional, this is the default
+OPENAI_LIVE_VOICE=marin       # optional, any built-in GPT-Live voice
 ```
 
-Sign up:
-- LiveKit Cloud: https://cloud.livekit.io (free tier OK for dev)
-- Deepgram: https://console.deepgram.com
-- ElevenLabs: https://elevenlabs.io → Profile → API Keys
+No extra sign-up — voice uses the same OpenAI account/key as text mode. There is no
+separate STT/TTS provider anymore (GPT-Live does both).
 
-## Run order (three terminals)
+## Run order (two terminals)
 
 ```bash
-# 1. FastAPI (token endpoint + existing /chat routers)
+# 1. FastAPI (mints GPT-Live sessions at /gptlive/session, runs the delegation
+#    worker as a background task per session, plus the existing text routers)
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
 
-# 2. LiveKit voice worker
-uv run python -m app.voice.worker dev
-
-# 3. Streamlit UI (hosts both text chat AND embedded voice panel)
+# 2. Streamlit UI (hosts both text chat AND the embedded voice panel)
 uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
 # then open http://localhost:8080 and flip "🎤 Enable voice" in the sidebar
 ```
 
+There is no separate voice worker process — the delegation loop runs inside the
+FastAPI process as an `asyncio.create_task` spawned per session
+(`app/api/routers/gptlive_session.py`).
+
 ## How it routes
 
 ```
-Mic (browser, WebRTC) ─► LiveKit Cloud SFU ─► voice worker
-                                                  │
-                                                  ├─ Deepgram STT (nova-3)
-                                                  ├─ langchain.LLMAdapter(graph=agent_app)
-                                                  │     └─► rag → grader → generate → tools → ...
-                                                  └─ ElevenLabs TTS (flash v2.5)
-                                                          │
-Browser speaker ◄─── LiveKit Cloud SFU ◄─── audio track ──┘
+Mic (browser, WebRTC) ──────────────► OpenAI GPT-Live session
+                                             │
+Browser ──POST offer.sdp──► FastAPI ──client.live.create()──► (creates the session,
+   ◄──answer.sdp──────────────┘             returns SDP answer + session_id)
+                                             │
+FastAPI spawns a background task that attaches via
+client.live.sideband.connect(session_id) — this is the "delegation worker"
+(app/voice/worker.py):
+                                             │
+                          session.delegation.created
+                                             │
+                          app.voice.graph.build_voice_agent_app(...).ainvoke(...)
+                                             │   (generate → approval → tools → ...)
+                                             │
+                          connection.session.commentary.append(delegation_id, content)
+                                             │
+Browser speaker ◄── GPT-Live TTS ◄──────────┘
 ```
 
-Voice and text sessions share `data/checkpoints.db`. Voice uses `thread_id = voice-<room>`
-and text uses `web_session_<uuid>`, keeping them isolated by default.
+Audio flows directly between the browser and OpenAI over WebRTC — our backend never
+touches raw audio, only the sideband control channel (transcripts in, commentary out).
+
+Voice and text sessions share `data/checkpoints.db`. Voice uses
+`thread_id = voice-<gpt_live_session_id>` and text uses `web_session_<uuid>`, keeping
+them isolated by default.
 
 ## HITL in voice
 
 Read-only tools run silently. Side-effect tools (`send_email`, `write_file`, `save_memory`)
-trigger a verbal "Say yes or no" prompt. The next user utterance is parsed for
-affirmative/negative tokens and resumes the graph with `Command(resume="approve"|"reject")`.
+trigger a verbal "Say yes or no" prompt via `commentary.append`. The next user utterance
+(buffered from `session.input_transcript.delta`) is parsed for affirmative/negative tokens
+— in English or Hebrew — and resumes the graph with `Command(resume="approve"|"reject")`.
 
-## Latency targets
+## Hebrew support
 
-| Stage      | Budget                                        |
-| ---------- | --------------------------------------------- |
-| STT TTFT   | <200 ms                                       |
-| Graph TTFT | <500 ms (RAG adds ~200 ms vs text mode)       |
-| TTS TTFA   | <100 ms                                       |
-| End-to-end | <900 ms                                       |
+`app/voice/session.py`'s `VOICE_INSTRUCTIONS` tells the model to respond in whatever
+language the user speaks, including Hebrew, and `app/voice/hitl.py`'s `classify_verdict`
+recognizes Hebrew כן/לא alongside English yes/no. A scripted check (Hebrew instructions +
+delegation + a Hebrew `commentary.append` reply) confirmed the model accepts Hebrew
+instructions and produces Hebrew TTS audio with a Hebrew output transcript. Hebrew **speech
+recognition** (user speaking Hebrew into a real mic) was not fully confirmed by that script
+— a synthetic PCM clip didn't reliably trigger `session.input_transcript.delta`. Verify with
+a real browser + mic before relying on Hebrew STT in production.
 
 ## Troubleshooting
 
 - **"No audio"** in browser → check Chrome's mic permission for `localhost:8080`.
-- **`401 Unauthorized` on token** → `LIVEKIT_API_SECRET` mismatch between `.env` and LiveKit Cloud.
-- **Worker exits with `Address already in use`** → another instance is running; kill it first.
-- **Robotic TTS reading "asterisk asterisk word"** → markdown leaked through; confirm
-  `tts_text_transforms=["filter_markdown", "filter_emoji"]` is set in `session.py`.
-- **Agent talks over user** → check `turn_detection=MultilingualModel()` is wired in `build_voice_session`.
 - **`status: error — Failed to fetch`** in voice panel → CORS not applied; confirm
   `CORSMiddleware` is in `server.py` and FastAPI was restarted after the change.
 - **Browser never prompts for mic** → Streamlit's iframe may have stripped `allow="microphone"`;
   upgrade Streamlit: `uv add 'streamlit>=1.30'`.
+- **Session created but nothing spoken** → check the FastAPI server logs for
+  `[voice.worker]` lines; the sideband delegation task logs every attach/delegation/close.
+- **`invalid_type ... session.delegation`** → don't pass `"delegation": None` in the session
+  config; omit the key entirely to get the "your application" (client) default, or pass
+  `{"type": "client"}` explicitly.
+- **Robotic TTS reading `{"binary_score":"yes"}`** → grader JSON leaked through; confirm
+  `strip_binary_score_prefix` in `app/voice/session.py` is applied to the final reply text.

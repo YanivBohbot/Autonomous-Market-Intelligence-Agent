@@ -15,6 +15,12 @@ API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = f"web_session_{uuid.uuid4().hex[:8]}"
 
+if "voice_thread_id" not in st.session_state:
+    st.session_state.voice_thread_id = f"voice_session_{uuid.uuid4().hex[:8]}"
+
+if "voice_transcript_last_id" not in st.session_state:
+    st.session_state.voice_transcript_last_id = 0
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -24,7 +30,7 @@ if "awaiting_approval" not in st.session_state:
 if "last_action" not in st.session_state:
     st.session_state.last_action = ""
 
-# --- Voice mode (LiveKit-backed) ---
+# --- Voice mode (OpenAI GPT-Live) ---
 from voice_panel import render_voice_panel
 
 with st.sidebar:
@@ -32,19 +38,56 @@ with st.sidebar:
     voice_on = st.toggle(
         "Enable voice",
         value=False,
-        help="Speak to the agent via your mic. Requires the LiveKit worker running.",
+        key="voice_on",
+        help="Speak to the agent via your mic (OpenAI GPT-Live).",
     )
     if voice_on:
         st.caption(
             "Click **Connect** in the panel below, allow mic access, then speak. "
-            "Voice runs on a separate `thread_id` from the text chat."
+            "Voice runs on a separate `thread_id` from the text chat — the agent's "
+            "spoken replies also appear as text in the chat below."
         )
-        render_voice_panel(height=280)
+        render_voice_panel(st.session_state.voice_thread_id, height=380)
 
 # --- Affichage de l'historique ---
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+
+
+# --- Voice transcript polling: mirrors the spoken conversation into the
+# same chat history, since worker.py has no way to push into Streamlit
+# directly. Uses `st.session_state.voice_on`, not the local `voice_on`
+# variable above, because a fragment reruns on its own timer without
+# re-executing the rest of the script. ---
+@st.fragment(run_every="1s")
+def _poll_voice_transcript():
+    if not st.session_state.get("voice_on"):
+        return
+    try:
+        res = requests.get(
+            f"{API_URL}/voice/{st.session_state.voice_thread_id}/transcript",
+            params={"after": st.session_state.voice_transcript_last_id},
+            timeout=5,
+        )
+        res.raise_for_status()
+        data = res.json()
+    except requests.exceptions.RequestException:
+        return
+
+    new_messages = data.get("messages", [])
+    if not new_messages:
+        return
+    st.session_state.voice_transcript_last_id = data.get(
+        "last_id", st.session_state.voice_transcript_last_id
+    )
+    for m in new_messages:
+        st.session_state.messages.append({"role": m["role"], "content": m["content"]})
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+
+_poll_voice_transcript()
 
 # --- Zone de Chat ---
 # On désactive le chat si on attend une approbation

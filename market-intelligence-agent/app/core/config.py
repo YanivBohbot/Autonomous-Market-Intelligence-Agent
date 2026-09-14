@@ -21,14 +21,9 @@ class Settings(BaseSettings):
     EMAIL_PASSWORD: str = ""
     EMAIL_SMTP_SERVER: str = ""
     EMAIL_SMTP_PORT: int = 0
-    # Voice mode (LiveKit + Deepgram + ElevenLabs) — only required when
-    # the voice worker runs. The AgentCore text runtime never imports
-    # app.voice.*, so defaults to "" keep the FastAPI app boot-able.
-    LIVEKIT_URL: str = ""
-    LIVEKIT_API_KEY: str = ""
-    LIVEKIT_API_SECRET: str = ""
-    DEEPGRAM_API_KEY: str = ""
-    ELEVENLABS_API_KEY: str = ""
+    # Voice mode (OpenAI GPT-Live). Reuses OPENAI_API_KEY above.
+    OPENAI_LIVE_MODEL: str = "gpt-live-1"
+    OPENAI_LIVE_VOICE: str = "marin"
     LOG_LEVEL: str = "INFO"
     CHECKPOINTER_BACKEND: str = "sqlite"  # "sqlite" | "memory"
     CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
@@ -42,7 +37,6 @@ class Settings(BaseSettings):
     API_URL: str = "http://127.0.0.1:8000"
     YFINANCE_TIMEOUT_S: int = 10
     WORKSPACE_ROOT: Path = Path("data/workspace")
-    ELEVENLABS_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel (ElevenLabs default voice)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
