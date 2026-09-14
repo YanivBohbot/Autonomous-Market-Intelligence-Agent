@@ -18,8 +18,19 @@ _NEGATIVE = re.compile(
 )
 
 
+_MAX_VERDICT_WORDS = 6
+"""A pending side-effect tool call (send_email, write_file, save_memory) may
+only be approved/rejected by a short, deliberate utterance. Matching a
+confirmation word anywhere inside a long, unrelated sentence (e.g. "okay so
+basically what I wanted to ask is...") would silently authorize whatever is
+paused just because the user used "okay" as speech filler — fail closed
+(None => the caller re-prompts "say yes or no") instead of guessing."""
+
+
 def classify_verdict(utterance: str) -> str | None:
     """Return 'approve', 'reject', or None if ambiguous."""
+    if len(utterance.split()) > _MAX_VERDICT_WORDS:
+        return None
     if _NEGATIVE.search(utterance):
         return "reject"
     if _AFFIRMATIVE.search(utterance):

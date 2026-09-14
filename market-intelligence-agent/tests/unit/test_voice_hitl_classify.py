@@ -34,3 +34,21 @@ def test_standalone_hebrew_no_still_rejects():
 def test_english_yes_no_unaffected():
     assert classify_verdict("yes please") == "approve"
     assert classify_verdict("no, stop") == "reject"
+
+
+def test_long_unrelated_utterance_with_incidental_confirmation_word_is_not_approved():
+    # A weak affirmative word ("okay") used as speech filler at the start of
+    # an unrelated, unbounded new request must not silently auto-approve
+    # whatever side-effect tool call happens to be paused for approval.
+    utterance = (
+        "okay so basically what I wanted to ask is whether "
+        "Tesla stock went up today"
+    )
+    assert classify_verdict(utterance) is None
+
+
+def test_short_natural_confirmations_still_work():
+    assert classify_verdict("yes go ahead") == "approve"
+    assert classify_verdict("sure, do it") == "approve"
+    assert classify_verdict("no, cancel that") == "reject"
+    assert classify_verdict("okay") == "approve"
