@@ -133,8 +133,13 @@ to text mode; only the transport differs.
 - `app/api/routers/gptlive_session.py` — `POST /gptlive/session` bootstraps the session.
 - `app/ui/voice_panel.py` — `render_voice_panel()` embeds the browser-side WebRTC client
   (`RTCPeerConnection` + `getUserMedia`) via `st.components.v1.html`. Activated by the
-  `🎤 Enable voice` sidebar toggle in `app/ui/app.py`. Voice and text sessions
-  use different `thread_id`s (`voice-<gpt_live_session_id>` vs `web_session_<uuid>`).
+  `🎤 Enable voice` sidebar toggle in `app/ui/app.py`. Voice and text share the
+  same `thread_id` (Streamlit generates one `web_session_<uuid>` per browser
+  tab and passes it to both `/stream` and `/gptlive/session`), so they're one
+  continuous LangGraph conversation. `GET /voice/{thread_id}/transcript`
+  mirrors voice turns (and HITL pause state) into the Streamlit chat, since
+  the voice delegation worker runs as a background task with no direct line
+  back into the Streamlit process.
 
 See `docs/VOICE.md` for env vars, run order, and the Hebrew-support caveat.
 
