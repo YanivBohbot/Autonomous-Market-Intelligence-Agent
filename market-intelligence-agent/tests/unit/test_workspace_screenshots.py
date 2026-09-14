@@ -29,6 +29,23 @@ def test_serves_existing_screenshot(tmp_path, monkeypatch):
     assert res.headers["content-type"] == "image/png"
 
 
+def test_serves_screenshot_saved_directly_under_workspace_root(tmp_path, monkeypatch):
+    # @playwright/mcp (local dev backend) ignores our --output-dir when the
+    # tool call supplies an explicit filename and saves straight into
+    # WORKSPACE_ROOT instead of WORKSPACE_ROOT/screenshots — confirmed live
+    # via the browser (data/workspace/example-com-screenshot.png, not
+    # data/workspace/screenshots/example-com-screenshot.png). The endpoint
+    # must still find it.
+    (tmp_path / "screenshots").mkdir(parents=True)
+    (tmp_path / "evidence.png").write_bytes(b"\x89PNG\r\n\x1a\nroot-level-bytes")
+
+    client = _client(tmp_path, monkeypatch)
+    res = client.get("/workspace/screenshots/evidence.png")
+
+    assert res.status_code == 200
+    assert res.content == b"\x89PNG\r\n\x1a\nroot-level-bytes"
+
+
 def test_missing_screenshot_returns_404(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     res = client.get("/workspace/screenshots/does-not-exist.png")

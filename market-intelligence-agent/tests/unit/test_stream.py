@@ -179,12 +179,29 @@ def test_stream_does_not_emit_interrupted_for_non_approval_pause():
     assert interrupted_events == []
 
 
-def test_stream_emits_screenshot_event_for_browser_take_screenshot_result():
+def test_stream_emits_screenshot_event_for_playwright_mcp_result():
+    """@playwright/mcp (local dev backend) returns a list-of-content-blocks
+    ToolMessage, not a bare path — the filename is embedded in a markdown
+    link inside the block's 'text', e.g. the real shape observed from a
+    live browser_take_screenshot call:
+    [{'type': 'text', 'text': "### Result\\n- [Screenshot of viewport](./debug-test.png)\\n### Ran Playwright code\\n...", 'id': '...'}]
+    """
     tokens = [
         (AIMessageChunk(content="Here it is"), {"langgraph_node": "generate"}),
     ]
     shot_msg = ToolMessage(
-        content="screenshots/evidence.png",
+        content=[
+            {
+                "type": "text",
+                "text": (
+                    "### Result\n- [Screenshot of viewport](./evidence.png)\n"
+                    "### Ran Playwright code\n```js\nawait page.screenshot({\n"
+                    "  path: './evidence.png',\n  scale: 'css',\n  type: 'png'\n});\n```\n"
+                    "### Page\n- Page URL: https://example.com/"
+                ),
+                "id": "lc_abc123",
+            }
+        ],
         name="browser_take_screenshot",
         tool_call_id="call_1",
     )
@@ -211,6 +228,32 @@ def test_stream_emits_screenshot_event_for_browser_take_screenshot_result():
     screenshot_events = [d for e, d in events if e == "screenshot"]
     assert screenshot_events == [{"url": "/workspace/screenshots/evidence.png"}]
     assert events[-1][0] == "done"
+
+
+def test_stream_emits_screenshot_event_for_custom_agentcore_server_result():
+    """The custom stdio server (app/mcp/browser/server.py, BROWSER_BACKEND=
+    agentcore) returns a plain workspace-relative path string instead."""
+    tokens = [
+        (AIMessageChunk(content="Here it is"), {"langgraph_node": "generate"}),
+    ]
+    shot_msg = ToolMessage(
+        content="screenshots/evidence.png",
+        name="browser_take_screenshot",
+        tool_call_id="call_1",
+    )
+    updates = [{"tools": {"messages": [shot_msg]}}]
+    fake = _FakeAgentApp(tokens, updates=updates, next_after=())
+
+    app.state.agent_app = fake
+    client = TestClient(app)
+    response = client.post(
+        "/stream",
+        json={"query": "show me the page", "thread_id": "t-screenshot-2"},
+    )
+
+    events = _parse_sse(response.text)
+    screenshot_events = [d for e, d in events if e == "screenshot"]
+    assert screenshot_events == [{"url": "/workspace/screenshots/evidence.png"}]
 
 
 class _ExplodingAgentApp:
