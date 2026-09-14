@@ -54,9 +54,12 @@ Browser speaker ◄── GPT-Live TTS ◄──────────┘
 Audio flows directly between the browser and OpenAI over WebRTC — our backend never
 touches raw audio, only the sideband control channel (transcripts in, commentary out).
 
-Voice and text sessions share `data/checkpoints.db`. Voice uses
-`thread_id = voice-<gpt_live_session_id>` and text uses `web_session_<uuid>`, keeping
-them isolated by default.
+Voice and text sessions share `data/checkpoints.db` AND the same `thread_id`:
+Streamlit mints one `web_session_<uuid>` per browser tab and passes it to both
+`/stream` (text) and `/gptlive/session` (voice), so a voice turn and a text turn
+in the same tab continue one conversation rather than two isolated ones. (A voice
+session started without a caller-supplied `thread_id` still falls back to
+`voice-<gpt_live_session_id>`.)
 
 ## HITL in voice
 

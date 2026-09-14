@@ -1,6 +1,7 @@
 # Slim runtime requirements for AgentCore container (v1: text + MCP gateway only).
-# Excludes livekit-agents (voice), streamlit (UI), yfmcp/mcp-server-sqlite
-# (those run in dedicated MCP Lambdas), and dev tooling.
+# Excludes streamlit (UI) and yfmcp/mcp-server-sqlite (those run in dedicated
+# MCP Lambdas), and dev tooling. server.py unconditionally imports the voice
+# stack (OpenAI GPT-Live), so its deps stay in this file.
 
 # Web framework + ASGI
 fastapi>=0.135.0
@@ -22,7 +23,7 @@ langgraph-checkpoint-aws>=0.1.0
 mcp>=1.22.0
 
 # LLM + retrieval
-openai>=2.0.0
+openai>=3.13.0
 tiktoken>=0.12.0
 pinecone>=7.3.0
 tavily-python>=0.7.13

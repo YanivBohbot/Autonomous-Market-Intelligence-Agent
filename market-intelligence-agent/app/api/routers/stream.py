@@ -65,7 +65,7 @@ async def stream_endpoint(
                     )
 
         snapshot = await agent_app.aget_state(config)
-        if snapshot.next:
+        if snapshot.next and "approval" in snapshot.next:
             last_msg = snapshot.values["messages"][-1]
             action = get_action_description(last_msg)
             yield ServerSentEvent(

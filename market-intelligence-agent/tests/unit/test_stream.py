@@ -105,7 +105,7 @@ def test_stream_emits_node_events_for_graph_updates():
     assert events[-1][0] == "done"
 
 
-def test_stream_emits_interrupted_when_graph_pauses_before_tools():
+def test_stream_emits_interrupted_when_graph_pauses_at_approval():
     tokens = [
         (AIMessageChunk(content="Sending"), {"langgraph_node": "generate"}),
     ]
@@ -119,9 +119,11 @@ def test_stream_emits_interrupted_when_graph_pauses_before_tools():
             }
         ],
     )
+    # A real HITL pause leaves snapshot.next == ("approval",) — that's the node
+    # interrupt() was called from, and the one Command(resume=...) resumes.
     fake = _FakeAgentApp(
         tokens,
-        next_after=("tools",),
+        next_after=("approval",),
         state_messages=[pending_msg],
     )
 
@@ -145,6 +147,36 @@ def test_stream_emits_interrupted_when_graph_pauses_before_tools():
 
     done_events = [e for e, _ in events if e == "done"]
     assert done_events == []
+
+
+def test_stream_does_not_emit_interrupted_for_non_approval_pause():
+    """A pause at any node other than `approval` (e.g. a failed task retry) must
+    fall through to `done`, matching app/voice/hitl.py's is_interrupted, which
+    narrows "paused" to specifically 'approval' in snapshot.next for the same
+    reason: both independently drive the same shared-thread awaiting_approval
+    flag in Streamlit, and must agree."""
+    tokens = [
+        (AIMessageChunk(content="Retrying"), {"langgraph_node": "generate"}),
+    ]
+    fake = _FakeAgentApp(
+        tokens,
+        next_after=("tools",),
+        state_messages=[AIMessage(content="")],
+    )
+
+    app.state.agent_app = fake
+    client = TestClient(app)
+    response = client.post(
+        "/stream",
+        json={"query": "do something", "thread_id": "t-test-non-approval"},
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+
+    assert events[-1][0] == "done"
+    interrupted_events = [e for e, _ in events if e == "interrupted"]
+    assert interrupted_events == []
 
 
 class _ExplodingAgentApp:
