@@ -15,9 +15,6 @@ API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = f"web_session_{uuid.uuid4().hex[:8]}"
 
-if "voice_thread_id" not in st.session_state:
-    st.session_state.voice_thread_id = f"voice_session_{uuid.uuid4().hex[:8]}"
-
 if "voice_transcript_last_id" not in st.session_state:
     st.session_state.voice_transcript_last_id = 0
 
@@ -44,10 +41,10 @@ with st.sidebar:
     if voice_on:
         st.caption(
             "Click **Connect** in the panel below, allow mic access, then speak. "
-            "Voice runs on a separate `thread_id` from the text chat — the agent's "
-            "spoken replies also appear as text in the chat below."
+            "Voice shares the same conversation as the text chat below — the "
+            "agent's spoken replies also appear here as text."
         )
-        render_voice_panel(st.session_state.voice_thread_id, height=380)
+        render_voice_panel(st.session_state.thread_id, height=380)
 
 # --- Affichage de l'historique ---
 for msg in st.session_state.messages:
@@ -66,7 +63,7 @@ def _poll_voice_transcript():
         return
     try:
         res = requests.get(
-            f"{API_URL}/voice/{st.session_state.voice_thread_id}/transcript",
+            f"{API_URL}/voice/{st.session_state.thread_id}/transcript",
             params={"after": st.session_state.voice_transcript_last_id},
             timeout=5,
         )
@@ -76,15 +73,27 @@ def _poll_voice_transcript():
         return
 
     new_messages = data.get("messages", [])
-    if not new_messages:
-        return
-    st.session_state.voice_transcript_last_id = data.get(
-        "last_id", st.session_state.voice_transcript_last_id
-    )
-    for m in new_messages:
-        st.session_state.messages.append({"role": m["role"], "content": m["content"]})
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
+    if new_messages:
+        st.session_state.voice_transcript_last_id = data.get(
+            "last_id", st.session_state.voice_transcript_last_id
+        )
+        for m in new_messages:
+            st.session_state.messages.append({"role": m["role"], "content": m["content"]})
+            with st.chat_message(m["role"]):
+                st.markdown(m["content"])
+
+    # A pause can be triggered by a voice turn, which Streamlit has no other
+    # way to learn about — worker.py runs as a background task with no
+    # direct line back into this process. Mirror that state into the same
+    # awaiting_approval flag the text-mode /stream 'interrupted' event uses.
+    paused = data.get("paused", False)
+    if paused and not st.session_state.awaiting_approval:
+        st.session_state.awaiting_approval = True
+        st.session_state.last_action = data.get("action") or ""
+        st.rerun()
+    elif not paused and st.session_state.awaiting_approval:
+        st.session_state.awaiting_approval = False
+        st.rerun()
 
 
 _poll_voice_transcript()
