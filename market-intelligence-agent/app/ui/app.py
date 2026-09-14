@@ -188,6 +188,7 @@ if st.session_state.awaiting_approval:
                         st.session_state.messages.append(
                             {"role": "assistant", "content": data["response"]}
                         )
+                        st.rerun()
 
                 except requests.exceptions.ConnectionError as e:
                     st.error(f"❌ Impossible de se connecter à l'API ({API_URL}): {e}")
