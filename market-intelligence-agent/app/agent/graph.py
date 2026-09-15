@@ -10,6 +10,7 @@ from app.agent.nodes.research import web_search
 from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
 from app.agent.tools import TOOLS, READ_ONLY_TOOLS, is_read_only
+from app.agent.nodes.tool_utils import strip_image_content as _strip_image_content
 
 
 def record_question(state: AgentState) -> dict:
@@ -99,23 +100,6 @@ def route_after_approval(state: AgentState):
 
 
 _tool_node = ToolNode(TOOLS, handle_tool_errors=True)
-
-
-def _strip_image_content(content):
-    """Drop image parts from an MCP tool result before it re-enters the
-    conversation: OpenAI rejects image content on tool-role messages (only
-    'user' may carry images), and the frontend already gets the real PNG via
-    the dedicated screenshot SSE event (app/api/routers/stream.py reads it
-    straight off this same ToolMessage's text part), so the LLM never needs
-    the raw bytes. Stripped here, before the ToolMessage lands in checkpointed
-    state, so it doesn't keep breaking every later turn in the thread.
-    """
-    if not isinstance(content, list):
-        return content
-    return [
-        part for part in content
-        if not (isinstance(part, dict) and part.get("type") in ("image", "image_url"))
-    ]
 
 
 async def run_tools(state: AgentState) -> dict:
