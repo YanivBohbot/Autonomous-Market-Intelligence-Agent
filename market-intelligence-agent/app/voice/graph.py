@@ -12,13 +12,11 @@ and SQLite checkpointing.
 """
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 
-from app.agent.graph import approval_node, route_after_approval, route_after_generate
+from app.agent.graph import approval_node, route_after_approval, route_after_generate, run_tools
 from app.agent.nodes.generate import generate_answer
 from app.agent.state import AgentState
-from app.agent.tools import TOOLS
 
 
 def _init_voice_state(state: AgentState) -> dict:
@@ -31,7 +29,7 @@ voice_workflow = StateGraph(AgentState)
 voice_workflow.add_node("init", _init_voice_state)
 voice_workflow.add_node("generate", generate_answer)
 voice_workflow.add_node("approval", approval_node)
-voice_workflow.add_node("tools", ToolNode(TOOLS))
+voice_workflow.add_node("tools", run_tools)
 
 voice_workflow.add_edge(START, "init")
 voice_workflow.add_edge("init", "generate")

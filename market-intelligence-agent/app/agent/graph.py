@@ -98,6 +98,34 @@ def route_after_approval(state: AgentState):
     return "tools"
 
 
+_tool_node = ToolNode(TOOLS, handle_tool_errors=True)
+
+
+def _strip_image_content(content):
+    """Drop image parts from an MCP tool result before it re-enters the
+    conversation: OpenAI rejects image content on tool-role messages (only
+    'user' may carry images), and the frontend already gets the real PNG via
+    the dedicated screenshot SSE event (app/api/routers/stream.py reads it
+    straight off this same ToolMessage's text part), so the LLM never needs
+    the raw bytes. Stripped here, before the ToolMessage lands in checkpointed
+    state, so it doesn't keep breaking every later turn in the thread.
+    """
+    if not isinstance(content, list):
+        return content
+    return [
+        part for part in content
+        if not (isinstance(part, dict) and part.get("type") in ("image", "image_url"))
+    ]
+
+
+async def run_tools(state: AgentState) -> dict:
+    result = await _tool_node.ainvoke(state)
+    for msg in result.get("messages", []):
+        if isinstance(msg, ToolMessage):
+            msg.content = _strip_image_content(msg.content)
+    return result
+
+
 workflow = StateGraph(AgentState)
 workflow.add_node("record_question", record_question)
 workflow.add_node("rag", retrieve_internal_documentation)
@@ -105,7 +133,7 @@ workflow.add_node("grader", grade_documents)
 workflow.add_node("web_search", web_search)
 workflow.add_node("generate", generate_answer)
 workflow.add_node("approval", approval_node)
-workflow.add_node("tools", ToolNode(TOOLS, handle_tool_errors=True))
+workflow.add_node("tools", run_tools)
 
 workflow.add_edge(START, "record_question")
 workflow.add_edge("record_question", "rag")
