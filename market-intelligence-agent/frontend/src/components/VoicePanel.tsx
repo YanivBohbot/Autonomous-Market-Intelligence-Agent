@@ -1,47 +1,67 @@
 import { useRef, useState } from "react";
-import { Room, RoomEvent, type RemoteTrack } from "livekit-client";
-import { getLiveKitToken } from "../lib/api";
+import { API_BASE } from "../lib/api";
 
 type VoiceStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
-export function VoicePanel() {
+interface VoicePanelProps {
+  threadId: string;
+}
+
+export function VoicePanel({ threadId }: VoicePanelProps) {
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [log, setLog] = useState<string[]>([]);
-  const roomRef = useRef<Room | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const dcRef = useRef<RTCDataChannel | null>(null);
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
   const addLog = (m: string) => setLog((p) => [...p.slice(-20), m]); // keep last 20
 
   async function connect() {
     try {
       setStatus("connecting");
-      const identity = "user-" + Math.random().toString(36).slice(2, 8);
-      const room = "mi-voice-" + Math.random().toString(36).slice(2, 10);
-      const { token, url } = await getLiveKitToken(identity, room);
-      addLog(`connecting to ${url}`);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      const lkRoom = new Room({ adaptiveStream: true, dynacast: true });
-      roomRef.current = lkRoom;
+      const pc = new RTCPeerConnection();
+      pcRef.current = pc;
 
-      lkRoom.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-        if (track.kind === "audio") {
-          const el = track.attach() as HTMLAudioElement;
-          el.autoplay = true;
-          (el as HTMLMediaElement).muted = false;
-          el.volume = 1.0;
-          document.body.appendChild(el);
-          el
-            .play()
-            .then(() => addLog("agent audio streaming"))
-            .catch((e) => addLog("audio error: " + e.message));
+      const audioEl = document.createElement("audio");
+      audioEl.autoplay = true;
+      audioElRef.current = audioEl;
+      pc.ontrack = (e) => {
+        audioEl.srcObject = e.streams[0];
+        document.body.appendChild(audioEl);
+        audioEl
+          .play()
+          .then(() => addLog("agent audio playing"))
+          .catch((err) => addLog("audio play error: " + err.message));
+      };
+
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      const dc = pc.createDataChannel("oai-events");
+      dcRef.current = dc;
+      dc.onmessage = (e) => handleDataChannelEvent(e.data);
+      dc.onopen = () => addLog("data channel open — captions live");
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+          setStatus("disconnected");
+          addLog("connection " + pc.connectionState);
         }
-      });
+      };
 
-      lkRoom.on(RoomEvent.Disconnected, () => {
-        setStatus("disconnected");
-        addLog("disconnected from room");
-      });
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-      await lkRoom.connect(url, token);
-      await lkRoom.localParticipant.setMicrophoneEnabled(true);
+      const res = await fetch(`${API_BASE}/gptlive/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sdp: offer.sdp, thread_id: threadId }),
+      });
+      if (!res.ok) throw new Error(`session endpoint returned ${res.status}`);
+      const { session_id, sdp } = await res.json();
+      addLog(`session ${session_id} created, connecting`);
+
+      await pc.setRemoteDescription({ type: "answer", sdp });
       setStatus("connected");
       addLog("mic enabled — speak now");
     } catch (err) {
@@ -50,9 +70,29 @@ export function VoicePanel() {
     }
   }
 
+  function handleDataChannelEvent(raw: string) {
+    let event: { type?: string; reason?: string; error?: unknown };
+    try {
+      event = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    switch (event.type) {
+      case "session.closed":
+        addLog("session closed: " + event.reason);
+        break;
+      case "error":
+        addLog("live error: " + JSON.stringify(event.error));
+        break;
+    }
+  }
+
   async function disconnect() {
-    await roomRef.current?.disconnect();
-    roomRef.current = null;
+    pcRef.current?.close();
+    pcRef.current = null;
+    dcRef.current = null;
+    audioElRef.current?.remove();
+    audioElRef.current = null;
     setStatus("idle");
     addLog("disconnected");
   }
