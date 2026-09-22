@@ -57,13 +57,21 @@ class KBSearchInput(BaseModel):
     )
 
 
+# Cosine-similarity floor below which a chunk is treated as noise rather than
+# a real match. Calibrated empirically against this project's real index
+# (text-embedding-3-small): on-topic queries against their matching document
+# scored 0.53-0.66, off-topic queries scored 0.13-0.14 — 0.35 sits with wide
+# margin in the gap between the two clusters.
+_RELEVANCE_THRESHOLD = 0.35
+
+
 @tool("search_knowledge_base", args_schema=KBSearchInput)
 def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None = None) -> str:
     """Search the internal knowledge base of ingested company reports/documents.
     Use for questions about specific companies' financials, risk factors, or
     any content from ingested PDFs. Pass source_filter to target one document
     when the question names a specific company/ticker."""
-    search_kwargs: dict = {"k": k}
+    filter_kwarg = None
     if source_filter:
         resolved = _resolve_source_filter(source_filter)
         if resolved is None:
@@ -72,14 +80,15 @@ def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None
                 f"No ingested document matches source_filter={source_filter!r}. "
                 f"Available documents: {available}"
             )
-        search_kwargs["filter"] = {"filename": {"$in": resolved}}
+        filter_kwarg = {"filename": {"$in": resolved}}
 
     try:
-        retriever = _get_vectorstore().as_retriever(search_kwargs=search_kwargs)
-        docs = retriever.invoke(query)
+        results = _get_vectorstore().similarity_search_with_score(query, k=k, filter=filter_kwarg)
     except Exception as exc:
         logger.warning("KB_SEARCH: failed (%s)", exc)
         return f"Knowledge base search failed: {exc}"
+
+    docs = [doc for doc, score in results if score >= _RELEVANCE_THRESHOLD]
 
     if not docs:
         return "No relevant results found in the knowledge base for this query."
