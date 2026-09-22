@@ -15,6 +15,8 @@ from app.agent.tools.mcp_clients.filesystem_client import (
     fs_list_dir_tool,
     fs_write_file_tool,
 )
+from app.agent.tools.knowledge_base import search_knowledge_base_tool, web_search_tool
+
 # Browser tools are stdio-only (Playwright MCP runs as a subprocess). In
 # AgentCore Gateway mode there is no browser target, so the registry has no
 # matching tools and select_tool() would raise at import. Defer that error
@@ -39,6 +41,8 @@ TOOLS = [
     fs_read_file_tool,
     fs_list_dir_tool,
     fs_write_file_tool,
+    search_knowledge_base_tool,
+    web_search_tool,
     *_BROWSER_TOOLS,
     save_memory_tool,
     recall_memory_tool,
@@ -57,6 +61,8 @@ _BASE_READ_ONLY_TOOLS: set[str] = {
     "browser_take_screenshot",
     "recall_memory",
     "list_memories",
+    "search_knowledge_base",
+    "web_search",
 }
 # Drop browser tool names if the browser MCP isn't loaded so the integrity
 # check below doesn't fire on AgentCore Gateway mode (no browser target).
@@ -99,6 +105,8 @@ __all__ = [
     "fs_read_file_tool",
     "fs_list_dir_tool",
     "fs_write_file_tool",
+    "search_knowledge_base_tool",
+    "web_search_tool",
     "browser_navigate_tool",
     "browser_snapshot_tool",
     "browser_screenshot_tool",

@@ -1,9 +1,31 @@
+import hashlib
 import os
+from collections import defaultdict
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+
 from app.core.config import settings
+
+
+def _chunk_id(source: str, page: int, chunk_index: int) -> str:
+    return hashlib.sha256(f"{source}:{page}:{chunk_index}".encode()).hexdigest()
+
+
+def _assign_chunk_ids(splits) -> list[str]:
+    """Deterministic per-chunk IDs so re-running ingestion is idempotent:
+    Pinecone upsert with the same ID overwrites rather than duplicates."""
+    counts: dict[tuple[str, int], int] = defaultdict(int)
+    ids = []
+    for doc in splits:
+        source = doc.metadata.get("source", "unknown")
+        page = doc.metadata.get("page", 0)
+        chunk_index = counts[(source, page)]
+        counts[(source, page)] += 1
+        ids.append(_chunk_id(source, page, chunk_index))
+    return ids
 
 
 def ingest_document():
@@ -37,12 +59,17 @@ def ingest_document():
     splits = text_splitter.split_documents(documents)
     print(f"✂️ Documents cuts in  {len(splits)} chunks.")
 
+    for doc in splits:
+        doc.metadata["filename"] = os.path.basename(doc.metadata["source"])
+
+    ids = _assign_chunk_ids(splits)
+
     print("cw Stockage dans Pinecone (cela peut prendre quelques secondes)...")
 
     embeddings = OpenAIEmbeddings(model=settings.OPENAI_EMBEDDING_MODEL)
 
     PineconeVectorStore.from_documents(
-        documents=splits, embedding=embeddings, index_name=settings.PINECONE_INDEX_NAME
+        documents=splits, embedding=embeddings, index_name=settings.PINECONE_INDEX_NAME, ids=ids
     )
 
 
