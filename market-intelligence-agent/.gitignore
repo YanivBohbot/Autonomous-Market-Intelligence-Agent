@@ -49,3 +49,5 @@ package-lock.json
 
 # QA test screenshots
 qa_final_state.png
+# Local git worktrees (agent-managed, not shared)
+.worktrees/
