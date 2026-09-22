@@ -24,8 +24,10 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 12 | `recall_memory` | read-only | LangGraph BaseStore (in-memory v1) | key | Look up a previously-saved user fact by key. Returns the value or "No memory for…". | The read side of cross-thread memory. Lets the agent fetch a fact (email, preference) before a tool call that needs it, without re-asking the user. |
 | 13 | `list_memories` | read-only | same | (none) | Return every user fact currently in memory as `"key = value"` strings. | Discovery. The agent uses this to know what's on file before guessing keys — same pattern as `list_directory` for files. |
 | 14 | `save_memory` | side-effect | same | key, value | Persist a durable user fact under namespace `("user_facts",)`. Gated by HITL approval. | The write side of cross-thread memory. Without it, the user re-types their email and preferences every session. Gated because "the agent learning new facts about you" is a real side-effect users should consent to. |
+| 15 | `search_knowledge_base` | read-only | Pinecone (native) | query, k (default 4), source_filter (optional) | Semantic search over ingested company reports/PDFs. Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. | Lets the agent pull grounded facts from ingested reports on demand, as part of its own reasoning loop, instead of a fixed pre-fetch step. |
+| 16 | `web_search` | read-only | Tavily (native) | query | Live web search, top 3 results, advanced depth. | Fallback / supplement when the knowledge base has no relevant ingested document for the question. |
 
-`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
 
 ## Per-tool details
 
@@ -101,6 +103,16 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **File:** same as `recall_memory`
 - **What:** Persists `{key: value}` under namespace `("user_facts",)` via `store.aput(...)`. Last-write-wins for collisions. Gated by `approval_node`.
 - **Why:** The write side of cross-thread memory. Saves the user from re-stating facts every session. Gated because creating durable knowledge *about* the user is a side-effect users should consent to — same trust posture as `send_email` and `write_file`. The Streamlit modal surfaces the proposed `{key, value}` pair before any disk write.
+
+### 15. `search_knowledge_base`
+- **File:** `app/agent/tools/knowledge_base.py`
+- **What:** Runs a similarity search against the Pinecone-indexed knowledge base of ingested PDFs, via `vectorstore.as_retriever().invoke(query)`. Returns each chunk prefixed with its source filename and page number. `source_filter` (optional) narrows the search to one document by case-insensitive filename substring match, resolved against `data/*.pdf` at call time.
+- **Why:** Replaces the old fixed `rag → grader` pipeline. The LLM now decides when retrieval is useful, how many times to call it, and with which query — standard agentic RAG. Citation (source + page) lets the agent ground claims when multiple reports are ingested, and `source_filter` avoids cross-document noise when the question names a specific company.
+
+### 16. `web_search`
+- **File:** `app/agent/tools/knowledge_base.py`
+- **What:** Tavily advanced search, top 3 results, each prefixed `[SOURCE WEB: <url>]`.
+- **Why:** Replaces the old fixed `web_search` fallback node. The LLM calls it directly when the knowledge base has nothing relevant, or when the question needs current/external information the ingested PDFs can't have.
 
 > **Persistence note:** the v1 backend is `langgraph.store.memory.InMemoryStore` — facts are lost on server restart. Migrating to `AsyncSqliteStore` is a single-function change in `app/agent/memory/store.py`; deferred to a follow-up subsystem when durability matters.
 
