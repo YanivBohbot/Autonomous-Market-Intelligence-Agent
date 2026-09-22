@@ -41,7 +41,7 @@ def _resolve_source_filter(source_filter: str) -> list[str] | None:
     ]
     if not matches:
         return None
-    return [os.path.join("data", f).replace("\\", "/") for f in matches]
+    return [os.path.join("data", f) for f in matches]
 
 
 class KBSearchInput(BaseModel):
