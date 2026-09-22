@@ -24,7 +24,7 @@ def ingest_document():
     for file in os.listdir(data_folder):
         if file.endswith(".pdf"):
             pdf_path = os.path.join(data_folder, file)
-            print(f" Charge the {file}..")
+            print(f" Charging the {file}..")
             loader = PyPDFLoader(pdf_path)
             documents.extend(loader.load())
 
@@ -35,7 +35,7 @@ def ingest_document():
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
     splits = text_splitter.split_documents(documents)
-    print(f"✂️ Documents découpés en {len(splits)} chunks.")
+    print(f"✂️ Documents cuts in  {len(splits)} chunks.")
 
     print("cw Stockage dans Pinecone (cela peut prendre quelques secondes)...")
 
