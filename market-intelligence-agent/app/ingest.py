@@ -59,6 +59,9 @@ def ingest_document():
     splits = text_splitter.split_documents(documents)
     print(f"✂️ Documents découpés en {len(splits)} chunks.")
 
+    for doc in splits:
+        doc.metadata["filename"] = os.path.basename(doc.metadata["source"])
+
     ids = _assign_chunk_ids(splits)
 
     print("cw Stockage dans Pinecone (cela peut prendre quelques secondes)...")

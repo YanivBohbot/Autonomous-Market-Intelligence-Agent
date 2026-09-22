@@ -1,4 +1,3 @@
-import os
 from unittest.mock import MagicMock, patch
 
 from langchain_core.documents import Document
@@ -49,14 +48,13 @@ def test_search_with_unmatched_source_filter_lists_available_docs():
 
 
 def test_search_with_matched_source_filter_builds_pinecone_filter():
-    docs = [Document(page_content="Tesla delivered 500k vehicles", metadata={"source": "data/TSLA-Q2-2026-Update.pdf", "page": 3})]
+    docs = [Document(page_content="Tesla delivered 500k vehicles", metadata={"source": "data/TSLA-Q2-2026-Update.pdf", "page": 3, "filename": "TSLA-Q2-2026-Update.pdf"})]
     vectorstore = _mock_retriever(docs)
-    expected_path = os.path.join("data", "TSLA-Q2-2026-Update.pdf")
     with patch.object(kb_mod, "_get_vectorstore", return_value=vectorstore), \
          patch.object(kb_mod, "_list_ingested_pdfs", return_value=["Amazon-2024-Annual-Report.pdf", "TSLA-Q2-2026-Update.pdf"]):
         result = search_knowledge_base_tool.invoke({"query": "deliveries", "source_filter": "TSLA"})
     vectorstore.as_retriever.assert_called_once_with(
-        search_kwargs={"k": 4, "filter": {"source": {"$in": [expected_path]}}}
+        search_kwargs={"k": 4, "filter": {"filename": {"$in": ["TSLA-Q2-2026-Update.pdf"]}}}
     )
     assert "Tesla delivered 500k vehicles" in result
 

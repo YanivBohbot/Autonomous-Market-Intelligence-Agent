@@ -32,21 +32,21 @@ def _list_ingested_pdfs(data_dir: str = "data") -> list[str]:
 
 
 def _resolve_source_filter(source_filter: str) -> list[str] | None:
-    """Case-insensitive substring match against ingested filenames, resolved
-    to the exact `source` metadata values app/ingest.py wrote (data dir +
-    filename). Returns None if nothing matches."""
+    """Case-insensitive substring match against ingested filenames. Returns
+    the matched bare filenames (used to filter on the `filename` metadata
+    field, which is OS/path independent), or None if nothing matches."""
     matches = [
         f for f in _list_ingested_pdfs()
         if source_filter.lower() in f.lower()
     ]
     if not matches:
         return None
-    return [os.path.join("data", f) for f in matches]
+    return matches
 
 
 class KBSearchInput(BaseModel):
     query: str = Field(description="The search query against the internal knowledge base.")
-    k: int = Field(default=4, description="Number of chunks to retrieve.")
+    k: int = Field(default=4, ge=1, le=10, description="Number of chunks to retrieve.")
     source_filter: str | None = Field(
         default=None,
         description=(
@@ -72,7 +72,7 @@ def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None
                 f"No ingested document matches source_filter={source_filter!r}. "
                 f"Available documents: {available}"
             )
-        search_kwargs["filter"] = {"source": {"$in": resolved}}
+        search_kwargs["filter"] = {"filename": {"$in": resolved}}
 
     try:
         retriever = _get_vectorstore().as_retriever(search_kwargs=search_kwargs)
@@ -85,7 +85,7 @@ def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None
         return "No relevant results found in the knowledge base for this query."
 
     parts = [
-        f"[Source: {os.path.basename(d.metadata.get('source', 'unknown'))}, "
+        f"[Source: {d.metadata.get('filename', os.path.basename(d.metadata.get('source', 'unknown')))}, "
         f"page {d.metadata.get('page', '?')}] {d.page_content}"
         for d in docs
     ]

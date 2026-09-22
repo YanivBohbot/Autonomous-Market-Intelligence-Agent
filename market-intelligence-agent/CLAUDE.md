@@ -54,18 +54,16 @@ The email tool falls back to a simulation (no real send) when `EMAIL_SENDER` sti
 Compiled with a **SQLite checkpointer** (`data/checkpoints.db`, see `app/agent/memory/checkpointer.py`). HITL uses the **dynamic `interrupt()` pattern** with `Command(resume=...)` — no `interrupt_before`. Flow:
 
 ```
-START → rag → grader → [generate | web_search → generate]
-generate → (tool_calls?) → approval → [tools | generate]
+START → record_question → generate → (tool_calls?) → approval → [tools | generate]
 tools → generate → … → END
 ```
 
-- **rag**: pulls top-3 chunks from Pinecone via semantic similarity.
-- **grader**: binary LLM filter — drops chunks that don't answer the question.
-- **grader → generate** if any chunks passed, **grader → web_search** if none.
-- **web_search**: Tavily advanced search, max 3 results; always feeds into generate.
+- **record_question**: persists the user's turn as a `HumanMessage` so it shows up in checkpointed history.
 - **generate**: LLM (with `TOOLS` bound) loaded from `app/agent/prompts/system.py` (`SYSTEM_PROMPT`, `ERROR_RECOVERY_PROMPT`). Decides whether to call a tool or emit a final answer.
 - **approval**: inspects the last `AIMessage`'s `tool_calls`. If every call is in `READ_ONLY_TOOLS`, returns immediately. Otherwise calls `interrupt(requests)` surfacing only side-effect calls. **Atomic batch rule**: any reject cancels the entire batch via `ToolMessage`s.
 - **tools** (LangGraph `ToolNode`): runs whatever the LLM called.
+
+Note: retrieval (`search_knowledge_base`) and web search (`web_search`) are **not** separate graph nodes — they're tools the LLM calls from within the `generate`/`tools` loop, same as any other tool, and are gated by the same `READ_ONLY_TOOLS`/`approval` logic.
 
 ### Tools (`app/agent/tools/__init__.py`)
 
@@ -87,8 +85,10 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | `recall_memory` | `app/agent/tools/memory.py` | read-only | Look up a user fact in LangGraph's BaseStore by key. |
 | `list_memories` | same | read-only | Return every user fact in memory as `key = value` strings. |
 | `save_memory` | same | side-effect | Persist `{key: value}` under namespace `("user_facts",)`. Gated by `approval_node`. |
+| `search_knowledge_base` | `app/agent/tools/knowledge_base.py` | read-only | Semantic search over ingested company reports/PDFs (Pinecone). Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. |
+| `web_search` | `app/agent/tools/knowledge_base.py` | read-only | Live web search (Tavily), top 3 results, advanced depth. Fallback/supplement when the knowledge base has nothing relevant. |
 
-`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
 
 ### Human-in-the-Loop (HITL) flow
 
