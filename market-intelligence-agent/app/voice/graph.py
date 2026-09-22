@@ -1,13 +1,14 @@
 """Voice-mode LangGraph.
 
-A simplified copy of `app.agent.graph` that skips the slow `rag` → `grader`
-nodes. Voice questions are typically conversational ("What's Apple's price?",
-"Send an email...") and rarely need the Pinecone vector store, so paying the
-~2–3 s latency on every turn isn't worth it. Document-style questions stay
-on the full text-mode graph in `app.agent.graph`.
+A simplified copy of `app.agent.graph` that skips the HITL-irrelevant
+`record_question` bookkeeping node (voice turns are driven by the
+delegation worker, not the /stream API). Retrieval (`search_knowledge_base`,
+`web_search`) is available the same way it is in text mode: as ordinary
+tools the LLM opts into per turn, so voice pays no fixed retrieval latency
+tax on every conversational turn.
 
 The remaining flow (`generate` → `approval` → `tools` → ...) is reused
-unchanged so RAG-free turns still get the same MCP tools, HITL approval,
+unchanged so voice turns still get the same MCP tools, HITL approval,
 and SQLite checkpointing.
 """
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -19,20 +20,12 @@ from app.agent.nodes.generate import generate_answer
 from app.agent.state import AgentState
 
 
-def _init_voice_state(state: AgentState) -> dict:
-    """Pre-populate `documents=[]` so `generate_answer` (which reads
-    `state["documents"]`) doesn't raise KeyError. Voice questions skip RAG."""
-    return {"documents": []}
-
-
 voice_workflow = StateGraph(AgentState)
-voice_workflow.add_node("init", _init_voice_state)
 voice_workflow.add_node("generate", generate_answer)
 voice_workflow.add_node("approval", approval_node)
 voice_workflow.add_node("tools", run_tools)
 
-voice_workflow.add_edge(START, "init")
-voice_workflow.add_edge("init", "generate")
+voice_workflow.add_edge(START, "generate")
 voice_workflow.add_conditional_edges(
     "generate",
     route_after_generate,
