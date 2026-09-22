@@ -106,7 +106,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 
 ### 15. `search_knowledge_base`
 - **File:** `app/agent/tools/knowledge_base.py`
-- **What:** Runs a similarity search against the Pinecone-indexed knowledge base of ingested PDFs, via `vectorstore.as_retriever().invoke(query)`. Returns each chunk prefixed with its source filename and page number. `source_filter` (optional) narrows the search to one document by case-insensitive filename substring match, resolved against `data/*.pdf` at call time.
+- **What:** Runs a similarity search against the Pinecone-indexed knowledge base of ingested PDFs, via `vectorstore.similarity_search_with_score(query, k=k, filter=...)`. Chunks scoring below an empirically-calibrated relevance threshold (0.35 cosine similarity) are dropped, so an off-topic question returns an explicit "No relevant results found" instead of the closest-but-irrelevant chunks. Surviving chunks are prefixed with their source filename and page number. `source_filter` (optional) narrows the search to one document by case-insensitive filename substring match, resolved against `data/*.pdf` at call time, filtered on the `filename` metadata field attached at ingest.
 - **Why:** Replaces the old fixed `rag → grader` pipeline. The LLM now decides when retrieval is useful, how many times to call it, and with which query — standard agentic RAG. Citation (source + page) lets the agent ground claims when multiple reports are ingested, and `source_filter` avoids cross-document noise when the question names a specific company.
 
 ### 16. `web_search`
