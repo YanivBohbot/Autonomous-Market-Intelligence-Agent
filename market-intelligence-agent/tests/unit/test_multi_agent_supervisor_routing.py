@@ -107,11 +107,38 @@ def test_routes_to_email_agent():
 
 
 def test_finish_routes_to_end():
+    history = [HumanMessage(content="q"), AIMessage(content="the answer")]
     with patch.object(supervisor_mod, "_router") as mock:
         mock.invoke.return_value = RoutingDecision(next="FINISH", reasoning="already answered")
-        result = supervisor_node(_state())
+        result = supervisor_node(_state(messages=history))
     assert result.goto == END
     assert result.update["next_agent"] is None
+
+
+def test_finish_before_any_answer_falls_back_to_rag_agent():
+    """Regression: live QA showed the router picking FINISH on the very first
+    hop for multi-specialist questions ("Compare Amazon's 2024 net sales with
+    Tesla's Q2 2026 revenue") — its own reasoning said "I need to route", yet
+    it returned FINISH, ending the turn with no answer at all. FINISH is only
+    valid once an AIMessage answers the latest HumanMessage; otherwise fall
+    back to rag_agent, the general-purpose specialist."""
+    history = [HumanMessage(content="Compare Amazon's 2024 net sales with Tesla's Q2 2026 revenue.")]
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="FINISH", reasoning="need to route")
+        result = supervisor_node(_state(messages=history))
+    assert result.goto == "rag_agent"
+    assert result.update["next_agent"] == "rag_agent"
+    assert result.update["agent_hops"] == 1
+
+
+def test_finish_on_new_question_after_earlier_answer_falls_back_to_rag_agent():
+    """Multi-turn thread: an AIMessage from a previous turn doesn't answer the
+    new HumanMessage — only an AIMessage after the latest question counts."""
+    history = [HumanMessage(content="q1"), AIMessage(content="a1"), HumanMessage(content="q2")]
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="FINISH", reasoning="answered")
+        result = supervisor_node(_state(messages=history))
+    assert result.goto == "rag_agent"
 
 
 def test_hop_cap_short_circuits_without_calling_llm():
