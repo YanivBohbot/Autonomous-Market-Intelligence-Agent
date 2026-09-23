@@ -31,7 +31,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 19 | `portfolio_metrics` | read-only | Native (`finance_calc.py`) | positions (list of ticker, shares, avg_cost, price, sector) | Market value, cost basis, unrealized P&L (amount, %), weights, sector allocation. | Portfolio math is done by code, never by the LLM. |
 | 20 | `pct_change` | read-only | Native (`finance_calc.py`) | old, new | Change and % change between two numbers. | Deterministic growth rates for comparisons. |
 
-`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
 
 ## Per-tool details
 
