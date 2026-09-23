@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 All commands must be run from inside `market-intelligence-agent/` with the `.venv` active, using `uv run`.
 
 ```bash
-# One-time setup: create the SQLite customer database
+# (Re)build the wealth-management SQLite DB (customers.db) — commit the result
 uv run python create_db.py
 
 # One-time setup: ingest PDFs from ./data/ into Pinecone
@@ -72,7 +72,9 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | Tool name | File | Type | What it does |
 |---|---|---|---|
 | `send_email` | `app/agent/tools/emails.py` | side-effect | Sends via **Amazon SES** (boto3) using the verified `EMAIL_SENDER` identity. Simulates if `EMAIL_SENDER` is empty or an `@example.com` placeholder. SMTP fields kept optional for legacy local dev only. |
-| `read_query` | `app/agent/tools/mcp_clients/mcp_client.py` | read-only | MCP stdio client → `mcp-server-sqlite` → `read_query` against `customers.db`. |
+| `read_query` | `app/agent/tools/mcp_clients/mcp_client.py` | read-only | MCP stdio client → `mcp-server-sqlite` → `read_query` against `customers.db` (wealth-management DB: companies, clients, transactions, holdings, watchlists; seeded by `create_db.py`). |
+| `list_tables` / `describe_table` | same | read-only | Schema discovery on `customers.db`. |
+| `portfolio_metrics` / `pct_change` | `app/agent/tools/finance_calc.py` | read-only | Deterministic portfolio math (value, P&L, weights, sectors) and % change. |
 | `yfinance_get_ticker_info` | `app/agent/tools/mcp_clients/yfinance_client.py` | read-only | MCP stdio client → `yfmcp` → `get_ticker_info(ticker)`. |
 | `yfinance_get_price_history` | same | read-only | `get_price_history(ticker, period="1mo")`. |
 | `yfinance_get_ticker_news` | same | read-only | `get_ticker_news(ticker, limit=5)`. |
@@ -88,7 +90,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | `search_knowledge_base` | `app/agent/tools/knowledge_base.py` | read-only | Semantic search over ingested company reports/PDFs (Pinecone). Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. |
 | `web_search` | `app/agent/tools/knowledge_base.py` | read-only | Live web search (Tavily), top 3 results, advanced depth. Fallback/supplement when the knowledge base has nothing relevant. |
 
-`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
 
 ### Human-in-the-Loop (HITL) flow
 

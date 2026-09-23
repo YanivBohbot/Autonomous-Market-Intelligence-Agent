@@ -4,7 +4,8 @@ from app.agent.tools.memory import (
     recall_memory_tool,
     list_memories_tool,
 )
-from app.agent.tools.mcp_clients.mcp_client import crm_tool
+from app.agent.tools.mcp_clients.mcp_client import crm_tool, crm_list_tables_tool, crm_describe_table_tool
+from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool
 from app.agent.tools.mcp_clients.yfinance_client import (
     yf_quote_tool,
     yf_history_tool,
@@ -35,6 +36,10 @@ except RuntimeError:
 TOOLS = [
     send_email_tool,
     crm_tool,
+    crm_list_tables_tool,
+    crm_describe_table_tool,
+    portfolio_metrics_tool,
+    pct_change_tool,
     yf_quote_tool,
     yf_history_tool,
     yf_news_tool,
@@ -51,6 +56,10 @@ TOOLS = [
 
 _BASE_READ_ONLY_TOOLS: set[str] = {
     "read_query",
+    "list_tables",
+    "describe_table",
+    "portfolio_metrics",
+    "pct_change",
     "yfinance_get_ticker_info",
     "yfinance_get_price_history",
     "yfinance_get_ticker_news",
@@ -99,6 +108,10 @@ __all__ = [
     "is_read_only",
     "send_email_tool",
     "crm_tool",
+    "crm_list_tables_tool",
+    "crm_describe_table_tool",
+    "portfolio_metrics_tool",
+    "pct_change_tool",
     "yf_quote_tool",
     "yf_history_tool",
     "yf_news_tool",
