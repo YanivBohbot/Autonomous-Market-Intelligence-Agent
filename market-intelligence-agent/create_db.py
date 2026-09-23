@@ -125,7 +125,12 @@ CLIENTS = [
 ]
 
 # (client_id, trade_date, ticker, side, shares). QA fixtures:
-#  - client 2 (Margaret Collins, conservative) is >30% in NVDA
+#  - client 2 (Margaret Collins, conservative) is >30% in NVDA -- the ONLY
+#    conservative client with a non-ETF position above 30%, with margin: every
+#    other conservative client's largest non-ETF position stays <=~21% of its
+#    portfolio at the 2026 anchor prices, so it cannot cross 30% even under a
+#    +/-25% move in any single ticker's price (see
+#    tests/unit/test_wealth_db_seed.py::test_only_margaret_collins_breaches_30pct_non_etf_concentration)
 #  - client 4 (Robert Hayes) bought then fully sold TSLA
 TRADES = [
     (1, "2022-02-14", "NVDA", "BUY", 300), (1, "2022-09-12", "TSLA", "BUY", 40),
@@ -146,8 +151,9 @@ TRADES = [
     (6, "2022-04-11", "NVDA", "BUY", 1000), (6, "2022-04-11", "TSLA", "BUY", 60),
     (6, "2023-08-21", "META", "BUY", 50), (6, "2024-03-04", "NVDA", "SELL", 300),
     (6, "2025-02-10", "TSLA", "BUY", 40), (6, "2026-01-12", "GOOGL", "BUY", 100),
-    (7, "2022-05-16", "KO", "BUY", 150), (7, "2022-05-16", "JNJ", "BUY", 60),
-    (7, "2023-04-10", "BND", "BUY", 250), (7, "2025-09-15", "XOM", "BUY", 40),
+    (7, "2022-05-16", "KO", "BUY", 110), (7, "2022-05-16", "JNJ", "BUY", 40),
+    (7, "2023-04-10", "BND", "BUY", 250), (7, "2024-02-01", "BND", "BUY", 100),
+    (7, "2025-09-15", "XOM", "BUY", 40),
     (8, "2022-06-13", "JPM", "BUY", 100), (8, "2022-06-13", "XOM", "BUY", 120),
     (8, "2023-10-02", "AAPL", "BUY", 60), (8, "2024-12-09", "XOM", "SELL", 50),
     (8, "2025-06-02", "SPY", "BUY", 25),
@@ -167,8 +173,8 @@ TRADES = [
     (14, "2025-03-24", "BND", "BUY", 60),
     (15, "2023-01-23", "TSLA", "BUY", 70), (15, "2023-01-23", "AMZN", "BUY", 50),
     (15, "2024-09-30", "TSLA", "SELL", 30), (15, "2025-11-17", "NVDA", "BUY", 90),
-    (16, "2023-02-06", "KO", "BUY", 120), (16, "2023-02-06", "XOM", "BUY", 50),
-    (16, "2024-03-18", "BND", "BUY", 100),
+    (16, "2023-02-06", "KO", "BUY", 60), (16, "2023-02-06", "XOM", "BUY", 35),
+    (16, "2024-03-18", "BND", "BUY", 100), (16, "2024-05-01", "BND", "BUY", 150),
     (17, "2023-03-06", "BND", "BUY", 800), (17, "2023-03-06", "JNJ", "BUY", 150),
     (17, "2023-03-06", "KO", "BUY", 300), (17, "2024-02-26", "JPM", "BUY", 100),
     (17, "2025-05-19", "SPY", "BUY", 60),
@@ -182,8 +188,8 @@ TRADES = [
     (21, "2023-08-14", "TSLA", "BUY", 150), (21, "2023-08-14", "NVDA", "BUY", 500),
     (21, "2024-12-16", "TSLA", "SELL", 50), (21, "2025-06-23", "META", "BUY", 60),
     (21, "2026-05-11", "AMZN", "BUY", 100),
-    (22, "2023-10-09", "BND", "BUY", 150), (22, "2023-10-09", "KO", "BUY", 80),
-    (22, "2025-02-24", "JNJ", "BUY", 30),
+    (22, "2023-10-09", "BND", "BUY", 150), (22, "2023-10-09", "KO", "BUY", 55),
+    (22, "2025-02-24", "JNJ", "BUY", 20), (22, "2025-06-01", "BND", "BUY", 50),
     (23, "2024-01-22", "AAPL", "BUY", 70), (23, "2024-01-22", "GOOGL", "BUY", 60),
     (23, "2025-04-21", "MSFT", "BUY", 25), (23, "2026-06-08", "AAPL", "SELL", 20),
     (24, "2024-06-17", "NVDA", "BUY", 80), (24, "2024-06-17", "TSLA", "BUY", 20),

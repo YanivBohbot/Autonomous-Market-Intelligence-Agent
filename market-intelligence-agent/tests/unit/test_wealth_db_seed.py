@@ -85,6 +85,30 @@ def test_fixture_conservative_client_concentrated_in_nvda(db):
     assert values["NVDA"] / sum(values.values()) > 0.30
 
 
+def test_only_margaret_collins_breaches_30pct_non_etf_concentration(db):
+    """Margaret Collins is the ONLY conservative client with a non-ETF
+    position above 30% of her portfolio (at 2026 anchor prices), with margin:
+    every other conservative client's largest non-ETF position stays well
+    under 30%, so a single ticker's price would have to move implausibly far
+    to create a second breach. Regression for I-1: non-unique fixture (Susan
+    Grant/Christopher Lee/George Palmer used to also breach at live prices)."""
+    sectors = {r["ticker"]: r["sector"] for r in db.execute("SELECT ticker, sector FROM companies")}
+    conservative = db.execute("SELECT client_id, name FROM clients WHERE risk_profile = 'conservative'").fetchall()
+    anchor = date(2026, 7, 1)
+    breaching = []
+    for row in conservative:
+        holdings = db.execute(
+            "SELECT ticker, shares FROM holdings WHERE client_id = ?", (row["client_id"],)
+        ).fetchall()
+        values = {h["ticker"]: h["shares"] * seed.price_at(h["ticker"], anchor) for h in holdings}
+        total = sum(values.values())
+        for ticker, mv in values.items():
+            if sectors[ticker] != "ETF" and mv / total > 0.30:
+                breaching.append(row["name"])
+                break
+    assert breaching == ["Margaret Collins"]
+
+
 def test_fixture_client_fully_sold_tsla(db):
     cid = db.execute("SELECT client_id FROM clients WHERE name = 'Robert Hayes'").fetchone()[0]
     assert db.execute("SELECT COUNT(*) FROM transactions WHERE client_id = ? AND ticker = 'TSLA'", (cid,)).fetchone()[0] > 0

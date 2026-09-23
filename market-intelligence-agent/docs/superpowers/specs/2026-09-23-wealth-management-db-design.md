@@ -147,11 +147,27 @@ committed.
   Validation: `shares > 0`, `avg_cost > 0`, `price > 0`, no duplicate ticker,
   at least one position. Money rounded to 2 decimals, percentages to 2.
 - `pct_change(old, new)` → `{change, pct_change}`; error if `old == 0`.
+- `concentration_screen(portfolios: list[{label, positions}], threshold_pct: float = 30.0, exclude_sectors: list[str] = ["ETF"])`
+  → `{threshold_pct, screened_count, screened_labels, breach_count, breaches}`,
+  where `breaches` is every `{label, ticker, weight_pct, market_value, portfolio_market_value}`
+  computed via `portfolio_metrics` per portfolio whose `weight_pct` exceeds
+  `threshold_pct` and whose sector is not in `exclude_sectors`. Sorted by
+  `weight_pct` descending. Validation: at least one portfolio, positive
+  threshold, unique portfolio labels. Read-only; purpose is to make "which
+  clients/portfolios have more than X% in a single stock" answers
+  deterministic code output instead of LLM prose enumeration over several
+  `portfolio_metrics` results (a step observed, in live grounded QA, to
+  intermittently drop a qualifying client). Authorized during Task 8's fix
+  round 1 by controller ruling (final fix wave, I-1) after that same live QA
+  found the LLM-enumeration approach ungrounded (~79% pass rate on the W3
+  concentration fixture); `exclude_sectors` defaults to `["ETF"]` because a
+  diversified bond/index ETF legitimately dominating a portfolio by design is
+  not a single-stock concentration risk.
 - Pure functions; run in the agent container (no Lambda) in both local and prod.
 
 ### Registration
 
-All four added to `TOOLS` and `READ_ONLY_TOOLS`; `docs/TOOLS.md` gets a
+All five added to `TOOLS` and `READ_ONLY_TOOLS`; `docs/TOOLS.md` gets a
 summary row and a per-tool section for each (project rule), and the
 `read_query` entry is updated for the new schema. `CLAUDE.md` (tool table,
 `READ_ONLY_TOOLS` list, `create_db.py` description) is updated to match.

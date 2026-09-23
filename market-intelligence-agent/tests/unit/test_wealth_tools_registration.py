@@ -8,7 +8,7 @@ from app.agent.tools import (
     is_read_only,
 )
 
-NEW_TOOLS = {"list_tables", "describe_table", "portfolio_metrics", "pct_change"}
+NEW_TOOLS = {"list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen"}
 
 
 def _names():

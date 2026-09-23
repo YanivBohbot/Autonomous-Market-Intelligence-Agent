@@ -6,21 +6,31 @@ import json
 import re
 import sqlite3
 import uuid
+from datetime import date
 
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 
+import create_db as seed
 from app.agent.graph import build_agent_app
 from app.agent.multi_agent import build_multi_agent_app
 
-DB = sqlite3.connect("customers.db")
+if not seed.DB_PATH.exists():
+    raise FileNotFoundError(
+        f"customers.db not found at {seed.DB_PATH} — run `uv run python create_db.py` first"
+    )
+DB = sqlite3.connect(seed.DB_PATH)
 RESULTS = []
 
 
 def holders(ticker):
     return {r[0] for r in DB.execute(
         "SELECT c.name FROM holdings h JOIN clients c USING (client_id) WHERE h.ticker = ?", (ticker,))}
+
+
+def all_client_names():
+    return {r[0] for r in DB.execute("SELECT name FROM clients")}
 
 
 def record(case, ok, detail):
@@ -45,6 +55,76 @@ def money_variants(x):
     return {f"{x:,.2f}", f"{x:.2f}", f"{x:,.0f}", f"{round(x):,}"}
 
 
+def _extract_price(content):
+    """Pull a current-price float out of a yfinance_get_ticker_info
+    ToolMessage.content, which may be a plain string or a list of content
+    blocks like [{"type": "text", "text": "<json>"}]."""
+    blocks = content if isinstance(content, list) else [content]
+    for block in blocks:
+        text = block.get("text") if isinstance(block, dict) else block
+        if not isinstance(text, str):
+            continue
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for key in ("currentPrice", "regularMarketPrice", "price"):
+            if data.get(key) is not None:
+                try:
+                    return float(data[key])
+                except (TypeError, ValueError):
+                    continue
+    return None
+
+
+def prices_from_ticker_info(msgs):
+    """{ticker: price} built from this run's yfinance_get_ticker_info tool
+    calls/results — the same data the agent itself saw, never a fresh fetch."""
+    id_to_symbol = {
+        tc["id"]: (tc["args"] or {}).get("symbol")
+        for tc in calls(msgs)
+        if (tc.get("name") or "").endswith("yfinance_get_ticker_info")
+    }
+    prices = {}
+    for m in msgs:
+        if not (isinstance(m, ToolMessage) and (m.name or "").endswith("yfinance_get_ticker_info")):
+            continue
+        symbol = id_to_symbol.get(m.tool_call_id)
+        price = _extract_price(m.content)
+        if symbol and price is not None:
+            prices[symbol.upper()] = price
+    return prices
+
+
+def expected_w3_concentration(prices):
+    """Conservative clients with a non-ETF position >30% of their portfolio,
+    computed by code from customers.db holdings x prices (falling back to
+    create_db.price_at at the 2026 anchor for any ticker this run never
+    fetched). This is the grounding for W3 — never the agent's own answer."""
+    sectors = {r[0]: r[1] for r in DB.execute("SELECT ticker, sector FROM companies")}
+    conservative = DB.execute("SELECT client_id, name FROM clients WHERE risk_profile = 'conservative'").fetchall()
+    anchor = date(2026, 7, 1)
+    expected = set()
+    for client_id, name in conservative:
+        rows = DB.execute("SELECT ticker, shares FROM holdings WHERE client_id = ?", (client_id,)).fetchall()
+        values = {}
+        for ticker, shares in rows:
+            price = prices.get(ticker.upper())
+            if price is None:
+                price = seed.price_at(ticker, anchor)
+            values[ticker] = shares * price
+        total = sum(values.values())
+        if total <= 0:
+            continue
+        for ticker, mv in values.items():
+            if sectors.get(ticker) != "ETF" and mv / total > 0.30:
+                expected.add(name)
+                break
+    return expected
+
+
 async def single():
     app = build_agent_app(InMemorySaver(), InMemoryStore())
 
@@ -55,7 +135,8 @@ async def single():
     msgs = await ask("Which clients currently hold NVDA? List their full names.")
     a, expected = answer(msgs), holders("NVDA")
     missing = {n for n in expected if n not in a}
-    record("W1 NVDA holders", not missing, f"expected={len(expected)} missing={missing}")
+    extra = {n for n in all_client_names() - expected if n in a}
+    record("W1 NVDA holders", not missing and not extra, f"expected={len(expected)} missing={missing} extra={extra}")
 
     msgs = await ask("How is Martin Levy's portfolio performing? Give the total market value and unrealized P&L.")
     a = answer(msgs)
@@ -73,7 +154,14 @@ async def single():
 
     msgs = await ask("Which conservative clients have more than 30% of their portfolio in a single stock?")
     a = answer(msgs)
-    record("W3 concentration fixture", "Margaret Collins" in a and "NVDA" in a.upper(), f"answer={a[:160]!r}")
+    prices = prices_from_ticker_info(msgs)
+    expected_w3 = expected_w3_concentration(prices)
+    conservative_names = {r[0] for r in DB.execute("SELECT name FROM clients WHERE risk_profile = 'conservative'")}
+    found_w3 = {name for name in conservative_names if name in a}
+    missing_w3 = expected_w3 - found_w3
+    extra_w3 = found_w3 - expected_w3
+    record("W3 concentration fixture", not missing_w3 and not extra_w3,
+           f"expected={sorted(expected_w3)} found={sorted(found_w3)} missing={missing_w3} extra={extra_w3} prices_used={prices}")
 
     msgs = await ask("Tesla published its Q2 2026 update. Which of our clients hold TSLA, and how many vehicles did Tesla deliver in Q2 2026?")
     a, c = answer(msgs), {tc["name"].rsplit("___", 1)[-1] for tc in calls(msgs)}
@@ -105,4 +193,5 @@ async def main():
     print(f"\nSUMMARY {sum(ok for _, ok in RESULTS)}/{len(RESULTS)} passed")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

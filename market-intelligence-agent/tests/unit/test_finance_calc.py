@@ -200,3 +200,85 @@ def test_concentration_screen_default_threshold_is_30_pct():
 
 def test_concentration_screen_tool_name():
     assert concentration_screen_tool.name == "concentration_screen"
+
+
+def test_concentration_screen_portfolios_field_tells_caller_to_include_every_position():
+    # Regression: live grounded QA (W3) caught the LLM omitting ETF positions
+    # entirely from the `positions` list it sent -- reasoning that since
+    # exclude_sectors keeps them out of `breaches` anyway, they weren't worth
+    # sending. That shrinks the portfolio total the tool computes from,
+    # which inflates every remaining position's weight_pct (one client's KO
+    # position came back as "100% of the portfolio" once BND was dropped).
+    # exclude_sectors must only affect which positions can appear in
+    # `breaches`, never which positions are supplied as input.
+    from app.agent.tools.finance_calc import ConcentrationScreenInput
+    description = ConcentrationScreenInput.model_fields["portfolios"].description
+    assert "every position" in description.lower()
+    assert "etf" in description.lower()
+
+
+# --- concentration_screen: exclude_sectors (ETF false-positive fix) -----
+# Regression: an ETF (e.g. BND, SPY) legitimately dominates a conservative
+# client's portfolio by design (it's a diversified bond/index fund, not a
+# concentrated single-stock bet). Flagging it as a "concentration breach"
+# alongside a real single-stock overweight is a false positive that dilutes
+# the signal for the advisor. exclude_sectors lets the caller keep those
+# positions in totals/weights (so weight_pct for every position is still
+# computed over the whole portfolio) while never listing them in `breaches`.
+
+def _etf_heavy_portfolio():
+    return LabeledPortfolio(label="ETF Heavy", positions=[
+        Position(ticker="BND", shares=100, avg_cost=70, price=74, sector="ETF"),
+        Position(ticker="JNJ", shares=10, avg_cost=150, price=190, sector="Health Care"),
+    ])
+
+
+def test_concentration_screen_default_excludes_etf_from_breaches():
+    result = compute_concentration_screen([_etf_heavy_portfolio()], threshold_pct=30.0)
+    # BND is 79.57% of the portfolio (well over 30%) but is sector "ETF", so
+    # it must not appear in breaches under the default exclude_sectors=["ETF"].
+    tickers_in_breaches = {b["ticker"] for b in result["breaches"]}
+    assert "BND" not in tickers_in_breaches
+    assert result["breach_count"] == 0
+
+
+def test_concentration_screen_exclude_sectors_empty_list_flags_etf_too():
+    result = compute_concentration_screen([_etf_heavy_portfolio()], threshold_pct=30.0, exclude_sectors=[])
+    tickers_in_breaches = {b["ticker"] for b in result["breaches"]}
+    assert "BND" in tickers_in_breaches
+
+
+def test_concentration_screen_excluded_sector_still_counted_in_weights():
+    # Excluding a sector from breaches must not remove it from the portfolio
+    # total/weights: JNJ's weight_pct is unaffected by exclude_sectors and is
+    # computed over the full portfolio market value, including BND.
+    excluded = compute_concentration_screen([_etf_heavy_portfolio()], threshold_pct=1.0, exclude_sectors=["ETF"])
+    included = compute_concentration_screen([_etf_heavy_portfolio()], threshold_pct=1.0, exclude_sectors=[])
+    jnj_weight_excluded = next(b["weight_pct"] for b in excluded["breaches"] if b["ticker"] == "JNJ")
+    jnj_weight_included = next(b["weight_pct"] for b in included["breaches"] if b["ticker"] == "JNJ")
+    assert jnj_weight_excluded == jnj_weight_included == pytest.approx(20.43, abs=0.01)
+
+
+def test_concentration_screen_tool_accepts_exclude_sectors():
+    out = concentration_screen_tool.invoke({
+        "portfolios": [{"label": "ETF Heavy", "positions": [
+            {"ticker": "BND", "shares": 100, "avg_cost": 70, "price": 74, "sector": "ETF"},
+            {"ticker": "JNJ", "shares": 10, "avg_cost": 150, "price": 190, "sector": "Health Care"},
+        ]}],
+        "threshold_pct": 30,
+        "exclude_sectors": [],
+    })
+    assert out["breach_count"] == 1
+    assert out["breaches"][0]["ticker"] == "BND"
+
+
+# --- concentration_screen: duplicate labels rejected --------------------
+
+def test_concentration_screen_rejects_duplicate_labels():
+    with pytest.raises(ValueError, match="duplicate"):
+        compute_concentration_screen(
+            [_susan_grant(), LabeledPortfolio(label="Susan Grant", positions=[
+                Position(ticker="X", shares=1, avg_cost=1, price=1, sector="A"),
+            ])],
+            threshold_pct=30.0,
+        )
