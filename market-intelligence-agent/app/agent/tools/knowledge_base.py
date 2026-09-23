@@ -65,6 +65,14 @@ class KBSearchInput(BaseModel):
 _RELEVANCE_THRESHOLD = 0.35
 
 
+def _display_page(page) -> str:
+    """Pinecone returns numeric metadata as floats (35.0) and PyPDFLoader
+    pages are 0-based; cite the 1-based page a reader sees in the PDF."""
+    if page is None:
+        return "?"
+    return str(int(page) + 1)
+
+
 @tool("search_knowledge_base", args_schema=KBSearchInput)
 def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None = None) -> str:
     """Search the internal knowledge base of ingested company reports/documents.
@@ -95,7 +103,7 @@ def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None
 
     parts = [
         f"[Source: {d.metadata.get('filename', os.path.basename(d.metadata.get('source', 'unknown')))}, "
-        f"page {d.metadata.get('page', '?')}] {d.page_content}"
+        f"page {_display_page(d.metadata.get('page'))}] {d.page_content}"
         for d in docs
     ]
     return "\n\n".join(parts)

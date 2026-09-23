@@ -18,8 +18,26 @@ def test_search_returns_formatted_chunks_with_source_and_page():
     ]
     with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
         result = search_knowledge_base_tool.invoke({"query": "revenue"})
-    assert "[Source: Amazon-2024-Annual-Report.pdf, page 12]" in result
+    assert "[Source: Amazon-2024-Annual-Report.pdf, page 13]" in result
     assert "Revenue was $100M" in result
+
+
+def test_search_cites_float_page_metadata_as_one_based_integer():
+    """Pinecone returns numeric metadata as floats (35.0) and PyPDFLoader
+    pages are 0-based — cite the page number a reader sees in the PDF."""
+    docs = [
+        (Document(page_content="Net sales $637,959M", metadata={"filename": "Amazon-2024-Annual-Report.pdf", "page": 35.0}), 0.62),
+    ]
+    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
+        result = search_knowledge_base_tool.invoke({"query": "net sales"})
+    assert "[Source: Amazon-2024-Annual-Report.pdf, page 36]" in result
+
+
+def test_search_cites_unknown_page_when_metadata_missing():
+    docs = [(Document(page_content="text", metadata={"filename": "annual-report.pdf"}), 0.62)]
+    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
+        result = search_knowledge_base_tool.invoke({"query": "q"})
+    assert "[Source: annual-report.pdf, page ?]" in result
 
 
 def test_search_returns_explicit_message_on_empty_results():
