@@ -14,7 +14,7 @@ def _state():
 
 def test_portfolio_agent_has_every_tool_a_portfolio_computation_needs():
     names = {t.name.rsplit("___", 1)[-1] for t in portfolio_agent_mod._PORTFOLIO_TOOLS}
-    assert names == {"read_query", "list_tables", "describe_table", "yfinance_get_ticker_info", "portfolio_metrics", "pct_change"}
+    assert names == {"read_query", "list_tables", "describe_table", "yfinance_get_ticker_info", "portfolio_metrics", "pct_change", "concentration_screen"}
 
 
 def test_routes_to_approval_when_tool_calls_present():
@@ -53,7 +53,7 @@ def test_all_portfolio_tools_bypass_interrupt():
 
     pending = AIMessage(content="", tool_calls=[
         {"id": str(i), "name": n, "args": {}}
-        for i, n in enumerate(["read_query", "list_tables", "describe_table", "yfinance_get_ticker_info", "portfolio_metrics", "pct_change"])
+        for i, n in enumerate(["read_query", "list_tables", "describe_table", "yfinance_get_ticker_info", "portfolio_metrics", "pct_change", "concentration_screen"])
     ])
     with patch("app.agent.graph.interrupt") as mock_interrupt:
         result = approval_node({"messages": [pending], "question": "q", "documents": []})

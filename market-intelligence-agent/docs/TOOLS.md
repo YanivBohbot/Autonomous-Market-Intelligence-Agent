@@ -30,8 +30,9 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 18 | `describe_table` | read-only | MCP stdio → `mcp-server-sqlite` (prod: Lambda `sqlite-crm`) | table_name | Returns the columns and types of one table. | Same — the agent checks a column before writing SQL. |
 | 19 | `portfolio_metrics` | read-only | Native (`finance_calc.py`) | positions (list of ticker, shares, avg_cost, price, sector) | Market value, cost basis, unrealized P&L (amount, %), weights, sector allocation. | Portfolio math is done by code, never by the LLM. |
 | 20 | `pct_change` | read-only | Native (`finance_calc.py`) | old, new | Change and % change between two numbers. | Deterministic growth rates for comparisons. |
+| 21 | `concentration_screen` | read-only | Native (`finance_calc.py`) | portfolios (list of `{label, positions}`), threshold_pct (default 30) | Screens several labeled portfolios at once and returns exactly which portfolio+ticker pairs exceed `threshold_pct` of that portfolio's market value (`breaches`), computed via `compute_portfolio_metrics` per portfolio. | "Which clients have more than X% in a single stock" answers were being assembled by the LLM re-reading several `portfolio_metrics` results, which intermittently dropped a qualifying client even though the underlying data was correct. This tool makes the qualifying list itself deterministic (code-computed), not LLM-synthesized prose. |
 
-`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
 
 ## Per-tool details
 
@@ -139,6 +140,11 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **File:** `app/agent/tools/finance_calc.py`
 - **What:** Returns `change` and `pct_change` from `old` to `new`; errors when `old` is 0. Read-only; in `READ_ONLY_TOOLS`.
 - **Why:** Deterministic growth rates for comparisons (quarter-over-quarter revenue, price moves).
+
+### 21. `concentration_screen`
+- **File:** `app/agent/tools/finance_calc.py`
+- **What:** Given several labeled portfolios (`{label, positions}`, same `Position` shape as `portfolio_metrics`) and a `threshold_pct` (default 30), computes `portfolio_metrics` for each portfolio and returns `breaches`: every `{label, ticker, weight_pct, market_value, portfolio_market_value}` whose `weight_pct` exceeds the threshold, sorted by weight descending. Also returns `screened_count`/`screened_labels` for audit. Rejects an empty portfolio list or a non-positive threshold. Read-only; in `READ_ONLY_TOOLS`.
+- **Why:** Live grounded QA found that "which clients have more than X% in a single stock" answers, built by the LLM re-reading several separate `portfolio_metrics` tool results, intermittently dropped a qualifying client from the final prose even though every tool result had the correct `weight_pct` — a real correctness risk for an advisor-facing tool. This tool moves the "who qualifies" decision into deterministic code so the LLM only relays `breaches`, eliminating that failure mode.
 
 ## How to add a new tool
 

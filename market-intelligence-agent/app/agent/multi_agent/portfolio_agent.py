@@ -14,6 +14,7 @@ from app.agent.tools import (
     yf_quote_tool,
     portfolio_metrics_tool,
     pct_change_tool,
+    concentration_screen_tool,
 )
 from app.agent.graph import approval_node, route_after_approval
 from app.agent.nodes.tool_utils import make_tool_runner
@@ -28,6 +29,7 @@ _PORTFOLIO_TOOLS = [
     yf_quote_tool,
     portfolio_metrics_tool,
     pct_change_tool,
+    concentration_screen_tool,
 ]
 _llm_with_tools = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streaming=True).bind_tools(_PORTFOLIO_TOOLS)
 

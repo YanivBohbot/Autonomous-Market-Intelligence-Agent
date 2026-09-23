@@ -75,6 +75,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | `read_query` | `app/agent/tools/mcp_clients/mcp_client.py` | read-only | MCP stdio client → `mcp-server-sqlite` → `read_query` against `customers.db` (wealth-management DB: companies, clients, transactions, holdings, watchlists; seeded by `create_db.py`). |
 | `list_tables` / `describe_table` | same | read-only | Schema discovery on `customers.db`. |
 | `portfolio_metrics` / `pct_change` | `app/agent/tools/finance_calc.py` | read-only | Deterministic portfolio math (value, P&L, weights, sectors) and % change. |
+| `concentration_screen` | `app/agent/tools/finance_calc.py` | read-only | Screens several labeled portfolios (`{label, positions}`) at once against a `threshold_pct` (default 30) and returns exactly which portfolio+ticker pairs breach it (`breaches`), computed via `portfolio_metrics` per portfolio — keeps "which clients are concentrated in a single stock" answers deterministic/code-computed instead of LLM-synthesized prose. |
 | `yfinance_get_ticker_info` | `app/agent/tools/mcp_clients/yfinance_client.py` | read-only | MCP stdio client → `yfmcp` → `get_ticker_info(ticker)`. |
 | `yfinance_get_price_history` | same | read-only | `get_price_history(ticker, period="1mo")`. |
 | `yfinance_get_ticker_news` | same | read-only | `get_ticker_news(ticker, limit=5)`. |
@@ -90,7 +91,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | `search_knowledge_base` | `app/agent/tools/knowledge_base.py` | read-only | Semantic search over ingested company reports/PDFs (Pinecone). Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. |
 | `web_search` | `app/agent/tools/knowledge_base.py` | read-only | Live web search (Tavily), top 3 results, advanced depth. Fallback/supplement when the knowledge base has nothing relevant. |
 
-`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
 
 ### Human-in-the-Loop (HITL) flow
 

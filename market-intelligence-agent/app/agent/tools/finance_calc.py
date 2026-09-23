@@ -68,6 +68,56 @@ def compute_portfolio_metrics(positions: list[Position]) -> dict:
     }
 
 
+class LabeledPortfolio(BaseModel):
+    label: str = Field(description="Human-readable identifier for this portfolio, e.g. the client's full name.")
+    positions: list[Position] = Field(description="Every position of this portfolio.")
+
+
+def compute_concentration_screen(portfolios: list[LabeledPortfolio], threshold_pct: float = 30.0) -> dict:
+    """Deterministically flag every position, across any number of labeled
+    portfolios, whose weight exceeds `threshold_pct` of that portfolio's own
+    market value. Reuses compute_portfolio_metrics per portfolio so weights
+    are computed the same way as `portfolio_metrics`.
+
+    This exists so "which clients/portfolios have more than X% in a single
+    stock" answers are built by code, not by an LLM re-reading several
+    separate portfolio_metrics results and enumerating the qualifying ones
+    itself -- a step that, in production testing, intermittently dropped a
+    qualifying portfolio even though its tool result had the right
+    weight_pct.
+    """
+    if not portfolios:
+        raise ValueError("concentration_screen needs at least one portfolio")
+    if threshold_pct <= 0:
+        raise ValueError("threshold_pct must be positive")
+
+    screened_labels = [pf.label for pf in portfolios]
+    breaches = []
+    for pf in portfolios:
+        metrics = compute_portfolio_metrics(pf.positions)
+        for row in metrics["positions"]:
+            if row["weight_pct"] > threshold_pct:
+                breaches.append({
+                    "label": pf.label,
+                    "ticker": row["ticker"],
+                    "weight_pct": row["weight_pct"],
+                    "market_value": row["market_value"],
+                    "portfolio_market_value": metrics["totals"]["market_value"],
+                })
+
+    # Deterministic ordering: highest concentration first, tie-broken by
+    # label, so repeated runs and repeated LLM copy-outs are stable.
+    breaches.sort(key=lambda b: (-b["weight_pct"], b["label"]))
+
+    return {
+        "threshold_pct": float(threshold_pct),
+        "screened_count": len(screened_labels),
+        "screened_labels": screened_labels,
+        "breach_count": len(breaches),
+        "breaches": breaches,
+    }
+
+
 def compute_pct_change(old: float, new: float) -> dict:
     if old == 0:
         raise ValueError("pct_change is undefined when old is 0")
@@ -90,6 +140,32 @@ def portfolio_metrics_tool(positions: list) -> dict:
     ANY portfolio value/performance question instead of doing math yourself."""
     parsed = [p if isinstance(p, Position) else Position.model_validate(p) for p in positions]
     return compute_portfolio_metrics(parsed)
+
+
+class ConcentrationScreenInput(BaseModel):
+    portfolios: list[LabeledPortfolio] = Field(
+        description="One entry per client/portfolio to screen, each with a `label` "
+        "(e.g. the client's full name) and its `positions` (ticker, shares, avg_cost, "
+        "current price, sector)."
+    )
+    threshold_pct: float = Field(
+        default=30.0, gt=0,
+        description="Flag any position whose weight exceeds this percentage of its own portfolio's market value.",
+    )
+
+
+@tool("concentration_screen", args_schema=ConcentrationScreenInput)
+def concentration_screen_tool(portfolios: list, threshold_pct: float = 30.0) -> dict:
+    """Screen several labeled portfolios for any single position that exceeds
+    threshold_pct (default 30%) of that portfolio's market value. Use this
+    for ANY "which clients/portfolios have more than X% in a single stock"
+    question instead of comparing several portfolio_metrics results yourself
+    -- the qualifying list (`breaches`) is computed by code, so nothing is
+    dropped or misclassified. Still requires the current price (from
+    yfinance) for every position, same as portfolio_metrics; never pass
+    avg_cost as the price."""
+    parsed = [pf if isinstance(pf, LabeledPortfolio) else LabeledPortfolio.model_validate(pf) for pf in portfolios]
+    return compute_concentration_screen(parsed, threshold_pct)
 
 
 class PctChangeInput(BaseModel):

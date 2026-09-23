@@ -5,7 +5,7 @@ from app.agent.tools.memory import (
     list_memories_tool,
 )
 from app.agent.tools.mcp_clients.mcp_client import crm_tool, crm_list_tables_tool, crm_describe_table_tool
-from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool
+from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool, concentration_screen_tool
 from app.agent.tools.mcp_clients.yfinance_client import (
     yf_quote_tool,
     yf_history_tool,
@@ -40,6 +40,7 @@ TOOLS = [
     crm_describe_table_tool,
     portfolio_metrics_tool,
     pct_change_tool,
+    concentration_screen_tool,
     yf_quote_tool,
     yf_history_tool,
     yf_news_tool,
@@ -60,6 +61,7 @@ _BASE_READ_ONLY_TOOLS: set[str] = {
     "describe_table",
     "portfolio_metrics",
     "pct_change",
+    "concentration_screen",
     "yfinance_get_ticker_info",
     "yfinance_get_price_history",
     "yfinance_get_ticker_news",
@@ -112,6 +114,7 @@ __all__ = [
     "crm_describe_table_tool",
     "portfolio_metrics_tool",
     "pct_change_tool",
+    "concentration_screen_tool",
     "yf_quote_tool",
     "yf_history_tool",
     "yf_news_tool",

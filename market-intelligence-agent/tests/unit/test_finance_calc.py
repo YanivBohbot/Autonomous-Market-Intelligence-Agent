@@ -1,9 +1,12 @@
 import pytest
 
 from app.agent.tools.finance_calc import (
+    LabeledPortfolio,
     Position,
+    compute_concentration_screen,
     compute_pct_change,
     compute_portfolio_metrics,
+    concentration_screen_tool,
     pct_change_tool,
     portfolio_metrics_tool,
 )
@@ -84,3 +87,116 @@ def test_tools_accept_plain_dicts_from_the_llm():
 def test_tool_names():
     assert portfolio_metrics_tool.name == "portfolio_metrics"
     assert pct_change_tool.name == "pct_change"
+
+
+# --- concentration_screen -----------------------------------------------
+# Regression fixture for a real bug: given several labeled portfolios, the
+# LLM's own prose enumeration of "which ones breach X%" intermittently
+# dropped a qualifying portfolio even though every portfolio_metrics result
+# had the right weight_pct. concentration_screen makes that list-building
+# step deterministic code instead of LLM synthesis.
+
+def _margaret_collins():
+    # Mirrors the real fixture: NVDA bought cheap (avg_cost 30.7), now
+    # dominates the portfolio at the current price -- the concentrated case.
+    return LabeledPortfolio(label="Margaret Collins", positions=[
+        Position(ticker="BND", shares=300, avg_cost=73.33, price=71.41, sector="Intermediate Core Bond"),
+        Position(ticker="JNJ", shares=100, avg_cost=175, price=269.19, sector="Healthcare"),
+        Position(ticker="KO", shares=200, avg_cost=62, price=88.61, sector="Consumer Defensive"),
+        Position(ticker="NVDA", shares=400, avg_cost=30.7, price=228.87, sector="Technology"),
+    ])
+
+
+def _susan_grant():
+    # Top position (BND) is 33.28% -- concentrated at a 30% threshold, but
+    # well under 50%, so this fixture is used to test the 50%-threshold
+    # "no breach" case below.
+    return LabeledPortfolio(label="Susan Grant", positions=[
+        Position(ticker="BND", shares=250, avg_cost=72.45, price=71.41, sector="Intermediate Core Bond"),
+        Position(ticker="JNJ", shares=60, avg_cost=175, price=269.19, sector="Healthcare"),
+        Position(ticker="KO", shares=150, avg_cost=62, price=88.61, sector="Consumer Defensive"),
+        Position(ticker="XOM", shares=40, avg_cost=110.42, price=158.71, sector="Energy"),
+    ])
+
+
+def test_concentration_screen_flags_only_the_breaching_position():
+    result = compute_concentration_screen([_margaret_collins()], threshold_pct=30.0)
+    assert result["breach_count"] == 1
+    breach = result["breaches"][0]
+    assert breach["label"] == "Margaret Collins"
+    assert breach["ticker"] == "NVDA"
+    assert breach["weight_pct"] == 58.08
+
+
+def test_concentration_screen_no_breach_when_nothing_exceeds_threshold():
+    result = compute_concentration_screen([_susan_grant()], threshold_pct=50.0)
+    assert result["breach_count"] == 0
+    assert result["breaches"] == []
+    assert result["screened_labels"] == ["Susan Grant"]
+
+
+def test_concentration_screen_multiple_portfolios_never_drops_a_qualifying_one():
+    # This is the exact shape of the real failure: several labeled
+    # portfolios screened together, one of which (Margaret Collins) must
+    # appear in `breaches` -- the caller no longer has to enumerate this
+    # from several separate portfolio_metrics results itself. Threshold 50%:
+    # Susan Grant's top position (33.28%) does not qualify, Margaret
+    # Collins' NVDA (58.08%) does.
+    result = compute_concentration_screen(
+        [_susan_grant(), _margaret_collins()], threshold_pct=50.0
+    )
+    assert result["screened_count"] == 2
+    labels_with_breaches = {b["label"] for b in result["breaches"]}
+    assert labels_with_breaches == {"Margaret Collins"}
+    assert result["breaches"][0]["ticker"] == "NVDA"
+
+
+def test_concentration_screen_sorted_by_weight_desc_for_determinism():
+    heavy = LabeledPortfolio(label="Heavy", positions=[Position(ticker="X", shares=1, avg_cost=1, price=1, sector="A")])
+    # 100% weight since it's the only position -- always a breach at any threshold < 100.
+    light = LabeledPortfolio(label="Light", positions=[
+        Position(ticker="Y", shares=1, avg_cost=1, price=1, sector="A"),
+        Position(ticker="Z", shares=1, avg_cost=1, price=3, sector="A"),
+    ])
+    result = compute_concentration_screen([light, heavy], threshold_pct=50.0)
+    weights = [b["weight_pct"] for b in result["breaches"]]
+    assert weights == sorted(weights, reverse=True)
+
+
+def test_concentration_screen_rejects_empty_portfolio_list():
+    with pytest.raises(ValueError, match="at least one"):
+        compute_concentration_screen([], threshold_pct=30.0)
+
+
+def test_concentration_screen_rejects_non_positive_threshold():
+    with pytest.raises(ValueError, match="threshold_pct"):
+        compute_concentration_screen([_susan_grant()], threshold_pct=0)
+
+
+def test_concentration_screen_tool_accepts_plain_dicts_from_the_llm():
+    out = concentration_screen_tool.invoke({
+        "portfolios": [
+            {"label": "Margaret Collins", "positions": [
+                {"ticker": "BND", "shares": 300, "avg_cost": 73.33, "price": 71.41, "sector": "Intermediate Core Bond"},
+                {"ticker": "NVDA", "shares": 400, "avg_cost": 30.7, "price": 228.87, "sector": "Technology"},
+            ]},
+        ],
+        "threshold_pct": 30,
+    })
+    assert out["breach_count"] == 1
+    assert out["breaches"][0]["ticker"] == "NVDA"
+
+
+def test_concentration_screen_default_threshold_is_30_pct():
+    out = concentration_screen_tool.invoke({"portfolios": [
+        {"label": "Margaret Collins", "positions": [
+            {"ticker": "BND", "shares": 300, "avg_cost": 73.33, "price": 71.41, "sector": "Intermediate Core Bond"},
+            {"ticker": "NVDA", "shares": 400, "avg_cost": 30.7, "price": 228.87, "sector": "Technology"},
+        ]},
+    ]})
+    assert out["threshold_pct"] == 30.0
+    assert out["breach_count"] == 1
+
+
+def test_concentration_screen_tool_name():
+    assert concentration_screen_tool.name == "concentration_screen"
