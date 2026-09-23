@@ -5,3 +5,8 @@
 
 # Editor
 .vscode/
+
+# Python bytecode caches (e.g. left behind by running lambda unit tests
+# locally) -- must never be bundled into a Lambda Code.from_asset zip.
+__pycache__/
+*.pyc
