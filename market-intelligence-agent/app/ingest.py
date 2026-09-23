@@ -82,9 +82,7 @@ def ingest_document():
     )
 
     _write_manifest([doc.metadata["filename"] for doc in splits])
-
-
-print("✅ Ingestion  finish ! Base Knowledge ready .")
+    print("✅ Ingestion  finish ! Base Knowledge ready .")
 
 
 if __name__ == "__main__":

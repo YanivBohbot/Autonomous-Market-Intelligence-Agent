@@ -39,3 +39,14 @@ def test_write_manifest_records_sorted_unique_filenames(tmp_path):
     manifest = tmp_path / "kb_documents.json"
     _write_manifest(["b.pdf", "a.pdf", "b.pdf"], manifest)
     assert json.loads(manifest.read_text(encoding="utf-8")) == ["a.pdf", "b.pdf"]
+
+
+def test_importing_ingest_module_prints_nothing(capsys):
+    """Regression: a module-level print("✅ Ingestion finish ...") fired on
+    every import (e.g. from tests or scripts), even with no ingestion run."""
+    import importlib
+    import app.ingest
+
+    capsys.readouterr()
+    importlib.reload(app.ingest)
+    assert "Ingestion" not in capsys.readouterr().out
