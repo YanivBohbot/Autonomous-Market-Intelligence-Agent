@@ -5,7 +5,8 @@ Two buckets per prod/SPEC.md §3.1:
 - `mia-workspace`  — replaces local `data/workspace/`. Filesystem MCP Lambda
   reads/writes via S3 SDK. Versioning ON so accidental overwrites are recoverable.
 - `mia-data`       — hosts the static SQLite CRM DB (`customers.db`) and the
-  source PDFs used by RAG ingestion.
+  source PDFs used by RAG ingestion. customers.db is uploaded from the repo
+  by a BucketDeployment on every deploy.
 
 Both buckets are encrypted at rest with AWS-managed keys (default SSE-S3),
 block all public access, and deny non-TLS requests via a bucket policy.
@@ -13,9 +14,18 @@ block all public access, and deny non-TLS requests via a bucket policy.
 
 from __future__ import annotations
 
+import shutil
+import tempfile
+from pathlib import Path
+
 from aws_cdk import CfnOutput, RemovalPolicy, Stack
 from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_s3_deployment as s3deploy
 from constructs import Construct
+
+# market-intelligence-agent/customers.db — seeded by create_db.py and
+# committed; the sqlite-crm Lambda downloads it from the data bucket.
+CRM_DB_FILE = Path(__file__).resolve().parents[3] / "market-intelligence-agent" / "customers.db"
 
 
 class MiaStorageStack(Stack):
@@ -42,6 +52,19 @@ class MiaStorageStack(Stack):
             "DataBucket",
             f"{project}-data-{self.account}",
             removal, auto_delete, versioned=True,
+        )
+
+        # Keep S3 in sync with git: before this, customers.db was copied to
+        # the bucket by hand and could silently drift from the repo.
+        # Stage the single file in its own dir so the asset doesn't walk the
+        # whole app folder. prune=False: the bucket also holds RAG PDFs.
+        staging = Path(tempfile.mkdtemp(prefix="crm-db-"))
+        shutil.copy2(CRM_DB_FILE, staging / "customers.db")
+        s3deploy.BucketDeployment(
+            self, "CrmDbDeployment",
+            sources=[s3deploy.Source.asset(str(staging))],
+            destination_bucket=self.data_bucket,
+            prune=False,
         )
 
         CfnOutput(self, "WorkspaceBucketName",
