@@ -114,7 +114,7 @@ produce no `holdings` row. Sells never exceed shares held at trade date.
   GS/JPM/MSFT). The user is one VIP client with `yanivbohbot5@gmail.com`
   (the only SES-verified address, so the only real send target in tests);
   every other email is `@example.com`.
-- ~150 transactions, 2022–2026, at plausible period prices.
+- ~110 transactions, 2022–2026, at plausible period prices (linear interpolation between yearly price anchors).
 - Deliberate QA fixtures: a conservative client >30% in NVDA (concentration
   risk); a client who fully sold a ticker (history, no holding); watchlist
   alerts set near current prices.
