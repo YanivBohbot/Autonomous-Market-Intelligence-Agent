@@ -1,9 +1,24 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from langchain_core.documents import Document
 
 from app.agent.tools import knowledge_base as kb_mod
 from app.agent.tools.knowledge_base import search_knowledge_base_tool, web_search_tool
+
+
+@pytest.fixture(autouse=True)
+def _identity_reranker():
+    """Keep tests offline: the reranker returns candidates in vector order
+    unless a test installs its own ordering."""
+    pc = MagicMock()
+    pc.inference.rerank.side_effect = lambda **kw: SimpleNamespace(
+        data=[SimpleNamespace(index=i) for i in range(min(kw["top_n"], len(kw["documents"])))]
+    )
+    with patch.object(kb_mod, "_get_pinecone", return_value=pc):
+        yield pc
 
 
 def _mock_vectorstore(results_with_scores):
@@ -70,7 +85,7 @@ def test_search_with_matched_source_filter_builds_pinecone_filter():
          patch.object(kb_mod, "_list_ingested_pdfs", return_value=["Amazon-2024-Annual-Report.pdf", "TSLA-Q2-2026-Update.pdf"]):
         result = search_knowledge_base_tool.invoke({"query": "deliveries", "source_filter": "TSLA"})
     vectorstore.similarity_search_with_score.assert_called_once_with(
-        "deliveries", k=4, filter={"filename": {"$in": ["TSLA-Q2-2026-Update.pdf"]}}
+        "deliveries", k=kb_mod._RERANK_CANDIDATES, filter={"filename": {"$in": ["TSLA-Q2-2026-Update.pdf"]}}
     )
     assert "Tesla delivered 500k vehicles" in result
 
@@ -128,3 +143,51 @@ def test_default_manifest_ships_inside_app_package():
     app_dir = Path(kb_mod.__file__).resolve().parents[2]
     assert app_dir.name == "app"
     assert app_dir in kb_mod.KB_MANIFEST_PATH.resolve().parents
+
+
+def _doc(text, score, page=1):
+    return (Document(page_content=text, metadata={"filename": "Tesla-TSLA-Q2-2026-Update.pdf", "page": page}), score)
+
+
+def test_search_returns_top_k_in_reranker_order(_identity_reranker):
+    """Regression: the Tesla revenue table ("Total revenues ... 22,387 28,236")
+    ranked #8-9 by vector similarity, outside the top 4, so the agent never
+    saw it. bge-reranker-v2-m3 moved it to #1 in live measurements."""
+    docs = [_doc(f"narrative chunk {i}", 0.60 - i * 0.01, page=i) for i in range(7)] + [_doc("Total revenues 22,387 28,236", 0.55, page=27)]
+    _identity_reranker.inference.rerank.side_effect = lambda **kw: SimpleNamespace(
+        data=[SimpleNamespace(index=7), SimpleNamespace(index=0), SimpleNamespace(index=1), SimpleNamespace(index=2)]
+    )
+    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
+        result = search_knowledge_base_tool.invoke({"query": "Tesla total revenue Q1 2026", "k": 4})
+    chunks = result.split("\n\n")
+    assert len(chunks) == 4
+    assert "Total revenues 22,387 28,236" in chunks[0]
+    assert "page 28" in chunks[0]
+    kwargs = _identity_reranker.inference.rerank.call_args.kwargs
+    assert kwargs["model"] == "bge-reranker-v2-m3"
+    assert kwargs["top_n"] == 4
+
+
+def test_search_falls_back_to_vector_order_when_rerank_fails(_identity_reranker):
+    docs = [_doc("first by vector", 0.6), _doc("second by vector", 0.5)]
+    _identity_reranker.inference.rerank.side_effect = RuntimeError("rerank quota exceeded")
+    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
+        result = search_knowledge_base_tool.invoke({"query": "q", "k": 1})
+    assert "first by vector" in result
+    assert "second by vector" not in result
+
+
+def test_rerank_only_sees_chunks_above_relevance_threshold(_identity_reranker):
+    docs = [_doc("on topic", 0.6), _doc("off topic noise", 0.14)]
+    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
+        result = search_knowledge_base_tool.invoke({"query": "q"})
+    assert _identity_reranker.inference.rerank.call_args.kwargs["documents"] == ["on topic"]
+    assert "off topic noise" not in result
+
+
+def test_rerank_skipped_when_nothing_passes_threshold(_identity_reranker):
+    docs = [_doc("noise", 0.1)]
+    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
+        result = search_knowledge_base_tool.invoke({"query": "q"})
+    _identity_reranker.inference.rerank.assert_not_called()
+    assert result == "No relevant results found in the knowledge base for this query."

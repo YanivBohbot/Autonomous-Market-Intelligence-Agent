@@ -7,6 +7,7 @@ from pathlib import Path
 from langchain_core.tools import tool
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+from pinecone import Pinecone
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
 
@@ -37,7 +38,7 @@ def _list_ingested_pdfs(manifest_path: Path = KB_MANIFEST_PATH) -> list[str]:
     try:
         return sorted(json.loads(Path(manifest_path).read_text(encoding="utf-8")))
     except FileNotFoundError:
-        logger.warning("KB_SEARCH: manifest %s missing — run app/ingest.py", manifest_path)
+        logger.warning("KB_SEARCH: manifest %s missing — run `python -m app.ingest`", manifest_path)
         return []
 
 
@@ -74,6 +75,37 @@ class KBSearchInput(BaseModel):
 # margin in the gap between the two clusters.
 _RELEVANCE_THRESHOLD = 0.35
 
+# Vector similarity ranks number-dense chunks (financial tables) poorly: the
+# Tesla "Total revenues ... 22,387 28,236" table ranked #8-9 for revenue
+# queries, outside the top 4 the agent sees. Fetch a wider candidate pool and
+# rerank it with a cross-encoder — measured live, bge-reranker-v2-m3 moved
+# that table to #1 (pinecone-rerank-v0 did slightly worse on Amazon).
+_RERANK_CANDIDATES = 20
+_RERANK_MODEL = "bge-reranker-v2-m3"
+
+
+@lru_cache(maxsize=1)
+def _get_pinecone() -> Pinecone:
+    return Pinecone(api_key=settings.PINECONE_API_KEY)
+
+
+def _rerank(query: str, docs: list, top_n: int) -> list:
+    """Reorder docs by cross-encoder relevance and keep top_n. Falls back to
+    vector order on any rerank failure (quota, network) so search never
+    breaks because of the reranker."""
+    try:
+        ranked = _get_pinecone().inference.rerank(
+            model=_RERANK_MODEL,
+            query=query,
+            documents=[d.page_content for d in docs],
+            top_n=min(top_n, len(docs)),
+            return_documents=False,
+        )
+        return [docs[r.index] for r in ranked.data]
+    except Exception as exc:
+        logger.warning("KB_SEARCH: rerank failed, using vector order (%s)", exc)
+        return docs[:top_n]
+
 
 def _display_page(page) -> str:
     """Pinecone returns numeric metadata as floats (35.0) and PyPDFLoader
@@ -101,7 +133,9 @@ def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None
         filter_kwarg = {"filename": {"$in": resolved}}
 
     try:
-        results = _get_vectorstore().similarity_search_with_score(query, k=k, filter=filter_kwarg)
+        results = _get_vectorstore().similarity_search_with_score(
+            query, k=_RERANK_CANDIDATES, filter=filter_kwarg
+        )
     except Exception as exc:
         logger.warning("KB_SEARCH: failed (%s)", exc)
         return f"Knowledge base search failed: {exc}"
@@ -110,6 +144,8 @@ def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None
 
     if not docs:
         return "No relevant results found in the knowledge base for this query."
+
+    docs = _rerank(query, docs, top_n=k)
 
     parts = [
         f"[Source: {d.metadata.get('filename', os.path.basename(d.metadata.get('source', 'unknown')))}, "
