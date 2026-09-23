@@ -5,6 +5,7 @@ from langchain_core.messages import SystemMessage
 
 from app.core.config import settings
 from app.agent.multi_agent.state import SupervisorState
+from app.agent.prompts import with_today
 from app.agent.prompts.specialist_agent_prompts import RAG_SYSTEM_PROMPT
 from app.agent.tools import search_knowledge_base_tool, web_search_tool
 from app.agent.graph import approval_node, route_after_approval
@@ -17,7 +18,7 @@ _llm_with_tools = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streami
 def rag_agent_node(state: SupervisorState) -> Command:
     # See finance_agent.py for why this returns bare `Command` (no Literal
     # generic) instead of Command[Literal["supervisor"]].
-    response = _llm_with_tools.invoke([SystemMessage(content=RAG_SYSTEM_PROMPT), *state["messages"]])
+    response = _llm_with_tools.invoke([SystemMessage(content=with_today(RAG_SYSTEM_PROMPT)), *state["messages"]])
     if getattr(response, "tool_calls", None):
         return Command(goto="approval", update={"messages": [response]})
     return Command(goto="supervisor", graph=Command.PARENT, update={"messages": [response]})

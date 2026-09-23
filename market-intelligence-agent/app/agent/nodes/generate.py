@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from app.core.config import settings
 from app.agent.state import AgentState
 from app.agent.tools import TOOLS
+from app.agent.prompts import with_today
 from app.agent.prompts.system import SYSTEM_PROMPT, ERROR_RECOVERY_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,6 @@ def generate_answer(state: AgentState) -> dict:
                 ]
             }
 
-    msgs = [SystemMessage(content=SYSTEM_PROMPT), *messages]
+    msgs = [SystemMessage(content=with_today(SYSTEM_PROMPT)), *messages]
     response = _llm_with_tools.invoke(msgs)
     return {"messages": [response]}
