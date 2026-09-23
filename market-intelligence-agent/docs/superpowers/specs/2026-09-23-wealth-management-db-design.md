@@ -141,8 +141,8 @@ committed.
 
 - `portfolio_metrics(positions: list[{ticker, shares, avg_cost, price, sector?}])`
   → per position: `market_value`, `cost_basis`, `unrealized_pnl`,
-  `unrealized_pnl_pct`, `weight_pct`; totals: `total_market_value`,
-  `total_cost_basis`, `total_unrealized_pnl`, `total_unrealized_pnl_pct`;
+  `unrealized_pnl_pct`, `weight_pct`; `totals`: `market_value`,
+  `cost_basis`, `unrealized_pnl`, `unrealized_pnl_pct`;
   `sector_allocation` (pct by sector) when every position has a sector.
   Validation: `shares > 0`, `avg_cost > 0`, `price > 0`, no duplicate ticker,
   at least one position. Money rounded to 2 decimals, percentages to 2.
