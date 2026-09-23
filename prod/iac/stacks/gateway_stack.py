@@ -66,7 +66,7 @@ class MiaGatewayStack(Stack):
             self, "SqliteCrmTarget",
             gateway=self.gateway,
             gateway_target_name="sqlite-crm",
-            description="Read-only SQL queries against the customers DB",
+            description="SQL queries against the wealth-management client database (read-only)",
             lambda_function=sqlite_crm_fn,
             tool_schema=agentcore.ToolSchema.from_local_asset(
                 str(LAMBDAS_DIR / "sqlite_crm" / "tool_schema.json")

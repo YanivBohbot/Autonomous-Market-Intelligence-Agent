@@ -120,10 +120,10 @@ def main() -> int:
          r.get("status") == "completed",
          r, "expected completion (news may be empty)")
 
-    r = ask(session, "List all customers in the CRM with status VIP.")
+    r = ask(session, "List all clients with segment VIP.")
     case("read_query (CRM)",
-         r.get("status") == "completed" and kw_any(r, ["vip", "yaniv", "customer"]),
-         r, "expected at least one VIP customer")
+         r.get("status") == "completed" and kw_any(r, ["vip", "yaniv", "client"]),
+         r, "expected at least one VIP client")
 
     r = ask(session, "List the files in my workspace.")
     case("list_directory (empty)",

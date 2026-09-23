@@ -1,4 +1,4 @@
-"""Regression test for a live-QA-caught bug: finance_agent/crm_agent build
+"""Regression test for a live-QA-caught bug: finance_agent/portfolio_agent build
 their LLM prompt from state["messages"], but nothing in the multi-agent
 parent graph ever converted state["question"] into a HumanMessage the way
 app.agent.graph.record_question does for the single-agent graph. Result:

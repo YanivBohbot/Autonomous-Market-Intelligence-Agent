@@ -50,7 +50,7 @@ This scenario showcases the agent chaining a structured data query (MCP), a docu
 | Step | Action Taken by Agent | Agent Tool Called | Status in API/UI |
 | :--- | :--- | :--- | :--- |
 | **01** | Initial Analysis: Agent identifies the need for client data. | `read_query` | **BYPASSES HITL** (read-only) |
-| **02** | Executes SQL Query (`SELECT name, email, status FROM customers WHERE name LIKE...`). | Running | Running |
+| **02** | Executes SQL Query (`SELECT name, email, segment FROM clients WHERE name LIKE...`). | Running | Running |
 | **03** | **Data Synthesis:** Agent reads SQL result and retrieves AI Strategy from Pinecone (RAG). | `send_email` | **PAUSE 1: INTERRUPTED** |
 | **04** | *User Approves Action 1* | Executes SMTP Tool (Sends Email). | Completed |
 
@@ -60,7 +60,7 @@ The tool surface is unified through a single `MultiServerMCPClient` registry (se
 
 | # | Tool | Type | Backend | Description |
 |---|---|---|---|---|
-| 1 | `read_query` | read-only | MCP / SQLite (`mcp-server-sqlite`) | SELECT against the `customers` table. |
+| 1 | `read_query` | read-only | MCP / SQLite (`mcp-server-sqlite`) | SELECT (WITH in prod only) against the wealth-management schema (`clients`, `holdings`, `transactions`, `watchlists`, `companies`). |
 | 2 | `yfinance_get_ticker_info` | read-only | MCP / `yfmcp` | Current price + day stats for a ticker. |
 | 3 | `yfinance_get_price_history` | read-only | MCP / `yfmcp` | Historical OHLCV bars, configurable `period`. |
 | 4 | `yfinance_get_ticker_news` | read-only | MCP / `yfmcp` | Recent news headlines for a ticker. |
