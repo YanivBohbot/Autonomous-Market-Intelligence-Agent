@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 from functools import lru_cache
+from pathlib import Path
 
 from langchain_core.tools import tool
 from langchain_openai import OpenAIEmbeddings
@@ -25,10 +27,18 @@ def _get_vectorstore() -> PineconeVectorStore:
     )
 
 
-def _list_ingested_pdfs(data_dir: str = "data") -> list[str]:
-    if not os.path.isdir(data_dir):
+# Written by app/ingest.py. Lives inside app/ (not data/) because the
+# AgentCore image only ships app/ — listing ./data/*.pdf at query time made
+# every source_filter miss in prod, where no PDFs exist.
+KB_MANIFEST_PATH = Path(__file__).with_name("kb_documents.json")
+
+
+def _list_ingested_pdfs(manifest_path: Path = KB_MANIFEST_PATH) -> list[str]:
+    try:
+        return sorted(json.loads(Path(manifest_path).read_text(encoding="utf-8")))
+    except FileNotFoundError:
+        logger.warning("KB_SEARCH: manifest %s missing — run app/ingest.py", manifest_path)
         return []
-    return sorted(f for f in os.listdir(data_dir) if f.lower().endswith(".pdf"))
 
 
 def _resolve_source_filter(source_filter: str) -> list[str] | None:
@@ -65,6 +75,14 @@ class KBSearchInput(BaseModel):
 _RELEVANCE_THRESHOLD = 0.35
 
 
+def _display_page(page) -> str:
+    """Pinecone returns numeric metadata as floats (35.0) and PyPDFLoader
+    pages are 0-based; cite the 1-based page a reader sees in the PDF."""
+    if page is None:
+        return "?"
+    return str(int(page) + 1)
+
+
 @tool("search_knowledge_base", args_schema=KBSearchInput)
 def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None = None) -> str:
     """Search the internal knowledge base of ingested company reports/documents.
@@ -95,7 +113,7 @@ def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None
 
     parts = [
         f"[Source: {d.metadata.get('filename', os.path.basename(d.metadata.get('source', 'unknown')))}, "
-        f"page {d.metadata.get('page', '?')}] {d.page_content}"
+        f"page {_display_page(d.metadata.get('page'))}] {d.page_content}"
         for d in docs
     ]
     return "\n\n".join(parts)

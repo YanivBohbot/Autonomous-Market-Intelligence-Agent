@@ -5,6 +5,7 @@ from langchain_core.messages import SystemMessage
 
 from app.core.config import settings
 from app.agent.multi_agent.state import SupervisorState
+from app.agent.prompts import with_today
 from app.agent.prompts.specialist_agent_prompts import FINANCE_SYSTEM_PROMPT
 from app.agent.tools import yf_quote_tool, yf_history_tool, yf_news_tool
 from app.agent.graph import approval_node, route_after_approval
@@ -21,7 +22,7 @@ def finance_agent_node(state: SupervisorState) -> Command:
     # graph (reached via graph=Command.PARENT below) and would fail
     # compile-time validation ("Found edge ending at unknown node
     # `supervisor`") if declared here.
-    response = _llm_with_tools.invoke([SystemMessage(content=FINANCE_SYSTEM_PROMPT), *state["messages"]])
+    response = _llm_with_tools.invoke([SystemMessage(content=with_today(FINANCE_SYSTEM_PROMPT)), *state["messages"]])
     if getattr(response, "tool_calls", None):
         return Command(goto="approval", update={"messages": [response]})
     return Command(goto="supervisor", graph=Command.PARENT, update={"messages": [response]})

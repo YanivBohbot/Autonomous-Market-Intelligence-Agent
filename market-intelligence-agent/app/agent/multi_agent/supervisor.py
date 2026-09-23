@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.types import Command
 from langgraph.graph import END
 
@@ -80,10 +80,26 @@ def supervisor_node(
         ]
     )
 
-    if decision.next == "FINISH":
-        return Command(goto=END, update={"next_agent": None})
+    next_agent = decision.next
+    if next_agent == "FINISH":
+        if _has_answer_to_latest_question(messages):
+            return Command(goto=END, update={"next_agent": None})
+        # Live QA showed the router returning FINISH on the first hop for
+        # multi-specialist questions (its reasoning said "I need to route"),
+        # ending the turn with no answer. Never finish unanswered — fall
+        # back to the general-purpose specialist.
+        next_agent = "rag_agent"
 
     return Command(
-        goto=decision.next,
-        update={"next_agent": decision.next, "agent_hops": hops + 1},
+        goto=next_agent,
+        update={"next_agent": next_agent, "agent_hops": hops + 1},
     )
+
+
+def _has_answer_to_latest_question(messages: list) -> bool:
+    for m in reversed(messages):
+        if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
+            return True
+        if isinstance(m, HumanMessage):
+            return False
+    return False

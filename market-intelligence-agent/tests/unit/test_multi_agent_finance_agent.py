@@ -47,3 +47,13 @@ def test_finance_specialist_bypasses_interrupt_for_read_only_tool():
         result = approval_node(state)
     mock_interrupt.assert_not_called()
     assert result == {}
+
+
+def test_finance_agent_system_prompt_includes_todays_date():
+    from datetime import date
+
+    with patch.object(finance_agent_mod, "_llm_with_tools") as mock:
+        mock.invoke.return_value = AIMessage(content="answer")
+        finance_agent_node(_state())
+    system_prompt = mock.invoke.call_args[0][0][0].content
+    assert f"Today's date is {date.today().isoformat()}" in system_prompt
