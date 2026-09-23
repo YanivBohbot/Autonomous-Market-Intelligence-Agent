@@ -15,7 +15,7 @@ class RoutingDecision(BaseModel):
     next: Literal[
         "rag_agent",
         "finance_agent",
-        "crm_agent",
+        "portfolio_agent",
         "memory_agent",
         "filesystem_agent",
         "browser_agent",
@@ -40,7 +40,7 @@ def supervisor_node(
     Literal[
         "rag_agent",
         "finance_agent",
-        "crm_agent",
+        "portfolio_agent",
         "memory_agent",
         "filesystem_agent",
         "browser_agent",

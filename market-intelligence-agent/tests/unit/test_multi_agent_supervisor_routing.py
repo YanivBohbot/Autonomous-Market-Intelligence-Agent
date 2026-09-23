@@ -64,11 +64,16 @@ def test_routes_to_finance_agent():
     assert result.update["agent_hops"] == 1
 
 
-def test_routes_to_crm_agent():
+def test_routes_to_portfolio_agent():
     with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="crm_agent", reasoning="customer question")
+        mock.invoke.return_value = RoutingDecision(next="portfolio_agent", reasoning="client portfolio question")
         result = supervisor_node(_state())
-    assert result.goto == "crm_agent"
+    assert result.goto == "portfolio_agent"
+
+
+def test_routing_prompt_describes_portfolio_agent_not_crm_agent():
+    assert "portfolio_agent" in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
+    assert "crm_agent" not in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
 
 
 def test_routes_to_rag_agent():

@@ -18,7 +18,7 @@ def test_graph_has_supervisor_and_specialist_nodes():
         "supervisor",
         "rag_agent",
         "finance_agent",
-        "crm_agent",
+        "portfolio_agent",
         "memory_agent",
         "filesystem_agent",
         "browser_agent",
