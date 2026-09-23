@@ -106,3 +106,25 @@ def test_web_search_formats_results_with_source_url():
         result = web_search_tool.invoke({"query": "market news"})
     assert "[SOURCE WEB: https://example.com/news]" in result
     assert "Market news content" in result
+
+
+def test_ingested_documents_come_from_manifest_not_data_dir(tmp_path):
+    """Regression: source_filter used to list ./data/*.pdf at query time, but
+    the AgentCore image only ships app/ — no PDFs — so every source_filter
+    returned "no match" in prod. The list now comes from a manifest written
+    by ingest.py and shipped inside app/."""
+    manifest = tmp_path / "kb_documents.json"
+    manifest.write_text('["TSLA-Q2-2026-Update.pdf", "Amazon-2024-Annual-Report.pdf"]', encoding="utf-8")
+    assert kb_mod._list_ingested_pdfs(manifest) == ["Amazon-2024-Annual-Report.pdf", "TSLA-Q2-2026-Update.pdf"]
+
+
+def test_ingested_documents_empty_when_manifest_missing(tmp_path):
+    assert kb_mod._list_ingested_pdfs(tmp_path / "missing.json") == []
+
+
+def test_default_manifest_ships_inside_app_package():
+    from pathlib import Path
+
+    app_dir = Path(kb_mod.__file__).resolve().parents[2]
+    assert app_dir.name == "app"
+    assert app_dir in kb_mod.KB_MANIFEST_PATH.resolve().parents

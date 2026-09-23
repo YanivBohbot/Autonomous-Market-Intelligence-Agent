@@ -145,7 +145,7 @@ See `docs/VOICE.md` for env vars, run order, and the Hebrew-support caveat.
 
 ### Data ingestion (`app/ingest.py`)
 
-Reads all PDFs from `./data/`, splits at 1000 chars / 200 overlap, embeds with `text-embedding-3-small`, and upserts into Pinecone. Run once per document set. The Pinecone index must already exist.
+Reads all PDFs from `./data/`, splits at 1000 chars / 200 overlap, embeds with `text-embedding-3-small`, and upserts into Pinecone. Run once per document set. The Pinecone index must already exist. It also rewrites `app/agent/tools/kb_documents.json`, the manifest `search_knowledge_base`'s `source_filter` resolves against — **commit it after ingesting**, since the AgentCore image ships `app/` but not `data/`.
 
 ## Spec & plan workflow
 

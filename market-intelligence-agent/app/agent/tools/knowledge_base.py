@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 from functools import lru_cache
+from pathlib import Path
 
 from langchain_core.tools import tool
 from langchain_openai import OpenAIEmbeddings
@@ -25,10 +27,18 @@ def _get_vectorstore() -> PineconeVectorStore:
     )
 
 
-def _list_ingested_pdfs(data_dir: str = "data") -> list[str]:
-    if not os.path.isdir(data_dir):
+# Written by app/ingest.py. Lives inside app/ (not data/) because the
+# AgentCore image only ships app/ — listing ./data/*.pdf at query time made
+# every source_filter miss in prod, where no PDFs exist.
+KB_MANIFEST_PATH = Path(__file__).with_name("kb_documents.json")
+
+
+def _list_ingested_pdfs(manifest_path: Path = KB_MANIFEST_PATH) -> list[str]:
+    try:
+        return sorted(json.loads(Path(manifest_path).read_text(encoding="utf-8")))
+    except FileNotFoundError:
+        logger.warning("KB_SEARCH: manifest %s missing — run app/ingest.py", manifest_path)
         return []
-    return sorted(f for f in os.listdir(data_dir) if f.lower().endswith(".pdf"))
 
 
 def _resolve_source_filter(source_filter: str) -> list[str] | None:

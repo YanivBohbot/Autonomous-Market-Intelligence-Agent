@@ -1,6 +1,8 @@
 import hashlib
+import json
 import os
 from collections import defaultdict
+from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -8,6 +10,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 
 from app.core.config import settings
+from app.agent.tools.knowledge_base import KB_MANIFEST_PATH
 
 
 def _chunk_id(source: str, page: int, chunk_index: int) -> str:
@@ -26,6 +29,12 @@ def _assign_chunk_ids(splits) -> list[str]:
         counts[(source, page)] += 1
         ids.append(_chunk_id(source, page, chunk_index))
     return ids
+
+
+def _write_manifest(filenames: list[str], path: Path = KB_MANIFEST_PATH) -> None:
+    """Record which documents are in the index, for search_knowledge_base's
+    source_filter. Commit the file after ingesting so deploys ship it."""
+    path.write_text(json.dumps(sorted(set(filenames)), indent=2) + "\n", encoding="utf-8")
 
 
 def ingest_document():
@@ -71,6 +80,8 @@ def ingest_document():
     PineconeVectorStore.from_documents(
         documents=splits, embedding=embeddings, index_name=settings.PINECONE_INDEX_NAME, ids=ids
     )
+
+    _write_manifest([doc.metadata["filename"] for doc in splits])
 
 
 print("✅ Ingestion  finish ! Base Knowledge ready .")
