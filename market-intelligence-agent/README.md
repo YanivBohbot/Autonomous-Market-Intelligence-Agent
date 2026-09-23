@@ -122,7 +122,7 @@ The application runs two services (FastAPI backend + Streamlit UI). The FastAPI 
 uv run python create_db.py
 
 # 2. (Optional) Ingest PDFs from ./data/ into Pinecone for the RAG path
-uv run python app/ingest.py
+uv run python -m app.ingest
 
 # 3. Launch the FastAPI backend
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 &

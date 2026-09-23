@@ -11,7 +11,7 @@ All commands must be run from inside `market-intelligence-agent/` with the `.ven
 uv run python create_db.py
 
 # One-time setup: ingest PDFs from ./data/ into Pinecone
-uv run python app/ingest.py
+uv run python -m app.ingest
 
 # Run the FastAPI backend (port 8000)
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
