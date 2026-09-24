@@ -5,7 +5,8 @@ from app.agent.tools.memory import (
     list_memories_tool,
 )
 from app.agent.tools.mcp_clients.mcp_client import crm_tool, crm_list_tables_tool, crm_describe_table_tool
-from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool, concentration_screen_tool
+from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool
+from app.agent.tools.concentration import concentration_screen_tool
 from app.agent.tools.mcp_clients.yfinance_client import (
     yf_quote_tool,
     yf_history_tool,

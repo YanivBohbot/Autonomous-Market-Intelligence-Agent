@@ -162,51 +162,6 @@ def portfolio_metrics_tool(positions: list) -> dict:
     return compute_portfolio_metrics(parsed)
 
 
-class ConcentrationScreenInput(BaseModel):
-    portfolios: list[LabeledPortfolio] = Field(
-        description="One entry per client/portfolio to screen, each with a `label` "
-        "(e.g. the client's full name) and its `positions` (ticker, shares, avg_cost, "
-        "current price, sector). Each portfolio's `positions` MUST include EVERY "
-        "position that client holds, including ETFs -- never omit a position just "
-        "because its sector is in `exclude_sectors`. exclude_sectors only controls "
-        "which positions can appear in the `breaches` output; every supplied position "
-        "still counts toward that portfolio's total market value, so dropping one "
-        "shrinks the total and inflates every other position's weight_pct."
-    )
-    threshold_pct: float = Field(
-        default=30.0, gt=0,
-        description="Flag any position whose weight exceeds this percentage of its own portfolio's market value.",
-    )
-    exclude_sectors: list[str] = Field(
-        default_factory=lambda: ["ETF"],
-        description="Sectors to keep in totals/weights but never list in `breaches` (default: [\"ETF\"], since a "
-        "diversified ETF dominating a portfolio is not a single-stock concentration risk). Pass [] to screen every "
-        "sector, including ETFs.",
-    )
-
-
-@tool("concentration_screen", args_schema=ConcentrationScreenInput)
-def concentration_screen_tool(portfolios: list, threshold_pct: float = 30.0, exclude_sectors: list | None = None) -> dict:
-    """Screen several labeled portfolios for any single position that exceeds
-    threshold_pct (default 30%) of that portfolio's market value, EXCLUDING
-    ETF positions from `breaches` by default (they still count toward
-    totals/weights). Use this for ANY "which clients/portfolios have more
-    than X% in a single stock" or "which clients are concentrated / over X%"
-    screening question -- it REPLACES making a separate `portfolio_metrics`
-    call per client and comparing the results yourself, because the
-    qualifying list (`breaches`) is computed by code, so nothing is dropped
-    or misclassified. Pass `exclude_sectors=[]` to also flag ETF
-    concentration. Still requires the current price (from yfinance) for
-    every position, same as portfolio_metrics; never pass avg_cost as the
-    price. IMPORTANT: always include EVERY position of each portfolio,
-    including ETFs -- exclude_sectors only filters what can appear in
-    `breaches`, it is NOT a signal to omit those positions from the input.
-    Omitting a position shrinks the portfolio total this tool computes
-    weights from and inflates every remaining position's weight_pct."""
-    parsed = [pf if isinstance(pf, LabeledPortfolio) else LabeledPortfolio.model_validate(pf) for pf in portfolios]
-    return compute_concentration_screen(parsed, threshold_pct, exclude_sectors)
-
-
 class PctChangeInput(BaseModel):
     old: float = Field(description="Starting value.")
     new: float = Field(description="Ending value.")

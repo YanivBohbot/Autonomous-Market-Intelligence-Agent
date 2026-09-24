@@ -6,7 +6,6 @@ from app.agent.tools.finance_calc import (
     compute_concentration_screen,
     compute_pct_change,
     compute_portfolio_metrics,
-    concentration_screen_tool,
     pct_change_tool,
     portfolio_metrics_tool,
 )
@@ -173,50 +172,6 @@ def test_concentration_screen_rejects_non_positive_threshold():
         compute_concentration_screen([_susan_grant()], threshold_pct=0)
 
 
-def test_concentration_screen_tool_accepts_plain_dicts_from_the_llm():
-    out = concentration_screen_tool.invoke({
-        "portfolios": [
-            {"label": "Margaret Collins", "positions": [
-                {"ticker": "BND", "shares": 300, "avg_cost": 73.33, "price": 71.41, "sector": "Intermediate Core Bond"},
-                {"ticker": "NVDA", "shares": 400, "avg_cost": 30.7, "price": 228.87, "sector": "Technology"},
-            ]},
-        ],
-        "threshold_pct": 30,
-    })
-    assert out["breach_count"] == 1
-    assert out["breaches"][0]["ticker"] == "NVDA"
-
-
-def test_concentration_screen_default_threshold_is_30_pct():
-    out = concentration_screen_tool.invoke({"portfolios": [
-        {"label": "Margaret Collins", "positions": [
-            {"ticker": "BND", "shares": 300, "avg_cost": 73.33, "price": 71.41, "sector": "Intermediate Core Bond"},
-            {"ticker": "NVDA", "shares": 400, "avg_cost": 30.7, "price": 228.87, "sector": "Technology"},
-        ]},
-    ]})
-    assert out["threshold_pct"] == 30.0
-    assert out["breach_count"] == 1
-
-
-def test_concentration_screen_tool_name():
-    assert concentration_screen_tool.name == "concentration_screen"
-
-
-def test_concentration_screen_portfolios_field_tells_caller_to_include_every_position():
-    # Regression: live grounded QA (W3) caught the LLM omitting ETF positions
-    # entirely from the `positions` list it sent -- reasoning that since
-    # exclude_sectors keeps them out of `breaches` anyway, they weren't worth
-    # sending. That shrinks the portfolio total the tool computes from,
-    # which inflates every remaining position's weight_pct (one client's KO
-    # position came back as "100% of the portfolio" once BND was dropped).
-    # exclude_sectors must only affect which positions can appear in
-    # `breaches`, never which positions are supplied as input.
-    from app.agent.tools.finance_calc import ConcentrationScreenInput
-    description = ConcentrationScreenInput.model_fields["portfolios"].description
-    assert "every position" in description.lower()
-    assert "etf" in description.lower()
-
-
 # --- concentration_screen: exclude_sectors (ETF false-positive fix) -----
 # Regression: an ETF (e.g. BND, SPY) legitimately dominates a conservative
 # client's portfolio by design (it's a diversified bond/index fund, not a
@@ -257,19 +212,6 @@ def test_concentration_screen_excluded_sector_still_counted_in_weights():
     jnj_weight_excluded = next(b["weight_pct"] for b in excluded["breaches"] if b["ticker"] == "JNJ")
     jnj_weight_included = next(b["weight_pct"] for b in included["breaches"] if b["ticker"] == "JNJ")
     assert jnj_weight_excluded == jnj_weight_included == pytest.approx(20.43, abs=0.01)
-
-
-def test_concentration_screen_tool_accepts_exclude_sectors():
-    out = concentration_screen_tool.invoke({
-        "portfolios": [{"label": "ETF Heavy", "positions": [
-            {"ticker": "BND", "shares": 100, "avg_cost": 70, "price": 74, "sector": "ETF"},
-            {"ticker": "JNJ", "shares": 10, "avg_cost": 150, "price": 190, "sector": "Health Care"},
-        ]}],
-        "threshold_pct": 30,
-        "exclude_sectors": [],
-    })
-    assert out["breach_count"] == 1
-    assert out["breaches"][0]["ticker"] == "BND"
 
 
 # --- concentration_screen: duplicate labels rejected --------------------
