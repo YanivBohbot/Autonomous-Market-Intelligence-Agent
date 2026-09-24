@@ -151,3 +151,12 @@ def test_hop_cap_short_circuits_without_calling_llm():
         result = supervisor_node(_state(agent_hops=MAX_AGENT_HOPS))
     assert result.goto == END
     mock.invoke.assert_not_called()
+
+
+def test_router_output_is_hidden_from_ag_ui_streams():
+    # ag-ui-langgraph streams via astream_events and drops LLM chunks whose run
+    # metadata says emit-messages/emit-tool-calls False. The routing JSON
+    # ({"next": ...}) must never show up as chat text in Market Desk.
+    metadata = supervisor_mod._router.config["metadata"]
+    assert metadata["emit-messages"] is False
+    assert metadata["emit-tool-calls"] is False

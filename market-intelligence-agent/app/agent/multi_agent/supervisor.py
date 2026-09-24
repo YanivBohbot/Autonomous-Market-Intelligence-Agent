@@ -38,7 +38,12 @@ class RoutingDecision(BaseModel):
 
 
 _llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
-_router = _llm.with_structured_output(RoutingDecision)
+# The routing decision is internal: Market Desk (ag-ui-langgraph, which streams
+# via astream_events) must not render its JSON as chat text. The decision stays
+# visible through state.next_agent and STEP_STARTED events.
+_router = _llm.with_structured_output(RoutingDecision).with_config(
+    metadata={"emit-messages": False, "emit-tool-calls": False}
+)
 
 MAX_AGENT_HOPS = 4
 
