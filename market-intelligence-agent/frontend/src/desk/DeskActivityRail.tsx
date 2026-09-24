@@ -69,6 +69,12 @@ export function DeskActivityRail() {
       onEvent: ({ event }) => {
         setItems((prev) => reduceActivity(prev, event as unknown as AgUiEvent, Date.now()));
       },
+      // HTTP errors (404 flag off, 503 starting) and dropped streams never
+      // arrive as a RUN_ERROR event.
+      onRunFailed: ({ error }) => {
+        const failure: AgUiEvent = { type: "RUN_ERROR", message: error?.message ?? String(error) };
+        setItems((prev) => reduceActivity(prev, failure, Date.now()));
+      },
     });
     return () => sub.unsubscribe();
   }, [agent]);

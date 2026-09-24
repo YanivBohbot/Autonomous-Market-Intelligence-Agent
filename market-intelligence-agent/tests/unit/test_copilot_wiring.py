@@ -42,3 +42,23 @@ def test_setup_market_desk_is_a_no_op_when_disabled(monkeypatch):
     app = FastAPI()
     server.setup_market_desk(app, InMemorySaver(), None)
     assert not hasattr(app.state, "market_desk_agent")
+
+
+def test_server_imports_without_ag_ui_installed():
+    # The AgentCore image installs requirements.agentcore.txt, which has no
+    # ag-ui packages (Market Desk is local-only): server.py must still import.
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "for m in ('ag_ui', 'ag_ui.core', 'ag_ui.core.types', 'ag_ui.encoder', 'ag_ui_langgraph'):\n"
+        "    sys.modules[m] = None\n"
+        "import app.api.server\n"
+        "print('ok')\n"
+    )
+    env = {**os.environ, "COPILOT_ENABLED": "false"}
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    assert proc.stdout.strip().endswith("ok")

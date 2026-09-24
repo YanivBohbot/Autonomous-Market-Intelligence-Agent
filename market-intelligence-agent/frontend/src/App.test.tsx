@@ -45,4 +45,12 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /new session/i }));
     expect(screen.getByTestId("desk-view").textContent).not.toBe(before);
   });
+
+  it("Market Desk runs on its own thread, never Classic's", () => {
+    // Classic (single-agent) and Desk (multi-agent) are different graphs on
+    // one checkpointer: sharing a thread would mix their histories.
+    render(<App />);
+    const classicThread = screen.getByText(/^web_session_/).textContent;
+    expect(screen.getByTestId("desk-view").textContent).not.toBe(classicThread);
+  });
 });

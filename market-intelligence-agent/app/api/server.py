@@ -9,7 +9,6 @@ from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
 from app.api.routers.agentcore import router as agentcore_router
 from app.api.routers.approve import router as approve_router
-from app.api.routers.copilot import attach_market_desk, router as copilot_router
 from app.api.routers.gptlive_session import router as gptlive_session_router
 from app.api.routers.health import router as health_router
 from app.api.routers.stream import router as stream_router
@@ -31,12 +30,18 @@ def _get_version() -> str:
 def setup_market_desk(app: FastAPI, checkpointer, store) -> None:
     """Market Desk (multi-agent over AG-UI) is opt-in: COPILOT_ENABLED."""
     if settings.COPILOT_ENABLED:
+        # Imported lazily: ag-ui is a local-dev dependency, absent from the
+        # AgentCore image (requirements.agentcore.txt).
+        from app.api.routers.copilot import attach_market_desk
+
         attach_market_desk(app, checkpointer, store)
 
 
 def include_market_desk_routes(app: FastAPI) -> None:
     """Disabled -> /copilot/market-desk does not exist (404)."""
     if settings.COPILOT_ENABLED:
+        from app.api.routers.copilot import router as copilot_router
+
         app.include_router(copilot_router)
 
 

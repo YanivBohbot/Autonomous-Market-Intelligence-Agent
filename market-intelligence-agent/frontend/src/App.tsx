@@ -64,7 +64,9 @@ export default function App() {
       <Header threadId={threadId} onNewSession={onNewSession} mode={mode} onModeChange={onModeChange} />
 
       {mode === "desk" ? (
-        <DeskView key={threadId} threadId={threadId} />
+        // Own thread: Desk (multi-agent) and Classic (single-agent) are
+        // different graphs sharing one checkpointer.
+        <DeskView key={threadId} threadId={`desk_${threadId}`} />
       ) : (
         <div className="flex min-h-0 flex-1">
           {/* Chat column */}

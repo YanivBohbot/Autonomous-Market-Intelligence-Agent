@@ -14,6 +14,7 @@ from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from langgraph.types import Command
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 
@@ -44,6 +45,28 @@ class MarketDeskAgent(LangGraphAgent):
 
     def _filter_orphan_tool_messages(self, messages: list) -> list:
         return super()._filter_orphan_tool_messages([m for m in messages if not _is_summary(m)])
+
+    def _build_command_from_agui_resume(self, entries: list, *, open_interrupts=None) -> Command:
+        """CopilotKit's cancel() resumes with status "cancelled", but every
+        interrupt here comes from HumanInTheLoopMiddleware, which needs
+        {"decisions": [...]}: a cancel rejects each pending call instead of
+        crashing the run and leaving the thread stuck."""
+        if len(entries) == 1 and entries[0].status == "cancelled":
+            count = _pending_action_count(open_interrupts or [], entries[0].interrupt_id)
+            if count:
+                return Command(resume={"decisions": [{"type": "reject", "message": "Cancelled by user."}] * count})
+        return super()._build_command_from_agui_resume(entries, open_interrupts=open_interrupts)
+
+
+def _pending_action_count(open_interrupts: list, interrupt_id: str) -> int:
+    for item in open_interrupts:
+        if getattr(item, "id", None) != interrupt_id:
+            continue
+        metadata = getattr(item, "metadata", None) or {}
+        raw = (metadata.get("langgraph") or {}).get("raw") if isinstance(metadata, dict) else None
+        requests = raw.get("action_requests") if isinstance(raw, dict) else None
+        return len(requests) if isinstance(requests, list) else 0
+    return 0
 
 
 def build_market_desk_agent(

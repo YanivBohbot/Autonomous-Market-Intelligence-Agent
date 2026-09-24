@@ -206,3 +206,18 @@ def test_second_turn_with_only_the_new_message_keeps_history(finance_client):
     state = app.state.market_desk_agent.graph.get_state({"configurable": {"thread_id": "t7"}})
     humans = [m.content for m in state.values["messages"] if isinstance(m, HumanMessage)]
     assert humans == ["AAPL price?", "And MSFT?"]
+
+
+def test_cancel_rejects_the_pending_calls_and_frees_the_thread(email_client):
+    # CopilotKit's cancel() sends status "cancelled"; HumanInTheLoopMiddleware
+    # needs {"decisions": [...]}. Cancel must reject (nothing sent) and leave
+    # the thread usable, not stuck on the same interrupt.
+    ask = {"id": "u1", "role": "user", "content": "email the report"}
+    first = _events(email_client.post(PATH, json=_run_input("t8", "r1", [ask])).text)
+    interrupt = [e for e in first if e["type"] == "RUN_FINISHED"][-1]["outcome"]["interrupts"][0]
+
+    resume = [{"interruptId": interrupt["id"], "status": "cancelled"}]
+    events = _events(email_client.post(PATH, json=_run_input("t8", "r2", [ask], resume=resume)).text)
+    assert events[-1]["type"] == "RUN_FINISHED"
+    assert (events[-1].get("outcome") or {}).get("type") != "interrupt"
+    assert SENT == []
