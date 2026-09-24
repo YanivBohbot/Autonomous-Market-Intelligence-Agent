@@ -165,3 +165,44 @@ def test_graph_error_becomes_run_error_event():
     last = _events(resp.text)[-1]
     assert last["type"] == "RUN_ERROR"
     assert "router down" in last["message"]
+
+
+def _snapshot_texts(events: list[dict]) -> list[str]:
+    snaps = [e for e in events if e["type"] == "MESSAGES_SNAPSHOT"]
+    assert snaps, "expected a MESSAGES_SNAPSHOT event"
+    return [str(m.get("content")) for m in snaps[-1]["messages"]]
+
+
+def test_summary_message_is_not_sent_to_the_chat(finance_client):
+    # Live QA: SummarizationMiddleware stores its summary as a HumanMessage
+    # (additional_kwargs.lc_source == "summarization"); it showed up in the
+    # chat as if the advisor had typed it. It stays in the checkpoint (the
+    # model needs it) but not in what the browser renders.
+    client, app = finance_client
+    graph = app.state.market_desk_agent.graph
+    cfg = {"configurable": {"thread_id": "t6"}}
+    graph.update_state(cfg, {"messages": [
+        HumanMessage(content="Here is a summary of the conversation to date: ...", id="s1",
+                     additional_kwargs={"lc_source": "summarization"}),
+    ]})
+    events = _events(client.post(PATH, json=_run_input(
+        "t6", "r1", [{"id": "u1", "role": "user", "content": "AAPL price?"}])).text)
+    texts = _snapshot_texts(events)
+    assert not any("summary of the conversation" in t for t in texts)
+    assert any("AAPL price?" in t for t in texts)
+    state = graph.get_state(cfg).values["messages"]
+    assert any(m.id == "s1" for m in state)
+
+
+def test_second_turn_with_only_the_new_message_keeps_history(finance_client):
+    # The desk sends only the latest message (messageFilter): the checkpoint
+    # already has the history, and re-sending messages that summarization
+    # removed would re-add them.
+    client, app = finance_client
+    client.post(PATH, json=_run_input("t7", "r1", [{"id": "u1", "role": "user", "content": "AAPL price?"}]))
+    events = _events(client.post(PATH, json=_run_input(
+        "t7", "r2", [{"id": "u2", "role": "user", "content": "And MSFT?"}])).text)
+    assert events[-1]["type"] == "RUN_FINISHED"
+    state = app.state.market_desk_agent.graph.get_state({"configurable": {"thread_id": "t7"}})
+    humans = [m.content for m in state.values["messages"] if isinstance(m, HumanMessage)]
+    assert humans == ["AAPL price?", "And MSFT?"]

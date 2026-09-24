@@ -31,7 +31,7 @@ function Row({ item }: { item: DeskActivity }) {
       body = (
         <span className="rounded border border-terminal-border bg-terminal-bg px-1 py-0.5 font-mono text-[9px] text-terminal-muted">
           {item.name.replace(/^yfinance_/, "yf:")}
-          {item.status === "running" ? " …" : ` · ${item.durationMs} ms`}
+          {item.status === "running" ? " …" : item.durationMs !== undefined ? ` · ${item.durationMs} ms` : ""}
         </span>
       );
       break;

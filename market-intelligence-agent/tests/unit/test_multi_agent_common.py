@@ -144,3 +144,13 @@ def test_tool_errors_become_error_tool_messages_on_the_sync_path_too():
     tool_msg = next(m for m in result["messages"] if isinstance(m, ToolMessage))
     assert tool_msg.status == "error"
     assert "sync kaboom" in tool_msg.content
+
+
+def test_summary_model_output_is_hidden_from_ag_ui_streams():
+    # Live QA: the summary text streamed into the Market Desk chat as if it
+    # were the agent's answer. ag-ui-langgraph skips chunks whose run
+    # metadata says emit-messages False; a chat model's own metadata is
+    # merged into its run metadata.
+    metadata = summarization().model.metadata
+    assert metadata["emit-messages"] is False
+    assert metadata["emit-tool-calls"] is False

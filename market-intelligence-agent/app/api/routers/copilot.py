@@ -30,10 +30,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _is_summary(message) -> bool:
+    return getattr(message, "additional_kwargs", {}).get("lc_source") == "summarization"
+
+
+class MarketDeskAgent(LangGraphAgent):
+    """LangGraphAgent that keeps SummarizationMiddleware's summary (a
+    HumanMessage in state, needed by the model) out of what the browser
+    renders — otherwise it shows up in the chat as if the user typed it.
+
+    Hooks ag-ui-langgraph's snapshot filter (a private method, pinned by
+    test_summary_message_is_not_sent_to_the_chat)."""
+
+    def _filter_orphan_tool_messages(self, messages: list) -> list:
+        return super()._filter_orphan_tool_messages([m for m in messages if not _is_summary(m)])
+
+
 def build_market_desk_agent(
     checkpointer: BaseCheckpointSaver, store: BaseStore | None
 ) -> LangGraphAgent:
-    return LangGraphAgent(
+    return MarketDeskAgent(
         name=MARKET_DESK_AGENT_NAME,
         graph=build_multi_agent_app(checkpointer, store),
         emit_subagent_events=True,

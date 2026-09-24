@@ -13,6 +13,9 @@ export function DeskView({ threadId }: { threadId: string }) {
     <CopilotKitProvider
       agentId={MARKET_DESK_AGENT_ID}
       agents__unsafe_dev_only={{ [MARKET_DESK_AGENT_ID]: agent }}
+      // The checkpointer already holds the thread: send only the new message.
+      // Re-sending the whole list would re-add messages summarization removed.
+      messageFilter={(messages) => messages.slice(-1)}
       showDevConsole={false}
       enableInspector={false}
     >

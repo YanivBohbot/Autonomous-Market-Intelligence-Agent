@@ -56,7 +56,13 @@ def summarization() -> SummarizationMiddleware:
     cost per turn stays bounded. The specialist shares `messages` with the
     supervisor, so this compacts the whole conversation — intended."""
     return SummarizationMiddleware(
-        model=ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0),
+        # The summary is internal: Market Desk (ag-ui-langgraph) must not
+        # stream it into the chat as if it were the answer.
+        model=ChatOpenAI(
+            model=settings.OPENAI_MODEL,
+            temperature=0,
+            metadata={"emit-messages": False, "emit-tool-calls": False},
+        ),
         trigger=("tokens", SUMMARY_TRIGGER_TOKENS),
         keep=("messages", SUMMARY_KEEP_MESSAGES),
     )

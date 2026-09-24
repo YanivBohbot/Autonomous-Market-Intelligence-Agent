@@ -35,19 +35,39 @@ function readTotalTokens(usage: unknown): number | null {
   return input !== undefined || output !== undefined ? (input ?? 0) + (output ?? 0) : null;
 }
 
+// The same specialist's step can restart within one hop (e.g. when it hands
+// back to the supervisor); one badge per specialist per run is enough.
+function lastSpecialistInRun(items: DeskActivity[]): SpecialistLabel | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "specialist") return it.label;
+    if (it.kind === "done" || it.kind === "awaiting" || it.kind === "error") return undefined;
+  }
+  return undefined;
+}
+
+// A tool that never produced a result (e.g. a rejected call) is over once the
+// run is; it gets no duration since it never ran.
+function closeRunningTools(items: DeskActivity[]): DeskActivity[] {
+  return items.map((it) => (it.kind === "tool" && it.status === "running" ? { ...it, status: "done" } : it));
+}
+
 export function reduceActivity(items: DeskActivity[], event: AgUiEvent, now: number): DeskActivity[] {
   const id = `${event.type}-${now}-${items.length}`;
   switch (event.type) {
     case "STEP_STARTED": {
       const label = SPECIALISTS[String(event.stepName)];
-      return label ? [...items, { kind: "specialist", id, ts: now, label }] : items;
+      if (!label || lastSpecialistInRun(items) === label) return items;
+      return [...items, { kind: "specialist", id, ts: now, label }];
     }
     case "TOOL_CALL_START":
       return [
         ...items,
         { kind: "tool", id, ts: now, toolCallId: String(event.toolCallId), name: String(event.toolCallName), status: "running" },
       ];
-    case "TOOL_CALL_END":
+    // TOOL_CALL_END only closes the model's argument stream; the tool has run
+    // once its result arrives.
+    case "TOOL_CALL_RESULT":
       return items.map((it) =>
         it.kind === "tool" && it.toolCallId === event.toolCallId && it.status === "running"
           ? { ...it, status: "done", durationMs: now - it.ts }
@@ -55,11 +75,12 @@ export function reduceActivity(items: DeskActivity[], event: AgUiEvent, now: num
       );
     case "RUN_FINISHED": {
       const outcome = event.outcome as { type?: string } | undefined;
+      // Interrupted: a tool awaiting approval keeps running until it resumes.
       if (outcome?.type === "interrupt") return [...items, { kind: "awaiting", id, ts: now }];
-      return [...items, { kind: "done", id, ts: now, totalTokens: readTotalTokens(event.usage) }];
+      return [...closeRunningTools(items), { kind: "done", id, ts: now, totalTokens: readTotalTokens(event.usage) }];
     }
     case "RUN_ERROR":
-      return [...items, { kind: "error", id, ts: now, message: String(event.message ?? "Run failed") }];
+      return [...closeRunningTools(items), { kind: "error", id, ts: now, message: String(event.message ?? "Run failed") }];
     default:
       return items;
   }
