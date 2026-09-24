@@ -6,6 +6,9 @@ the agent is attached to app.state at startup (attach_market_desk) and this
 handler mirrors ag_ui_langgraph.add_langgraph_fastapi_endpoint around it.
 Included only when settings.COPILOT_ENABLED is true (see server.py).
 """
+import logging
+
+from ag_ui.core import EventType, RunErrorEvent
 from ag_ui.core.types import RunAgentInput
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
@@ -17,6 +20,12 @@ from langgraph.store.base import BaseStore
 from app.agent.multi_agent import build_multi_agent_app
 
 MARKET_DESK_AGENT_NAME = "market_desk"
+# Each create_agent model turn crosses several middleware nodes, so a normal
+# multi-tool answer overruns LangGraph's default of 25 steps. Model calls stay
+# bounded by ModelCallLimitMiddleware and the supervisor's MAX_AGENT_HOPS.
+RECURSION_LIMIT = 100
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -30,6 +39,7 @@ def build_market_desk_agent(
         emit_subagent_events=True,
         emit_interrupt_outcome=True,
         enable_legacy_on_interrupt_event=False,
+        config={"recursion_limit": RECURSION_LIMIT},
     )
 
 
@@ -50,7 +60,11 @@ async def market_desk(input_data: RunAgentInput, request: Request):
     run_agent = agent.clone()
 
     async def events():
-        async for event in run_agent.run(input_data):
-            yield encoder.encode(event)
+        try:
+            async for event in run_agent.run(input_data):
+                yield encoder.encode(event)
+        except Exception as exc:  # the headers are sent: report in-band
+            logger.exception("Market Desk run failed (thread %s)", input_data.thread_id)
+            yield encoder.encode(RunErrorEvent(type=EventType.RUN_ERROR, message=str(exc)))
 
     return StreamingResponse(events(), media_type=encoder.get_content_type())

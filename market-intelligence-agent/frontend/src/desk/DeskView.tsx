@@ -14,6 +14,7 @@ export function DeskView({ threadId }: { threadId: string }) {
       agentId={MARKET_DESK_AGENT_ID}
       agents__unsafe_dev_only={{ [MARKET_DESK_AGENT_ID]: agent }}
       showDevConsole={false}
+      enableInspector={false}
     >
       <DeskBody threadId={threadId} />
     </CopilotKitProvider>

@@ -131,3 +131,37 @@ def test_email_interrupts_then_reject_does_not_send(email_client):
     assert second.status_code == 200
     assert [e["type"] for e in _events(second.text)][-1] == "RUN_FINISHED"
     assert SENT == []
+
+
+@tool("yfinance_get_ticker_info")
+async def _fake_quote(ticker: str) -> str:
+    """Fake quote."""
+    return f"{ticker}: 100"
+
+
+def test_long_tool_loop_finishes():
+    # Live QA: a portfolio question made ~7 tool calls; with create_agent's
+    # middleware nodes that blew LangGraph's default recursion limit (25).
+    calls = [AIMessage(content="", tool_calls=[{"id": f"q{i}", "name": "yfinance_get_ticker_info",
+                                                "args": {"ticker": f"T{i}"}}]) for i in range(8)]
+    fake = StreamingFakeToolModel([*calls, AIMessage(content="All quotes fetched.")])
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(finance_mod, "specialist_model", return_value=fake))
+        stack.enter_context(patch.object(finance_mod, "_TOOLS", [_fake_quote]))
+        client, _ = _client_with(stack, "finance_agent")
+        resp = client.post(PATH, json=_run_input("t4", "r1", [{"id": "u1", "role": "user", "content": "quotes"}]))
+    events = _events(resp.text)
+    assert events[-1]["type"] == "RUN_FINISHED"
+    assert "All quotes fetched." in "".join(e["delta"] for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")
+
+
+def test_graph_error_becomes_run_error_event():
+    # A crash mid-run must reach the browser as RUN_ERROR, not a cut stream.
+    with ExitStack() as stack:
+        client, _ = _client_with(stack, "finance_agent")
+        supervisor_mod._router.invoke.side_effect = RuntimeError("router down")
+        resp = client.post(PATH, json=_run_input("t5", "r1", [{"id": "u1", "role": "user", "content": "hi"}]))
+    assert resp.status_code == 200
+    last = _events(resp.text)[-1]
+    assert last["type"] == "RUN_ERROR"
+    assert "router down" in last["message"]
