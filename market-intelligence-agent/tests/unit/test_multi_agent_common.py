@@ -46,9 +46,9 @@ def test_base_middleware_order():
     assert len(mw) == 5
 
 
-def test_summarization_triggers_at_8000_tokens_and_keeps_last_10_messages():
+def test_summarization_triggers_at_6000_tokens_and_keeps_last_10_messages():
     m = summarization()
-    assert m.trigger == ("tokens", 8000)
+    assert m.trigger == ("tokens", 6000)
     assert m.keep == ("messages", 10)
 
 

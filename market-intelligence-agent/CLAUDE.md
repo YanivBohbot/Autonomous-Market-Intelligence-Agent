@@ -28,6 +28,9 @@ uv run python test_agent.py
 # Run unit tests
 uv run pytest tests/ -v
 
+# One-time: install the Chromium build @playwright/mcp@latest expects (local browser tools)
+npx -y @playwright/mcp@latest install-browser chrome-for-testing
+
 # Test the MCP CRM tool in isolation
 uv run python app/agent/tools/mcp_clients/mcp_client.py
 ```
@@ -86,7 +89,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | `read_text_file` | `app/agent/tools/mcp_clients/filesystem_client.py` | read-only | MCP stdio client → `@modelcontextprotocol/server-filesystem` → `read_text_file(path)` inside `data/workspace/`. |
 | `list_directory` | same | read-only | `list_directory(path)` inside `data/workspace/`. |
 | `write_file` | same | side-effect | `write_file(path, content)` inside `data/workspace/`. Gated by `approval_node`. |
-| `browser_navigate` | `app/agent/tools/mcp_clients/browser_client.py` | read-only | MCP stdio client → `@playwright/mcp` → `browser_navigate(url)` (headless Chromium). |
+| `browser_navigate` | `app/agent/tools/mcp_clients/browser_client.py` | read-only | MCP stdio client → `@playwright/mcp` → `browser_navigate(url)` (headless Chromium). Locally the 3 browser tools share ONE long-lived session per event loop (`browser_session.py`) so navigate/snapshot/screenshot act on the same page; the server runs in `data/workspace/screenshots/`. |
 | `browser_snapshot` | same | read-only | Returns the current page as an accessibility tree (LLM-friendly structured text). |
 | `browser_take_screenshot` | same | read-only | Saves a PNG into `data/workspace/screenshots/`. |
 | `recall_memory` | `app/agent/tools/memory.py` | read-only | Look up a user fact in LangGraph's BaseStore by key. |
@@ -109,7 +112,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 Router pattern: `record_question → supervisor → <specialist> → supervisor → END`. Not wired to the API/UI/voice — build with `build_multi_agent_app(checkpointer)` in tests/scripts.
 
 - One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
-- `common.py`: `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 8000 tokens, older messages → summary, last 10 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` keep addresses. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
+- `common.py`: `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 10 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` keep addresses. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
 - HITL uses the official `HumanInTheLoopMiddleware` (email: `send_email`, filesystem: `write_file`, memory: `save_memory`). Resume with `Command(resume={"decisions": [{"type": "approve"} | {"type": "reject", "message": ...} | {"type": "edit", "edited_action": {...}}]})`, one decision per pending call — different from the single-agent `/approve` contract.
 
 ### API routers (`app/api/routers/`)

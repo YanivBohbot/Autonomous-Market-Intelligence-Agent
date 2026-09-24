@@ -27,7 +27,7 @@ from app.agent.prompts import with_today
 from app.core.config import settings
 
 MODEL_CALL_LIMIT = 10
-SUMMARY_TRIGGER_TOKENS = 8000
+SUMMARY_TRIGGER_TOKENS = 6000
 SUMMARY_KEEP_MESSAGES = 10
 
 ToolResult = ToolMessage | Command[Any]
@@ -119,4 +119,10 @@ strip_tool_images = StripToolImages()
 
 
 def base_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
-    return [today_prompt, summarization(), mask_credit_cards(), call_limit(), tool_errors_to_messages]
+    return [
+        today_prompt,
+        summarization(),
+        mask_credit_cards(),
+        call_limit(),
+        tool_errors_to_messages,
+    ]

@@ -67,3 +67,19 @@ def test_browser_backend_local_uses_playwright_mcp(monkeypatch):
     cfg_dict = registry._server_config()
     assert cfg_dict["browser"]["command"] == "npx"
     assert "@playwright/mcp@latest" in " ".join(cfg_dict["browser"]["args"])
+
+
+def test_local_browser_runs_in_the_screenshots_folder(monkeypatch):
+    """@playwright/mcp resolves a relative screenshot filename against its cwd,
+    and the chat UI serves /workspace/screenshots/<name>: so cwd must be the
+    screenshots folder."""
+    monkeypatch.setenv("BROWSER_BACKEND", "local")
+    monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+    from app.core import config as cfg
+    cfg.settings = cfg.Settings()
+    sys.modules.pop("app.agent.tools.mcp_clients.registry", None)
+    registry = _load_registry()
+    registry.settings = cfg.settings
+
+    browser = registry._server_config()["browser"]
+    assert Path(browser["cwd"]).name == "screenshots"
