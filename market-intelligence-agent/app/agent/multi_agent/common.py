@@ -5,20 +5,27 @@ this module only holds what would otherwise be copied 7 times: the model
 factory and the middleware every specialist gets.
 """
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 from langchain.agents.middleware import (
+    AgentMiddleware,
     ModelCallLimitMiddleware,
     ModelRequest,
     dynamic_prompt,
-    wrap_tool_call,
 )
 from langchain_core.messages import ToolMessage
 from langchain_openai import ChatOpenAI
+from langgraph.prebuilt.tool_node import ToolCallRequest
+from langgraph.types import Command
 
 from app.agent.nodes.tool_utils import strip_image_content
 from app.agent.prompts import with_today
 from app.core.config import settings
 
 MODEL_CALL_LIMIT = 10
+
+ToolResult = ToolMessage | Command[Any]
 
 
 def specialist_model() -> ChatOpenAI:
@@ -38,15 +45,19 @@ def call_limit() -> ModelCallLimitMiddleware:
     return ModelCallLimitMiddleware(run_limit=MODEL_CALL_LIMIT, exit_behavior="end")
 
 
-@wrap_tool_call
-async def tool_errors_to_messages(request, handler):
+# Class-based middleware rather than @wrap_tool_call: in langchain 1.2.x the
+# decorator's type only describes sync functions, and the MCP tools are
+# async-only, so an `async def` under @wrap_tool_call runs fine but fails type
+# checking. AgentMiddleware types both hooks (wrap_tool_call / awrap_tool_call).
+
+
+class ToolErrorsToMessages(AgentMiddleware):
     """A failing tool becomes an error ToolMessage the model can read and
     recover from, instead of aborting the run (the thread-poisoning fix the
-    single-agent graph gets from ToolNode(handle_tool_errors=True)).
-    Async: the MCP tools are async-only."""
-    try:
-        return await handler(request)
-    except Exception as exc:  # noqa: BLE001 — every tool failure goes back to the model
+    single-agent graph gets from ToolNode(handle_tool_errors=True))."""
+
+    @staticmethod
+    def _error_message(request: ToolCallRequest, exc: Exception) -> ToolMessage:
         return ToolMessage(
             content=f"Tool error: {exc}",
             tool_call_id=request.tool_call["id"],
@@ -54,16 +65,55 @@ async def tool_errors_to_messages(request, handler):
             status="error",
         )
 
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolResult],
+    ) -> ToolResult:
+        try:
+            return handler(request)
+        except Exception as exc:  # noqa: BLE001 — every tool failure goes back to the model
+            return self._error_message(request, exc)
 
-@wrap_tool_call
-async def strip_tool_images(request, handler):
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolResult]],
+    ) -> ToolResult:
+        try:
+            return await handler(request)
+        except Exception as exc:  # noqa: BLE001
+            return self._error_message(request, exc)
+
+
+class StripToolImages(AgentMiddleware):
     """OpenAI rejects image parts in tool messages; drop them (browser
     screenshots) and keep the text."""
-    result = await handler(request)
-    if isinstance(result, ToolMessage):
-        result.content = strip_image_content(result.content)
-    return result
+
+    @staticmethod
+    def _strip(result: ToolResult) -> ToolResult:
+        if isinstance(result, ToolMessage):
+            result.content = strip_image_content(result.content)
+        return result
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolResult],
+    ) -> ToolResult:
+        return self._strip(handler(request))
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolResult]],
+    ) -> ToolResult:
+        return self._strip(await handler(request))
 
 
-def base_middleware() -> list:
+tool_errors_to_messages = ToolErrorsToMessages()
+strip_tool_images = StripToolImages()
+
+
+def base_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
     return [today_prompt, call_limit(), tool_errors_to_messages]
