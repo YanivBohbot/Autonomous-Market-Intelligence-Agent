@@ -1,27 +1,36 @@
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.types import Command
-from langgraph.graph import END
 
 from app.core.config import settings
 from app.agent.multi_agent.state import SupervisorState
 from app.agent.prompts.specialist_agent_prompts import SUPERVISOR_ROUTING_PROMPT
 
 
+SpecialistName = Literal[
+    "rag_agent",
+    "finance_agent",
+    "portfolio_agent",
+    "memory_agent",
+    "filesystem_agent",
+    "browser_agent",
+    "email_agent",
+]
+# Where the supervisor can send control: a specialist, or END ("__end__").
+Route = Literal[SpecialistName, "__end__"]
+
+
+def _finish() -> Command[Route]:
+    # "__end__" is langgraph's END; spelled as a literal so the type checker
+    # keeps Command[Route] instead of widening to Command[str].
+    return Command(goto="__end__", update={"next_agent": None})
+
+
 class RoutingDecision(BaseModel):
-    next: Literal[
-        "rag_agent",
-        "finance_agent",
-        "portfolio_agent",
-        "memory_agent",
-        "filesystem_agent",
-        "browser_agent",
-        "email_agent",
-        "FINISH",
-    ] = Field(
+    next: SpecialistName | Literal["FINISH"] = Field(
         description="Which specialist should act next, or FINISH if the "
         "conversation already has a complete answer to the user's question."
     )
@@ -34,23 +43,10 @@ _router = _llm.with_structured_output(RoutingDecision)
 MAX_AGENT_HOPS = 4
 
 
-def supervisor_node(
-    state: SupervisorState,
-) -> Command[
-    Literal[
-        "rag_agent",
-        "finance_agent",
-        "portfolio_agent",
-        "memory_agent",
-        "filesystem_agent",
-        "browser_agent",
-        "email_agent",
-        "__end__",
-    ]
-]:
+def supervisor_node(state: SupervisorState) -> Command[Route]:
     hops = state.get("agent_hops", 0)
     if hops >= MAX_AGENT_HOPS:
-        return Command(goto=END, update={"next_agent": None})
+        return _finish()
 
     # Deterministic finish: once a specialist hands control back with a
     # plain completed answer (no further tool_calls), the turn is done.
@@ -65,7 +61,7 @@ def supervisor_node(
         and isinstance(last, AIMessage)
         and not getattr(last, "tool_calls", None)
     ):
-        return Command(goto=END, update={"next_agent": None})
+        return _finish()
 
     # NOTE: the conversation history already carries the user's question as
     # its first HumanMessage (record_question runs before this node), so we
@@ -73,17 +69,19 @@ def supervisor_node(
     # duplicate "fresh-looking" question made the router think it was still
     # unanswered even right after a specialist gave a complete answer,
     # causing it to loop to MAX_AGENT_HOPS instead of picking FINISH.
-    decision = _router.invoke(
+    # with_structured_output is typed as dict | BaseModel; with a pydantic
+    # schema it returns a RoutingDecision instance.
+    decision = cast(RoutingDecision, _router.invoke(
         [
             SystemMessage(content=SUPERVISOR_ROUTING_PROMPT),
             *state.get("messages", []),
         ]
-    )
+    ))
 
     next_agent = decision.next
     if next_agent == "FINISH":
         if _has_answer_to_latest_question(messages):
-            return Command(goto=END, update={"next_agent": None})
+            return _finish()
         # Live QA showed the router returning FINISH on the first hop for
         # multi-specialist questions (its reasoning said "I need to route"),
         # ending the turn with no answer. Never finish unanswered — fall
