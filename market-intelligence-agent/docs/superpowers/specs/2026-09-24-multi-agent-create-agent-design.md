@@ -95,8 +95,8 @@ Order in every specialist: `today_prompt`, `call_limit()`,
 - **`today_prompt`** — `@dynamic_prompt` that returns the agent's static
   `system_prompt` with `with_today(...)` applied, so all 7 specialists (including
   email, filesystem, memory, which lack it today) know the current date.
-- **`call_limit()`** — official `ModelCallLimitMiddleware(run_limit=5,
-  exit_behavior="end")`: a specialist makes at most 5 model calls per run (enough for the longest recipe: SQL → prices → calc → answer = 4), so
+- **`call_limit()`** — official `ModelCallLimitMiddleware(run_limit=10,
+  exit_behavior="end")`: a specialist makes at most 10 model calls per run (same for all 7 for now; per-agent tuning later — browser/RAG tasks can need 6+), so
   a looping agent can't run up OpenAI cost.
 - **`tool_errors_to_messages`** — `@wrap_tool_call` (documented pattern; the
   built-in `ToolErrorMiddleware` is not in the installed langchain 1.2.17):
