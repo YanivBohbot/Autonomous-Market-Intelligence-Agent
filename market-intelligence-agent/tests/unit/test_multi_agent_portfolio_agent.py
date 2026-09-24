@@ -1,61 +1,32 @@
-from datetime import date
 from unittest.mock import patch
 
-from langchain_core.messages import AIMessage
-from langgraph.types import Command
+from langchain.agents.middleware import HumanInTheLoopMiddleware
 
-from app.agent.multi_agent import portfolio_agent as portfolio_agent_mod
-from app.agent.multi_agent.portfolio_agent import build_portfolio_agent, portfolio_agent_node
-
-
-def _state():
-    return {"question": "Which clients hold NVDA?", "messages": [], "documents": [], "next_agent": None, "agent_hops": 0}
+from app.agent.multi_agent import portfolio_agent as mod
+from app.agent.multi_agent.common import base_middleware
 
 
-def test_portfolio_agent_has_every_tool_a_portfolio_computation_needs():
-    names = {t.name.rsplit("___", 1)[-1] for t in portfolio_agent_mod._PORTFOLIO_TOOLS}
-    assert names == {"read_query", "list_tables", "describe_table", "yfinance_get_ticker_info", "portfolio_metrics", "pct_change", "concentration_screen"}
+def _kwargs():
+    with patch.object(mod, "create_agent") as ca:
+        mod.build_portfolio_agent()
+    return ca.call_args.kwargs
 
 
-def test_routes_to_approval_when_tool_calls_present():
-    ai_msg = AIMessage(content="", tool_calls=[{"id": "1", "name": "read_query", "args": {"query": "SELECT 1"}}])
-    with patch.object(portfolio_agent_mod, "_llm_with_tools") as mock:
-        mock.invoke.return_value = ai_msg
-        result = portfolio_agent_node(_state())
-    assert result.goto == "approval"
-    assert result.update["messages"] == [ai_msg]
+def test_tools():
+    names = {t.name.rsplit("___", 1)[-1] for t in mod._TOOLS}
+    assert names == {"read_query", "list_tables", "describe_table", "yfinance_get_ticker_info",
+                     "portfolio_metrics", "pct_change", "concentration_screen"}
 
 
-def test_routes_to_supervisor_parent_when_no_tool_calls():
-    ai_msg = AIMessage(content="Nine clients hold NVDA.")
-    with patch.object(portfolio_agent_mod, "_llm_with_tools") as mock:
-        mock.invoke.return_value = ai_msg
-        result = portfolio_agent_node(_state())
-    assert result.goto == "supervisor"
-    assert result.graph == Command.PARENT
+def test_create_agent_call():
+    kw = _kwargs()
+    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    assert kw["system_prompt"] == PORTFOLIO_SYSTEM_PROMPT
+    assert kw["tools"] == mod._TOOLS
+    assert kw["name"] == "portfolio_agent"
+    assert [type(m) for m in kw["middleware"]] == [type(m) for m in base_middleware()]
+    assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 
-def test_system_prompt_includes_todays_date():
-    with patch.object(portfolio_agent_mod, "_llm_with_tools") as mock:
-        mock.invoke.return_value = AIMessage(content="answer")
-        portfolio_agent_node(_state())
-    system_prompt = mock.invoke.call_args[0][0][0].content
-    assert f"Today's date is {date.today().isoformat()}" in system_prompt
-    assert "portfolio_metrics" in system_prompt
-
-
-def test_build_portfolio_agent_compiles_with_expected_nodes():
-    assert set(build_portfolio_agent().get_graph().nodes) >= {"agent", "approval", "tools"}
-
-
-def test_all_portfolio_tools_bypass_interrupt():
-    from app.agent.graph import approval_node
-
-    pending = AIMessage(content="", tool_calls=[
-        {"id": str(i), "name": n, "args": {}}
-        for i, n in enumerate(["read_query", "list_tables", "describe_table", "yfinance_get_ticker_info", "portfolio_metrics", "pct_change", "concentration_screen"])
-    ])
-    with patch("app.agent.graph.interrupt") as mock_interrupt:
-        result = approval_node({"messages": [pending], "question": "q", "documents": []})
-    mock_interrupt.assert_not_called()
-    assert result == {}
+def test_builds_a_real_agent():
+    assert "model" in mod.build_portfolio_agent().get_graph().nodes

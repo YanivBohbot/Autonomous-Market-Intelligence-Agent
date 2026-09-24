@@ -1,68 +1,30 @@
 from unittest.mock import patch
-from langchain_core.messages import AIMessage
-from langgraph.types import Command
 
-from app.agent.multi_agent import rag_agent as rag_agent_mod
-from app.agent.multi_agent.rag_agent import rag_agent_node, build_rag_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
 
-
-def _state():
-    return {"question": "Amazon 2024 revenue?", "messages": [], "documents": [], "next_agent": None, "agent_hops": 0}
+from app.agent.multi_agent import rag_agent as mod
+from app.agent.multi_agent.common import base_middleware
 
 
-def test_rag_agent_binds_knowledge_base_and_web_search_tools():
-    names = {t.name for t in rag_agent_mod._RAG_TOOLS}
-    assert names == {"search_knowledge_base", "web_search"}
+def _kwargs():
+    with patch.object(mod, "create_agent") as ca:
+        mod.build_rag_agent()
+    return ca.call_args.kwargs
 
 
-def test_routes_to_approval_when_tool_calls_present():
-    ai_msg = AIMessage(content="", tool_calls=[{"id": "1", "name": "search_knowledge_base", "args": {"query": "Amazon revenue"}}])
-    with patch.object(rag_agent_mod, "_llm_with_tools") as mock:
-        mock.invoke.return_value = ai_msg
-        result = rag_agent_node(_state())
-    assert result.goto == "approval"
-    assert result.update["messages"] == [ai_msg]
+def test_tools():
+    assert {t.name for t in mod._TOOLS} == {"search_knowledge_base", "web_search"}
 
 
-def test_routes_to_supervisor_parent_when_no_tool_calls():
-    ai_msg = AIMessage(content="Amazon 2024 revenue was $638B [Source: Amazon-2024-Annual-Report.pdf, page 24]")
-    with patch.object(rag_agent_mod, "_llm_with_tools") as mock:
-        mock.invoke.return_value = ai_msg
-        result = rag_agent_node(_state())
-    assert result.goto == "supervisor"
-    assert result.graph == Command.PARENT
-    assert result.update["messages"] == [ai_msg]
+def test_create_agent_call():
+    kw = _kwargs()
+    from app.agent.prompts.specialist_agent_prompts import RAG_SYSTEM_PROMPT
+    assert kw["system_prompt"] == RAG_SYSTEM_PROMPT
+    assert kw["tools"] == mod._TOOLS
+    assert kw["name"] == "rag_agent"
+    assert [type(m) for m in kw["middleware"]] == [type(m) for m in base_middleware()]
+    assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 
-def test_build_rag_agent_compiles_with_expected_nodes():
-    graph = build_rag_agent()
-    nodes = set(graph.get_graph().nodes)
-    assert nodes >= {"agent", "approval", "tools"}
-    assert not nodes & {"retrieve", "grade", "synthesize"}
-
-
-def test_rag_specialist_bypasses_interrupt_for_knowledge_base_and_web_search():
-    from app.agent.graph import approval_node
-
-    pending = AIMessage(
-        content="",
-        tool_calls=[
-            {"id": "1", "name": "search_knowledge_base", "args": {"query": "q"}},
-            {"id": "2", "name": "web_search", "args": {"query": "q"}},
-        ],
-    )
-    state = {"messages": [pending], "question": "q", "documents": []}
-    with patch("app.agent.graph.interrupt") as mock_interrupt:
-        result = approval_node(state)
-    mock_interrupt.assert_not_called()
-    assert result == {}
-
-
-def test_rag_agent_system_prompt_includes_todays_date():
-    from datetime import date
-
-    with patch.object(rag_agent_mod, "_llm_with_tools") as mock:
-        mock.invoke.return_value = AIMessage(content="answer")
-        rag_agent_node(_state())
-    system_prompt = mock.invoke.call_args[0][0][0].content
-    assert f"Today's date is {date.today().isoformat()}" in system_prompt
+def test_builds_a_real_agent():
+    assert "model" in mod.build_rag_agent().get_graph().nodes
