@@ -25,14 +25,15 @@ SPECIALISTS = {
     "email_agent": lambda: build_email_agent(),
 }
 
+
 def _build_workflow() -> StateGraph:
     workflow = StateGraph(SupervisorState)
     # record_question converts state["question"] into a HumanMessage — without
     # it the specialists (which read state["messages"]) never see the question.
     workflow.add_node("record_question", record_question)
     workflow.add_node("supervisor", supervisor_node)
-    for name, build in SPECIALISTS.items():
-        workflow.add_node(name, build())
+    for name, agent_specialist in SPECIALISTS.items():
+        workflow.add_node(name, agent_specialist())
         workflow.add_edge(name, "supervisor")
     workflow.add_edge(START, "record_question")
     workflow.add_edge("record_question", "supervisor")
