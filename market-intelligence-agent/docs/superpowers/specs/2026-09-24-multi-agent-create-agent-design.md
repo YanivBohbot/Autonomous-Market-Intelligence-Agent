@@ -1,7 +1,7 @@
 # Multi-agent specialists on `create_agent` + middleware — design
 
 **Date:** 2026-09-24
-**Status:** approved in brainstorming, awaiting spec review
+**Status:** implemented
 **Scope:** `app/agent/multi_agent/` only
 
 ## Goal

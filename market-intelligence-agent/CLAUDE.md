@@ -100,6 +100,14 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 3. Multiple side-effect calls in one batch share the single global decision; on reject, **all** tool calls in the batch (read-only included) are cancelled with `ToolMessage("Action cancelled by user.")`. Unknown / malformed resume payloads fail closed (cancel).
 4. Session state persists across server restarts via the SQLite checkpointer keyed on `thread_id`.
 
+### Multi-agent mode (`app/agent/multi_agent/`)
+
+Router pattern: `record_question → supervisor → <specialist> → supervisor → END`. Not wired to the API/UI/voice — build with `build_multi_agent_app(checkpointer)` in tests/scripts.
+
+- One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
+- `common.py`: `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (tool exception → error ToolMessage). Browser also gets `strip_tool_images`.
+- HITL uses the official `HumanInTheLoopMiddleware` (email: `send_email`, filesystem: `write_file`, memory: `save_memory`). Resume with `Command(resume={"decisions": [{"type": "approve"} | {"type": "reject", "message": ...} | {"type": "edit", "edited_action": {...}}]})`, one decision per pending call — different from the single-agent `/approve` contract.
+
 ### API routers (`app/api/routers/`)
 
 - `health.py` — `/health` returns version + status (also `/ping` + `/invocations` for the AgentCore runtime contract).
