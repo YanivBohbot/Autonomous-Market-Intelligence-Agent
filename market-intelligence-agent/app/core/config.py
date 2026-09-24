@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     API_URL: str = "http://127.0.0.1:8000"
     YFINANCE_TIMEOUT_S: int = 10
     WORKSPACE_ROOT: Path = Path("data/workspace")
+    # Market Desk (CopilotKit / AG-UI) endpoint for the multi-agent graph.
+    # Local dev only until prod exposure is decided.
+    COPILOT_ENABLED: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

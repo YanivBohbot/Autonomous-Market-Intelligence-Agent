@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "ag-ui-langgraph==0.0.45",
     "aiosqlite>=0.21.0",
     "bedrock-agentcore>=1.11.0",
     "emails>=0.6",

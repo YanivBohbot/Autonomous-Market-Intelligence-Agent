@@ -1,0 +1,56 @@
+"""Market Desk: AG-UI endpoint over the multi-agent graph (CopilotKit v2 talks
+to it directly, no CopilotKit runtime).
+
+The graph needs the app's checkpointer, which only exists inside lifespan, so
+the agent is attached to app.state at startup (attach_market_desk) and this
+handler mirrors ag_ui_langgraph.add_langgraph_fastapi_endpoint around it.
+Included only when settings.COPILOT_ENABLED is true (see server.py).
+"""
+from ag_ui.core.types import RunAgentInput
+from ag_ui.encoder import EventEncoder
+from ag_ui_langgraph import LangGraphAgent
+from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.store.base import BaseStore
+
+from app.agent.multi_agent import build_multi_agent_app
+
+MARKET_DESK_AGENT_NAME = "market_desk"
+
+router = APIRouter()
+
+
+def build_market_desk_agent(
+    checkpointer: BaseCheckpointSaver, store: BaseStore | None
+) -> LangGraphAgent:
+    return LangGraphAgent(
+        name=MARKET_DESK_AGENT_NAME,
+        graph=build_multi_agent_app(checkpointer, store),
+        emit_subagent_events=True,
+        emit_interrupt_outcome=True,
+        enable_legacy_on_interrupt_event=False,
+    )
+
+
+def attach_market_desk(
+    app: FastAPI, checkpointer: BaseCheckpointSaver, store: BaseStore | None
+) -> None:
+    app.state.market_desk_agent = build_market_desk_agent(checkpointer, store)
+
+
+@router.post("/copilot/market-desk")
+async def market_desk(input_data: RunAgentInput, request: Request):
+    agent: LangGraphAgent | None = getattr(request.app.state, "market_desk_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Market Desk agent is not ready.")
+
+    encoder = EventEncoder(accept=request.headers.get("accept"))
+    # LangGraphAgent keeps per-run state on the instance: one clone per request.
+    run_agent = agent.clone()
+
+    async def events():
+        async for event in run_agent.run(input_data):
+            yield encoder.encode(event)
+
+    return StreamingResponse(events(), media_type=encoder.get_content_type())
