@@ -9,15 +9,24 @@ uvicorn>=0.38.0
 httpx>=0.28.1
 python-multipart>=0.0.20
 
-# LangGraph + LangChain stack
-langgraph>=1.0.3
-langchain>=1.0.8
-langchain-core>=1.0.0
-langchain-openai>=1.0.3
-langchain-pinecone>=0.2.13
-langchain-mcp-adapters>=0.1.0
-langchain-community>=0.4.1
-langgraph-checkpoint-aws>=0.1.0
+# LangGraph + LangChain stack — pinned EXACTLY to the versions in uv.lock so
+# the prod image runs what the local test suite ran. When upgrading: bump in
+# uv.lock (uv lock --upgrade-package ...), run the tests, then copy the new
+# versions here. Transitive family members are pinned below too.
+langgraph==1.2.12
+langchain==1.4.2
+langchain-core==1.6.4
+langchain-openai==1.6.6
+langchain-pinecone==0.2.13
+langchain-mcp-adapters==0.3.2
+langchain-community==0.4.2
+langgraph-checkpoint-aws==1.2.3
+langchain-classic==1.0.8
+langchain-text-splitters==1.1.2
+langgraph-checkpoint==4.2.0
+langgraph-prebuilt==1.1.0
+langgraph-sdk==0.4.5
+langsmith==0.14.0
 
 # MCP client (talks to Gateway over streamable_http)
 mcp>=1.22.0

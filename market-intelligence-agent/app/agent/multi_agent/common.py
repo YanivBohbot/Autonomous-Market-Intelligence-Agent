@@ -12,6 +12,7 @@ from langchain.agents.middleware import (
     AgentMiddleware,
     ModelCallLimitMiddleware,
     ModelRequest,
+    ToolErrorMiddleware,
     dynamic_prompt,
 )
 from langchain_core.messages import ToolMessage
@@ -45,47 +46,21 @@ def call_limit() -> ModelCallLimitMiddleware:
     return ModelCallLimitMiddleware(run_limit=MODEL_CALL_LIMIT, exit_behavior="end")
 
 
-# Class-based middleware rather than @wrap_tool_call: in langchain 1.2.x the
-# decorator's type only describes sync functions, and the MCP tools are
-# async-only, so an `async def` under @wrap_tool_call runs fine but fails type
-# checking. AgentMiddleware types both hooks (wrap_tool_call / awrap_tool_call).
+def _tool_error_content(exc: Exception, request: ToolCallRequest) -> str:
+    """Every tool failure goes back to the model as an error ToolMessage it
+    can read and recover from, instead of aborting the run (the
+    thread-poisoning fix the single-agent graph gets from
+    ToolNode(handle_tool_errors=True))."""
+    return f"Tool error ({type(exc).__name__}): {exc}"
 
 
-class ToolErrorsToMessages(AgentMiddleware):
-    """A failing tool becomes an error ToolMessage the model can read and
-    recover from, instead of aborting the run (the thread-poisoning fix the
-    single-agent graph gets from ToolNode(handle_tool_errors=True))."""
-
-    @staticmethod
-    def _error_message(request: ToolCallRequest, exc: Exception) -> ToolMessage:
-        return ToolMessage(
-            content=f"Tool error: {exc}",
-            tool_call_id=request.tool_call["id"],
-            name=request.tool_call["name"],
-            status="error",
-        )
-
-    def wrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], ToolResult],
-    ) -> ToolResult:
-        try:
-            return handler(request)
-        except Exception as exc:  # noqa: BLE001 — every tool failure goes back to the model
-            return self._error_message(request, exc)
-
-    async def awrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], Awaitable[ToolResult]],
-    ) -> ToolResult:
-        try:
-            return await handler(request)
-        except Exception as exc:  # noqa: BLE001
-            return self._error_message(request, exc)
+# Official middleware; on_error serves both the sync and the async path.
+tool_errors_to_messages = ToolErrorMiddleware(on_error=_tool_error_content)
 
 
+# Class-based: the @wrap_tool_call decorator only types sync functions, and the
+# MCP tools are async-only; AgentMiddleware types wrap_tool_call and
+# awrap_tool_call.
 class StripToolImages(AgentMiddleware):
     """OpenAI rejects image parts in tool messages; drop them (browser
     screenshots) and keep the text."""
@@ -111,7 +86,6 @@ class StripToolImages(AgentMiddleware):
         return self._strip(await handler(request))
 
 
-tool_errors_to_messages = ToolErrorsToMessages()
 strip_tool_images = StripToolImages()
 
 

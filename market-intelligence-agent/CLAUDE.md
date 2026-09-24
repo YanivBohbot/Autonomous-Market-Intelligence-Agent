@@ -32,6 +32,10 @@ uv run pytest tests/ -v
 uv run python app/agent/tools/mcp_clients/mcp_client.py
 ```
 
+## Dependency versions
+
+`uv.lock` is the source of truth. `requirements.agentcore.txt` (the AgentCore prod image) pins the LangChain/LangGraph family **exactly** to the `uv.lock` versions so prod runs what the tests ran. To upgrade: `uv lock --upgrade-package <pkg> ...` → `uv sync` → run tests → copy the new versions into `requirements.agentcore.txt`.
+
 ## Required `.env` keys
 
 `app/core/config.py` uses `pydantic-settings` and will raise at import time if any key is missing:
@@ -105,7 +109,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 Router pattern: `record_question → supervisor → <specialist> → supervisor → END`. Not wired to the API/UI/voice — build with `build_multi_agent_app(checkpointer)` in tests/scripts.
 
 - One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
-- `common.py`: `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (tool exception → error ToolMessage). Browser also gets `strip_tool_images`.
+- `common.py`: `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). Browser also gets `strip_tool_images`.
 - HITL uses the official `HumanInTheLoopMiddleware` (email: `send_email`, filesystem: `write_file`, memory: `save_memory`). Resume with `Command(resume={"decisions": [{"type": "approve"} | {"type": "reject", "message": ...} | {"type": "edit", "edited_action": {...}}]})`, one decision per pending call — different from the single-agent `/approve` contract.
 
 ### API routers (`app/api/routers/`)

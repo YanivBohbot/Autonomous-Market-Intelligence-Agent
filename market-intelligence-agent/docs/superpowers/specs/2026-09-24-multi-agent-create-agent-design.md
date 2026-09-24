@@ -1,7 +1,7 @@
 # Multi-agent specialists on `create_agent` + middleware — design
 
 **Date:** 2026-09-24
-**Status:** implemented
+**Status:** implemented (2026-09-24 follow-up: langchain upgraded to 1.4.2; `tool_errors_to_messages` is now the official `ToolErrorMiddleware`)
 **Scope:** `app/agent/multi_agent/` only
 
 ## Goal
