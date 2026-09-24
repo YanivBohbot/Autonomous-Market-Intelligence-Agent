@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { getHealth } from "../lib/api";
+import type { ConsoleMode } from "../desk/mode";
 
 interface HeaderProps {
   threadId: string;
   onNewSession: () => void;
+  mode: ConsoleMode;
+  onModeChange: (mode: ConsoleMode) => void;
 }
 
-export function Header({ threadId, onNewSession }: HeaderProps) {
+export function Header({ threadId, onNewSession, mode, onModeChange }: HeaderProps) {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [version, setVersion] = useState<string>("");
 
@@ -62,6 +65,23 @@ export function Header({ threadId, onNewSession }: HeaderProps) {
 
       {/* Right: session info + controls */}
       <div className="flex items-center gap-3">
+        <div className="flex overflow-hidden rounded border border-terminal-border">
+          {(["desk", "classic"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              onClick={() => onModeChange(m)}
+              className={`px-2.5 py-1 font-mono text-xs transition-colors ${
+                mode === m
+                  ? "bg-terminal-accent/15 text-terminal-accent"
+                  : "bg-terminal-bg text-terminal-muted hover:text-terminal-text"
+              }`}
+            >
+              {m === "desk" ? "Market Desk" : "Classic"}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-1.5 rounded border border-terminal-border bg-terminal-bg px-2.5 py-1">
           <span className="font-mono text-[10px] text-terminal-muted">session</span>
           <span className="font-mono text-[10px] text-terminal-accent">{threadId}</span>

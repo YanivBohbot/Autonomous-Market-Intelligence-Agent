@@ -13,6 +13,7 @@ export default defineConfig({
       "/health": { target: API_TARGET, changeOrigin: true },
       "/gptlive": { target: API_TARGET, changeOrigin: true },
       "/voice": { target: API_TARGET, changeOrigin: true },
+      "/copilot": { target: API_TARGET, changeOrigin: true },
     },
   },
 });
