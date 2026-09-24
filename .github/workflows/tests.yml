@@ -1,0 +1,29 @@
+name: Tests
+
+# Runs the unit test suite on every pull request to master. Test-only: no AWS
+# credentials, no deploy. Deploys happen only from deploy.yml on push to master.
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: market-intelligence-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - run: uv run pytest tests/ -v

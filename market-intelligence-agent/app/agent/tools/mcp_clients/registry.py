@@ -41,7 +41,7 @@ def _fetch_gateway_oauth_token() -> str | None:
     client_id = os.environ.get("MIA_COGNITO_CLIENT_ID")
     token_url = os.environ.get("MIA_COGNITO_TOKEN_URL")
     scopes = os.environ.get("MIA_COGNITO_SCOPES")
-    if not all([user_pool_id, client_id, token_url, scopes]):
+    if not (user_pool_id and client_id and token_url and scopes):
         return None
     import boto3  # local import: avoid cost when running stdio dev
     cog = boto3.client("cognito-idp")
@@ -125,9 +125,11 @@ def _browser_entry(workspace_root) -> dict:
         ],
         "transport": "stdio",
         "env": dict(os.environ),
-        # cwd = workspace_root so any relative path the LLM passes to
-        # browser_take_screenshot lands inside the workspace, not the project root.
-        "cwd": str(workspace_root),
+        # @playwright/mcp resolves a relative screenshot filename against its
+        # cwd (not --output-dir), and the chat UI serves
+        # /workspace/screenshots/<name> — so run it inside screenshots/.
+        # browser_session.bare_screenshot_filename strips any directories.
+        "cwd": str(workspace_root / "screenshots"),
     }
 
 

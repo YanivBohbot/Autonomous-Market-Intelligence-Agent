@@ -11,7 +11,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | # | Name | Type | Backend | Args | What it does | Why we have it |
 |---|---|---|---|---|---|---|
 | 1 | `send_email` | side-effect | SMTP/Gmail (native) | recipient, subject, body | Sends an email from the configured sender account; falls back to a console simulation when credentials are placeholder. | Lets the agent take a real-world action (notify a human, deliver a brief) — primary motivation for the HITL approval gate. |
-| 2 | `read_query` | read-only | MCP stdio → `mcp-server-sqlite` | sql (single string) | Runs a `read_query` against the local `customers.db` via the SQLite MCP server. | Demonstrates the MCP stdio pattern with a structured-DB tool and gives the agent customer/CRM context to ground its analysis. |
+| 2 | `read_query` | read-only | MCP stdio → `mcp-server-sqlite` (prod: Lambda `sqlite-crm`) | query (SELECT — WITH in prod only) | Runs a read-only SQL query against the wealth-management DB `customers.db` (companies, clients, transactions, holdings, watchlists). | Gives the agent the advisor's private client/portfolio data to combine with market prices and company reports. |
 | 3 | `yfinance_get_ticker_info` | read-only | MCP stdio → `yfmcp` | ticker | Returns the latest quote (price, change, volume, day stats) for a given ticker. | Live market price is the most-asked datapoint for a market-intelligence agent; cheap real-time signal. |
 | 4 | `yfinance_get_price_history` | read-only | MCP stdio → `yfmcp` | ticker, period (default `"1mo"`) | Returns historical OHLCV bars for a ticker over the requested period. | Enables trend / momentum reasoning that a single quote can't support. |
 | 5 | `yfinance_get_ticker_news` | read-only | MCP stdio → `yfmcp` | ticker, limit (default `5`) | Returns the most recent headlines associated with a ticker. | Pairs price action with narrative; lets the agent explain *why* a ticker moved. |
@@ -24,8 +24,15 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 12 | `recall_memory` | read-only | LangGraph BaseStore (in-memory v1) | key | Look up a previously-saved user fact by key. Returns the value or "No memory for…". | The read side of cross-thread memory. Lets the agent fetch a fact (email, preference) before a tool call that needs it, without re-asking the user. |
 | 13 | `list_memories` | read-only | same | (none) | Return every user fact currently in memory as `"key = value"` strings. | Discovery. The agent uses this to know what's on file before guessing keys — same pattern as `list_directory` for files. |
 | 14 | `save_memory` | side-effect | same | key, value | Persist a durable user fact under namespace `("user_facts",)`. Gated by HITL approval. | The write side of cross-thread memory. Without it, the user re-types their email and preferences every session. Gated because "the agent learning new facts about you" is a real side-effect users should consent to. |
+| 15 | `search_knowledge_base` | read-only | Pinecone (native) | query, k (default 4), source_filter (optional) | Semantic search (+ cross-encoder rerank) over ingested company reports/PDFs. Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. | Lets the agent pull grounded facts from ingested reports on demand, as part of its own reasoning loop, instead of a fixed pre-fetch step. |
+| 16 | `web_search` | read-only | Tavily (native) | query | Live web search, top 3 results, advanced depth. | Fallback / supplement when the knowledge base has no relevant ingested document for the question. |
+| 17 | `list_tables` | read-only | MCP stdio → `mcp-server-sqlite` (prod: Lambda `sqlite-crm`) | — | Lists the tables of `customers.db`. | Lets the agent discover the schema instead of relying on columns hard-coded in prompts. |
+| 18 | `describe_table` | read-only | MCP stdio → `mcp-server-sqlite` (prod: Lambda `sqlite-crm`) | table_name | Returns the columns and types of one table. | Same — the agent checks a column before writing SQL. |
+| 19 | `portfolio_metrics` | read-only | Native (`finance_calc.py`) | positions (list of ticker, shares, avg_cost, price, sector) | Market value, cost basis, unrealized P&L (amount, %), weights, sector allocation. | Portfolio math is done by code, never by the LLM. |
+| 20 | `pct_change` | read-only | Native (`finance_calc.py`) | old, new | Change and % change between two numbers. | Deterministic growth rates for comparisons. |
+| 21 | `concentration_screen` | read-only | Native (`concentration.py`) — loads data via `read_query` + `yfinance_get_ticker_info` | risk_profile (optional), client_names (optional), threshold_pct (default 30), exclude_sectors (default `["ETF"]`) | Reads every matching client's holdings + sector from the DB and live prices itself, then returns which client+ticker pairs exceed `threshold_pct` of that client's market value (`breaches`), plus `screened_labels` and the `prices` used. ETF positions count toward totals but are never flagged by default. | "Which clients have more than X% in a single stock" used to require the LLM to copy every client's positions into the call; gpt-4o-mini intermittently dropped a line (usually the ETF), corrupting weights. Loading the data inside the tool removes the copying step, so the answer is deterministic with the same cheap model. |
 
-`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
 
 ## Per-tool details
 
@@ -35,9 +42,9 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **Why:** It is the only native side-effect tool currently shipped. It exists to exercise the human-in-the-loop approval flow end-to-end: the LLM proposes a recipient/subject/body, the graph hits `interrupt()`, the user approves or rejects in the Streamlit UI, and only then does `ToolNode` execute the send.
 
 ### 2. `read_query`
-- **File:** `app/agent/tools/mcp_clients/mcp_client.py` (selects from registry)
-- **What:** Spawns `mcp-server-sqlite` as a stdio subprocess scoped to `customers.db`, sends a `read_query` with the LLM-supplied SQL, returns rows.
-- **Why:** Demonstrates structured-data retrieval over MCP and gives the agent a private dataset (customers, deals, regions) to combine with public market data. Read-only by construction — `mcp-server-sqlite`'s `read_query` rejects writes.
+- **File:** `app/agent/tools/mcp_clients/mcp_client.py` (selects from registry); prod: `prod/lambdas/sqlite_crm/handler.py`
+- **What:** Runs the LLM-supplied query against `customers.db`, the wealth-management DB seeded by `create_db.py` (companies, clients, transactions, derived holdings, watchlists). Read-only. **Local vs prod:** the local `mcp-server-sqlite` only accepts statements starting with `SELECT` — a `WITH` (CTE) query is rejected locally even though it's read-only; the prod Lambda accepts both `SELECT` and `WITH`. Both prompts tell the agent to always start SQL with `SELECT` so behavior is consistent across environments.
+- **Why:** The advisor's private data — who holds what, since when — combined by the agent with live prices (yfinance) and company reports (knowledge base) for multi-step portfolio questions.
 
 ### 3. `yfinance_get_ticker_info`
 - **File:** `app/agent/tools/mcp_clients/yfinance_client.py` (selects from registry)
@@ -102,7 +109,42 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **What:** Persists `{key: value}` under namespace `("user_facts",)` via `store.aput(...)`. Last-write-wins for collisions. Gated by `approval_node`.
 - **Why:** The write side of cross-thread memory. Saves the user from re-stating facts every session. Gated because creating durable knowledge *about* the user is a side-effect users should consent to — same trust posture as `send_email` and `write_file`. The Streamlit modal surfaces the proposed `{key, value}` pair before any disk write.
 
+### 15. `search_knowledge_base`
+- **File:** `app/agent/tools/knowledge_base.py`
+- **What:** Runs a similarity search against the Pinecone-indexed knowledge base of ingested PDFs, via `vectorstore.similarity_search_with_score(query, k=20, filter=...)`, then reranks the survivors with Pinecone's hosted `bge-reranker-v2-m3` cross-encoder and keeps the top `k` (falls back to vector order if the rerank call fails). Reranking exists because vector similarity ranks number-dense financial tables poorly — Tesla's revenue table ranked #8-9, outside the top 4, until reranking moved it to #1. Chunks scoring below an empirically-calibrated relevance threshold (0.35 cosine similarity) are dropped, so an off-topic question returns an explicit "No relevant results found" instead of the closest-but-irrelevant chunks. Surviving chunks are prefixed with their source filename and 1-based page number (the page a reader sees in the PDF). `source_filter` (optional) narrows the search to one document by case-insensitive filename substring match, resolved against the manifest `app/agent/tools/kb_documents.json` (written by `app/ingest.py`, shipped inside `app/` so it works in the AgentCore image, which has no `data/` PDFs), filtered on the `filename` metadata field attached at ingest.
+- **Why:** Replaces the old fixed `rag → grader` pipeline. The LLM now decides when retrieval is useful, how many times to call it, and with which query — standard agentic RAG. Citation (source + page) lets the agent ground claims when multiple reports are ingested, and `source_filter` avoids cross-document noise when the question names a specific company.
+
+### 16. `web_search`
+- **File:** `app/agent/tools/knowledge_base.py`
+- **What:** Tavily advanced search, top 3 results, each prefixed `[SOURCE WEB: <url>]`.
+- **Why:** Replaces the old fixed `web_search` fallback node. The LLM calls it directly when the knowledge base has nothing relevant, or when the question needs current/external information the ingested PDFs can't have.
+
 > **Persistence note:** the v1 backend is `langgraph.store.memory.InMemoryStore` — facts are lost on server restart. Migrating to `AsyncSqliteStore` is a single-function change in `app/agent/memory/store.py`; deferred to a follow-up subsystem when durability matters.
+
+### 17. `list_tables`
+- **File:** `app/agent/tools/mcp_clients/mcp_client.py` (selects from registry); prod: `prod/lambdas/sqlite_crm/handler.py`
+- **What:** Returns the table names of `customers.db`. Read-only; in `READ_ONLY_TOOLS`.
+- **Why:** Schema discovery, so prompts don't have to hard-code every column as the DB evolves.
+
+### 18. `describe_table`
+- **File:** same as `list_tables`
+- **What:** Returns `PRAGMA table_info` rows (column name, type, pk, …) for one table. **Local vs prod:** locally, `PRAGMA table_info` on an unknown table name silently returns `[]` (no columns, no error); the prod Lambda validates the name against `sqlite_master` first and returns an explicit error listing the existing tables. Read-only; in `READ_ONLY_TOOLS`.
+- **Why:** Lets the agent verify a column before writing SQL instead of guessing.
+
+### 19. `portfolio_metrics`
+- **File:** `app/agent/tools/finance_calc.py`
+- **What:** Given every position (`ticker, shares, avg_cost, price, sector`), returns per-position market value, cost basis, unrealized P&L (amount and %), weight, the totals, and the sector allocation. Validates positive inputs and unique tickers. Read-only; in `READ_ONLY_TOOLS`.
+- **Why:** LLMs make arithmetic mistakes on multi-position portfolios; all reported portfolio numbers come from this pure function.
+
+### 20. `pct_change`
+- **File:** `app/agent/tools/finance_calc.py`
+- **What:** Returns `change` and `pct_change` from `old` to `new`; errors when `old` is 0. Read-only; in `READ_ONLY_TOOLS`.
+- **Why:** Deterministic growth rates for comparisons (quarter-over-quarter revenue, price moves).
+
+### 21. `concentration_screen`
+- **File:** `app/agent/tools/concentration.py` (math in `finance_calc.compute_concentration_screen`)
+- **What:** The LLM passes only a filter — `risk_profile` and/or `client_names` (partial names OK), `threshold_pct` (default 30), `exclude_sectors` (default `["ETF"]`). The tool builds a whitelisted/escaped `SELECT` over `holdings` ⨝ `clients` ⨝ `companies`, runs it through the `read_query` MCP tool (so it works over local stdio and the AgentCore Gateway), fetches each distinct ticker's live price once via `yfinance_get_ticker_info`, and returns `breaches` (`{label, ticker, weight_pct, market_value, portfolio_market_value}`, sorted by weight), `screened_count`/`screened_labels`, and the `prices` used. ETF positions still count toward totals/weights but are never listed in `breaches` unless `exclude_sectors=[]`. A missing price raises an error naming the ticker. Read-only; in `READ_ONLY_TOOLS`.
+- **Why:** The previous version took `portfolios` as input, so the LLM had to copy dozens of numbers per question; live QA showed gpt-4o-mini intermittently dropping a position (typically the ETF), which shrank a portfolio's total and inflated every other weight. Moving the data loading into the tool removes that failure mode without paying for a stronger model.
 
 ## How to add a new tool
 

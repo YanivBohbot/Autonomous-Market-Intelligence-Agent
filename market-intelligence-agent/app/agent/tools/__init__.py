@@ -4,7 +4,9 @@ from app.agent.tools.memory import (
     recall_memory_tool,
     list_memories_tool,
 )
-from app.agent.tools.mcp_clients.mcp_client import crm_tool
+from app.agent.tools.mcp_clients.mcp_client import crm_tool, crm_list_tables_tool, crm_describe_table_tool
+from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool
+from app.agent.tools.concentration import concentration_screen_tool
 from app.agent.tools.mcp_clients.yfinance_client import (
     yf_quote_tool,
     yf_history_tool,
@@ -15,6 +17,8 @@ from app.agent.tools.mcp_clients.filesystem_client import (
     fs_list_dir_tool,
     fs_write_file_tool,
 )
+from app.agent.tools.knowledge_base import search_knowledge_base_tool, web_search_tool
+
 # Browser tools are stdio-only (Playwright MCP runs as a subprocess). In
 # AgentCore Gateway mode there is no browser target, so the registry has no
 # matching tools and select_tool() would raise at import. Defer that error
@@ -33,12 +37,19 @@ except RuntimeError:
 TOOLS = [
     send_email_tool,
     crm_tool,
+    crm_list_tables_tool,
+    crm_describe_table_tool,
+    portfolio_metrics_tool,
+    pct_change_tool,
+    concentration_screen_tool,
     yf_quote_tool,
     yf_history_tool,
     yf_news_tool,
     fs_read_file_tool,
     fs_list_dir_tool,
     fs_write_file_tool,
+    search_knowledge_base_tool,
+    web_search_tool,
     *_BROWSER_TOOLS,
     save_memory_tool,
     recall_memory_tool,
@@ -47,6 +58,11 @@ TOOLS = [
 
 _BASE_READ_ONLY_TOOLS: set[str] = {
     "read_query",
+    "list_tables",
+    "describe_table",
+    "portfolio_metrics",
+    "pct_change",
+    "concentration_screen",
     "yfinance_get_ticker_info",
     "yfinance_get_price_history",
     "yfinance_get_ticker_news",
@@ -57,6 +73,8 @@ _BASE_READ_ONLY_TOOLS: set[str] = {
     "browser_take_screenshot",
     "recall_memory",
     "list_memories",
+    "search_knowledge_base",
+    "web_search",
 }
 # Drop browser tool names if the browser MCP isn't loaded so the integrity
 # check below doesn't fire on AgentCore Gateway mode (no browser target).
@@ -93,12 +111,19 @@ __all__ = [
     "is_read_only",
     "send_email_tool",
     "crm_tool",
+    "crm_list_tables_tool",
+    "crm_describe_table_tool",
+    "portfolio_metrics_tool",
+    "pct_change_tool",
+    "concentration_screen_tool",
     "yf_quote_tool",
     "yf_history_tool",
     "yf_news_tool",
     "fs_read_file_tool",
     "fs_list_dir_tool",
     "fs_write_file_tool",
+    "search_knowledge_base_tool",
+    "web_search_tool",
     "browser_navigate_tool",
     "browser_snapshot_tool",
     "browser_screenshot_tool",

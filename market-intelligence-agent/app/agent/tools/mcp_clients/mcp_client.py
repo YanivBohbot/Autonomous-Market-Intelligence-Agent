@@ -1,8 +1,7 @@
-"""CRM MCP client — selects CRM-server tools out of the shared registry.
+"""CRM MCP client — selects client-database tools out of the shared registry.
 
-Public surface preserved: `crm_tool` is the single LangChain BaseTool for SQL reads
-against the customer database. Schema and routing are unchanged; only the underlying
-transport moved to langchain-mcp-adapters.
+Public surface: `crm_tool` (read_query), `crm_list_tables_tool` and
+`crm_describe_table_tool` — all read-only SQL access to customers.db.
 """
 
 from __future__ import annotations
@@ -18,3 +17,7 @@ logger = logging.getLogger(__name__)
 CRM_TOOL_NAME = "read_query"
 
 crm_tool: BaseTool = select_tool(CRM_TOOL_NAME, "CRM")
+# Read-only schema discovery. mcp-server-sqlite also offers write_query,
+# create_table and append_insight — deliberately NOT selected (read-only DB).
+crm_list_tables_tool: BaseTool = select_tool("list_tables", "CRM")
+crm_describe_table_tool: BaseTool = select_tool("describe_table", "CRM")

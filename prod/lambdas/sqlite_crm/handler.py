@@ -1,4 +1,4 @@
-"""SQLite CRM MCP Lambda — read-only `read_query` over customers.db.
+"""SQLite CRM MCP Lambda — read-only read_query, list_tables, describe_table over customers.db.
 
 Mirrors the mcp-server-sqlite read_query tool that runs locally as a stdio
 subprocess in dev. In production the DB file lives in the `mia-data` bucket
@@ -38,24 +38,55 @@ def _ensure_db() -> str:
     return _LOCAL_PATH
 
 
+def _connect() -> sqlite3.Connection:
+    # Read-only mode is a second line of defense on top of IAM (GetObject only)
+    # and the SELECT/WITH regex in _read_query.
+    con = sqlite3.connect(f"file:{_ensure_db()}?mode=ro", uri=True)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _table_names(con: sqlite3.Connection) -> list[str]:
+    return [r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+
+
 def _read_query(args: dict[str, Any]) -> list[dict[str, Any]]:
     sql = args["query"]
     if not _READ_ONLY_PATTERN.match(sql):
         raise ValueError("read_query only accepts SELECT or WITH statements")
-    path = _ensure_db()
-    # Open the DB in read-only mode as a second line of defense against any
-    # statement that slipped past the regex (PRAGMA, ATTACH, etc.).
-    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    con = _connect()
     try:
-        con.row_factory = sqlite3.Row
-        cur = con.execute(sql)
-        return [dict(r) for r in cur.fetchall()]
+        return [dict(r) for r in con.execute(sql).fetchall()]
+    finally:
+        con.close()
+
+
+def _list_tables(args: dict[str, Any]) -> list[dict[str, Any]]:
+    con = _connect()
+    try:
+        return [{"name": name} for name in _table_names(con)]
+    finally:
+        con.close()
+
+
+def _describe_table(args: dict[str, Any]) -> list[dict[str, Any]]:
+    name = args["table_name"]
+    con = _connect()
+    try:
+        tables = _table_names(con)
+        # Only names read back from sqlite_master reach the PRAGMA, so the
+        # interpolation below cannot carry an injected statement.
+        if name not in tables:
+            raise ValueError(f"unknown table {name!r}; existing tables: {', '.join(tables)}")
+        return [dict(r) for r in con.execute(f'PRAGMA table_info("{name}")').fetchall()]
     finally:
         con.close()
 
 
 _DISPATCH = {
     "read_query": _read_query,
+    "list_tables": _list_tables,
+    "describe_table": _describe_table,
 }
 
 

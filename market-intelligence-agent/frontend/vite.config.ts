@@ -11,7 +11,8 @@ export default defineConfig({
       "/stream": { target: API_TARGET, changeOrigin: true },
       "/approve": { target: API_TARGET, changeOrigin: true },
       "/health": { target: API_TARGET, changeOrigin: true },
-      "/livekit": { target: API_TARGET, changeOrigin: true },
+      "/gptlive": { target: API_TARGET, changeOrigin: true },
+      "/voice": { target: API_TARGET, changeOrigin: true },
     },
   },
 });

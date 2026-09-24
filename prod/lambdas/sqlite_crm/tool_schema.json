@@ -1,13 +1,29 @@
 [
   {
     "name": "read_query",
-    "description": "Run a read-only SQL query (SELECT/WITH only) against the customers database.",
+    "description": "Run a read-only SQL query (SELECT/WITH only) against the wealth-management database (companies, clients, transactions, holdings, watchlists).",
     "inputSchema": {
       "type": "object",
       "properties": {
         "query": {"type": "string", "description": "A SELECT or WITH SQL statement"}
       },
       "required": ["query"]
+    }
+  },
+  {
+    "name": "list_tables",
+    "description": "List the tables of the wealth-management database.",
+    "inputSchema": {"type": "object", "properties": {}}
+  },
+  {
+    "name": "describe_table",
+    "description": "Return the columns and types of one table of the wealth-management database.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "table_name": {"type": "string", "description": "Name of the table to describe"}
+      },
+      "required": ["table_name"]
     }
   }
 ]

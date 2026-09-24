@@ -23,20 +23,6 @@ export async function postApprove(
   return res.json();
 }
 
-export async function getLiveKitToken(
-  identity: string,
-  room: string,
-  base = API_BASE,
-): Promise<{ token: string; url: string; room: string }> {
-  const res = await fetch(`${base}/livekit/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identity, room }),
-  });
-  if (!res.ok) throw new Error(`livekit token ${res.status}`);
-  return res.json();
-}
-
 export function newThreadId(): string {
   const rand = Math.random().toString(36).slice(2, 10);
   return `web_session_${rand}`;

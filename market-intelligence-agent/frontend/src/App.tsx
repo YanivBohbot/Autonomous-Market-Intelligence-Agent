@@ -123,7 +123,7 @@ export default function App() {
           </div>
 
           {/* Voice panel — collapsible */}
-          {voiceOpen && <VoicePanel />}
+          {voiceOpen && <VoicePanel threadId={threadId} />}
         </main>
 
         {/* Activity rail */}

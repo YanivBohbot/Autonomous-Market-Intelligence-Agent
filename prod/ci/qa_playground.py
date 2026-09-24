@@ -111,9 +111,9 @@ def part_one_playground_style() -> None:
          r.get("status") == "completed", r)
 
     r = invoke(_new_runtime_session(),
-               {"prompt": "List CRM customers with status VIP."})
+               {"prompt": "List clients with segment VIP."})
     case("playground:read_query (CRM)",
-         r.get("status") == "completed" and kw(r, ["vip", "yaniv", "customer"]), r)
+         r.get("status") == "completed" and kw(r, ["vip", "yaniv", "client"]), r)
 
     r = invoke(_new_runtime_session(),
                {"prompt": "List the files in my workspace."})

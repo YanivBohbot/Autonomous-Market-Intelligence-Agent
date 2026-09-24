@@ -1,0 +1,36 @@
+from unittest.mock import patch
+
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+
+from app.agent.multi_agent import finance_agent as mod
+from app.agent.multi_agent.common import base_middleware
+
+
+def _kwargs():
+    with patch.object(mod, "create_agent") as ca:
+        mod.build_finance_agent()
+    return ca.call_args.kwargs
+
+
+def test_tools():
+    assert {t.name for t in mod._TOOLS} == {
+        "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news"}
+
+
+def test_create_agent_call():
+    kw = _kwargs()
+    from app.agent.prompts.specialist_agent_prompts import FINANCE_SYSTEM_PROMPT
+    assert kw["system_prompt"] == FINANCE_SYSTEM_PROMPT
+    assert kw["tools"] == mod._TOOLS
+    assert kw["name"] == "finance_agent"
+    mw = kw["middleware"]
+    base = base_middleware()
+    assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
+    # Queries go to third parties (Tavily / Yahoo): emails are redacted first.
+    assert (mw[len(base)].pii_type, mw[len(base)].strategy) == ("email", "redact")
+    assert len(mw) == len(base) + 1
+    assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
+
+
+def test_builds_a_real_agent():
+    assert "model" in mod.build_finance_agent().get_graph().nodes

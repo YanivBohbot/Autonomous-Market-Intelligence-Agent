@@ -44,10 +44,16 @@ aws secretsmanager put-secret-value --secret-id mia/tavily-api-key   --secret-st
 aws secretsmanager put-secret-value --secret-id mia/email-password   --secret-string "$EMAIL_PASSWORD"
 ```
 
-### 5. Upload static data
+### 5. Static data
+
+`customers.db` is uploaded to `s3://mia-data-<account>/customers.db` automatically by
+`MiaStorageStack`'s `BucketDeployment` on every `cdk deploy` — no manual upload step.
+Editing `market-intelligence-agent/customers.db` (e.g. via `create_db.py`) and
+redeploying is enough to update prod; `MiaMcpLambdasStack` also stamps the file's
+sha256 into the `sqlite-crm` Lambda's environment so a DB-only deploy still replaces
+any already-warm execution environments.
 
 ```bash
-aws s3 cp market-intelligence-agent/customers.db s3://mia-data-<account>/customers.db --sse aws:kms
 # upload PDFs into s3://mia-data-<account>/pdfs/ for RAG ingestion (separate job, future)
 ```
 

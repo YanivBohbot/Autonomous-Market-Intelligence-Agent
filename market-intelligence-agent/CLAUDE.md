@@ -7,11 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 All commands must be run from inside `market-intelligence-agent/` with the `.venv` active, using `uv run`.
 
 ```bash
-# One-time setup: create the SQLite customer database
+# (Re)build the wealth-management SQLite DB (customers.db) — commit the result
 uv run python create_db.py
 
 # One-time setup: ingest PDFs from ./data/ into Pinecone
-uv run python app/ingest.py
+uv run python -m app.ingest
 
 # Run the FastAPI backend (port 8000)
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
@@ -28,9 +28,16 @@ uv run python test_agent.py
 # Run unit tests
 uv run pytest tests/ -v
 
+# One-time: install the Chromium build @playwright/mcp@latest expects (local browser tools)
+npx -y @playwright/mcp@latest install-browser chrome-for-testing
+
 # Test the MCP CRM tool in isolation
 uv run python app/agent/tools/mcp_clients/mcp_client.py
 ```
+
+## Dependency versions
+
+`uv.lock` is the source of truth. `requirements.agentcore.txt` (the AgentCore prod image) pins the LangChain/LangGraph family **exactly** to the `uv.lock` versions so prod runs what the tests ran. To upgrade: `uv lock --upgrade-package <pkg> ...` → `uv sync` → run tests → copy the new versions into `requirements.agentcore.txt`.
 
 ## Required `.env` keys
 
@@ -54,18 +61,16 @@ The email tool falls back to a simulation (no real send) when `EMAIL_SENDER` sti
 Compiled with a **SQLite checkpointer** (`data/checkpoints.db`, see `app/agent/memory/checkpointer.py`). HITL uses the **dynamic `interrupt()` pattern** with `Command(resume=...)` — no `interrupt_before`. Flow:
 
 ```
-START → rag → grader → [generate | web_search → generate]
-generate → (tool_calls?) → approval → [tools | generate]
+START → record_question → generate → (tool_calls?) → approval → [tools | generate]
 tools → generate → … → END
 ```
 
-- **rag**: pulls top-3 chunks from Pinecone via semantic similarity.
-- **grader**: binary LLM filter — drops chunks that don't answer the question.
-- **grader → generate** if any chunks passed, **grader → web_search** if none.
-- **web_search**: Tavily advanced search, max 3 results; always feeds into generate.
+- **record_question**: persists the user's turn as a `HumanMessage` so it shows up in checkpointed history.
 - **generate**: LLM (with `TOOLS` bound) loaded from `app/agent/prompts/system.py` (`SYSTEM_PROMPT`, `ERROR_RECOVERY_PROMPT`). Decides whether to call a tool or emit a final answer.
 - **approval**: inspects the last `AIMessage`'s `tool_calls`. If every call is in `READ_ONLY_TOOLS`, returns immediately. Otherwise calls `interrupt(requests)` surfacing only side-effect calls. **Atomic batch rule**: any reject cancels the entire batch via `ToolMessage`s.
 - **tools** (LangGraph `ToolNode`): runs whatever the LLM called.
+
+Note: retrieval (`search_knowledge_base`) and web search (`web_search`) are **not** separate graph nodes — they're tools the LLM calls from within the `generate`/`tools` loop, same as any other tool, and are gated by the same `READ_ONLY_TOOLS`/`approval` logic.
 
 ### Tools (`app/agent/tools/__init__.py`)
 
@@ -74,21 +79,26 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | Tool name | File | Type | What it does |
 |---|---|---|---|
 | `send_email` | `app/agent/tools/emails.py` | side-effect | Sends via **Amazon SES** (boto3) using the verified `EMAIL_SENDER` identity. Simulates if `EMAIL_SENDER` is empty or an `@example.com` placeholder. SMTP fields kept optional for legacy local dev only. |
-| `read_query` | `app/agent/tools/mcp_clients/mcp_client.py` | read-only | MCP stdio client → `mcp-server-sqlite` → `read_query` against `customers.db`. |
+| `read_query` | `app/agent/tools/mcp_clients/mcp_client.py` | read-only | MCP stdio client → `mcp-server-sqlite` → `read_query` against `customers.db` (wealth-management DB: companies, clients, transactions, holdings, watchlists; seeded by `create_db.py`). |
+| `list_tables` / `describe_table` | same | read-only | Schema discovery on `customers.db`. |
+| `portfolio_metrics` / `pct_change` | `app/agent/tools/finance_calc.py` | read-only | Deterministic portfolio math (value, P&L, weights, sectors) and % change. |
+| `concentration_screen` | `app/agent/tools/concentration.py` | read-only | Finds clients with more than `threshold_pct` (default 30) of their portfolio in one stock. The LLM passes only a filter (`risk_profile`, `client_names`); the tool loads holdings via `read_query` and live prices via yfinance itself, then computes `breaches` with `finance_calc.compute_concentration_screen`. ETFs (`exclude_sectors`, default `["ETF"]`) count in totals but are never flagged. No position copying by the LLM = deterministic answers with gpt-4o-mini. |
 | `yfinance_get_ticker_info` | `app/agent/tools/mcp_clients/yfinance_client.py` | read-only | MCP stdio client → `yfmcp` → `get_ticker_info(ticker)`. |
 | `yfinance_get_price_history` | same | read-only | `get_price_history(ticker, period="1mo")`. |
 | `yfinance_get_ticker_news` | same | read-only | `get_ticker_news(ticker, limit=5)`. |
 | `read_text_file` | `app/agent/tools/mcp_clients/filesystem_client.py` | read-only | MCP stdio client → `@modelcontextprotocol/server-filesystem` → `read_text_file(path)` inside `data/workspace/`. |
 | `list_directory` | same | read-only | `list_directory(path)` inside `data/workspace/`. |
 | `write_file` | same | side-effect | `write_file(path, content)` inside `data/workspace/`. Gated by `approval_node`. |
-| `browser_navigate` | `app/agent/tools/mcp_clients/browser_client.py` | read-only | MCP stdio client → `@playwright/mcp` → `browser_navigate(url)` (headless Chromium). |
+| `browser_navigate` | `app/agent/tools/mcp_clients/browser_client.py` | read-only | MCP stdio client → `@playwright/mcp` → `browser_navigate(url)` (headless Chromium). Locally the 3 browser tools share ONE long-lived session per event loop (`browser_session.py`) so navigate/snapshot/screenshot act on the same page; the server runs in `data/workspace/screenshots/`. |
 | `browser_snapshot` | same | read-only | Returns the current page as an accessibility tree (LLM-friendly structured text). |
 | `browser_take_screenshot` | same | read-only | Saves a PNG into `data/workspace/screenshots/`. |
 | `recall_memory` | `app/agent/tools/memory.py` | read-only | Look up a user fact in LangGraph's BaseStore by key. |
 | `list_memories` | same | read-only | Return every user fact in memory as `key = value` strings. |
 | `save_memory` | same | side-effect | Persist `{key: value}` under namespace `("user_facts",)`. Gated by `approval_node`. |
+| `search_knowledge_base` | `app/agent/tools/knowledge_base.py` | read-only | Semantic search over ingested company reports/PDFs (Pinecone). Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. |
+| `web_search` | `app/agent/tools/knowledge_base.py` | read-only | Live web search (Tavily), top 3 results, advanced depth. Fallback/supplement when the knowledge base has nothing relevant. |
 
-`READ_ONLY_TOOLS = {"read_query", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
 
 ### Human-in-the-Loop (HITL) flow
 
@@ -96,6 +106,14 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 2. `POST /approve` (in `app/api/routers/approve.py`) — resumes via `Command(resume="approve")` or `Command(resume="reject")`. The decision is a single global verdict that `approval_node` broadcasts across every pending side-effect call in the batch. Per-call approve/reject is not currently supported by the router contract.
 3. Multiple side-effect calls in one batch share the single global decision; on reject, **all** tool calls in the batch (read-only included) are cancelled with `ToolMessage("Action cancelled by user.")`. Unknown / malformed resume payloads fail closed (cancel).
 4. Session state persists across server restarts via the SQLite checkpointer keyed on `thread_id`.
+
+### Multi-agent mode (`app/agent/multi_agent/`)
+
+Router pattern: `record_question → supervisor → <specialist> → supervisor → END`. Not wired to the API/UI/voice — build with `build_multi_agent_app(checkpointer)` in tests/scripts.
+
+- One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
+- `common.py`: `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 10 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` keep addresses. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
+- HITL uses the official `HumanInTheLoopMiddleware` (email: `send_email`, filesystem: `write_file`, memory: `save_memory`). Resume with `Command(resume={"decisions": [{"type": "approve"} | {"type": "reject", "message": ...} | {"type": "edit", "edited_action": {...}}]})`, one decision per pending call — different from the single-agent `/approve` contract.
 
 ### API routers (`app/api/routers/`)
 
@@ -145,7 +163,7 @@ See `docs/VOICE.md` for env vars, run order, and the Hebrew-support caveat.
 
 ### Data ingestion (`app/ingest.py`)
 
-Reads all PDFs from `./data/`, splits at 1000 chars / 200 overlap, embeds with `text-embedding-3-small`, and upserts into Pinecone. Run once per document set. The Pinecone index must already exist.
+Reads all PDFs from `./data/`, splits at 1000 chars / 200 overlap, embeds with `text-embedding-3-small`, and upserts into Pinecone. Run once per document set. The Pinecone index must already exist. It also rewrites `app/agent/tools/kb_documents.json`, the manifest `search_knowledge_base`'s `source_filter` resolves against — **commit it after ingesting**, since the AgentCore image ships `app/` but not `data/`.
 
 ## Spec & plan workflow
 

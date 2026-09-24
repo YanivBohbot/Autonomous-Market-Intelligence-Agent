@@ -24,6 +24,12 @@ data/checkpoints.db
 data/checkpoints.db-shm
 data/checkpoints.db-wal
 
+# Source PDFs for app/ingest.py — large and not needed at runtime (the
+# source_filter manifest app/agent/tools/kb_documents.json is what ships).
+# Amazon report stays tracked as the reproducible sample document.
+data/*.pdf
+!data/Amazon-2024-Annual-Report.pdf
+
 # Agent workspace — keep the folder, ignore its contents
 data/workspace/*
 !data/workspace/.gitkeep
@@ -49,3 +55,5 @@ package-lock.json
 
 # QA test screenshots
 qa_final_state.png
+# Local git worktrees (agent-managed, not shared)
+.worktrees/

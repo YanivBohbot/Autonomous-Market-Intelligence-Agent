@@ -69,7 +69,7 @@ def main() -> int:
     assert_completed_or_interrupted(r, "yfinance")
 
     # 3. sqlite-crm — should run a SELECT through Gateway
-    r = invoke(runtime_arn, session, {"prompt": "List the first 3 customers from the CRM database."})
+    r = invoke(runtime_arn, session, {"prompt": "List the first 3 clients from the wealth-management database."})
     assert_completed_or_interrupted(r, "sqlite-crm")
 
     # 4. filesystem read — list_directory on workspace root

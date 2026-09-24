@@ -5,11 +5,9 @@ from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 from langchain_core.messages import HumanMessage, ToolMessage
 from app.agent.state import AgentState
-from app.agent.nodes.rag import retrieve_internal_documentation
-from app.agent.nodes.research import web_search
-from app.agent.nodes.grader import grade_documents
 from app.agent.nodes.generate import generate_answer
 from app.agent.tools import TOOLS, READ_ONLY_TOOLS, is_read_only
+from app.agent.nodes.tool_utils import strip_image_content as _strip_image_content
 
 
 def record_question(state: AgentState) -> dict:
@@ -22,12 +20,6 @@ def record_question(state: AgentState) -> dict:
     if not q:
         return {}
     return {"messages": [HumanMessage(content=q)]}
-
-
-def decide_next_step(state: AgentState):
-    if len(state["documents"]) > 0:
-        return "generate"
-    return "web_search"
 
 
 def route_after_generate(state: AgentState):
@@ -50,7 +42,6 @@ def approval_node(state: AgentState) -> dict:
 
     side_effect_calls = [tc for tc in tool_calls if not is_read_only(tc["name"])]
     if not side_effect_calls:
-        # All read-only — no human approval needed.
         return {}
 
     requests = [
@@ -67,11 +58,6 @@ def approval_node(state: AgentState) -> dict:
         for tc in side_effect_calls
     ]
     decisions = interrupt(requests)
-    # Resume payload shape varies by caller:
-    #   - /approve router sends a bare string ("approve" | "reject")
-    #   - tests patch interrupt() to return a list of strings or dicts
-    # Normalize to a list of length len(side_effect_calls): broadcast a single
-    # global decision across all pending calls; treat anything else element-wise.
     if isinstance(decisions, str):
         raw = [decisions] * len(side_effect_calls)
     elif isinstance(decisions, list) and decisions:
@@ -101,23 +87,6 @@ def route_after_approval(state: AgentState):
 _tool_node = ToolNode(TOOLS, handle_tool_errors=True)
 
 
-def _strip_image_content(content):
-    """Drop image parts from an MCP tool result before it re-enters the
-    conversation: OpenAI rejects image content on tool-role messages (only
-    'user' may carry images), and the frontend already gets the real PNG via
-    the dedicated screenshot SSE event (app/api/routers/stream.py reads it
-    straight off this same ToolMessage's text part), so the LLM never needs
-    the raw bytes. Stripped here, before the ToolMessage lands in checkpointed
-    state, so it doesn't keep breaking every later turn in the thread.
-    """
-    if not isinstance(content, list):
-        return content
-    return [
-        part for part in content
-        if not (isinstance(part, dict) and part.get("type") in ("image", "image_url"))
-    ]
-
-
 async def run_tools(state: AgentState) -> dict:
     result = await _tool_node.ainvoke(state)
     for msg in result.get("messages", []):
@@ -128,22 +97,12 @@ async def run_tools(state: AgentState) -> dict:
 
 workflow = StateGraph(AgentState)
 workflow.add_node("record_question", record_question)
-workflow.add_node("rag", retrieve_internal_documentation)
-workflow.add_node("grader", grade_documents)
-workflow.add_node("web_search", web_search)
 workflow.add_node("generate", generate_answer)
 workflow.add_node("approval", approval_node)
 workflow.add_node("tools", run_tools)
 
 workflow.add_edge(START, "record_question")
-workflow.add_edge("record_question", "rag")
-workflow.add_edge("rag", "grader")
-workflow.add_conditional_edges(
-    "grader",
-    decide_next_step,
-    {"generate": "generate", "web_search": "web_search"},
-)
-workflow.add_edge("web_search", "generate")
+workflow.add_edge("record_question", "generate")
 workflow.add_conditional_edges(
     "generate",
     route_after_generate,
@@ -155,6 +114,7 @@ workflow.add_conditional_edges(
     {"tools": "tools", "generate": "generate"},
 )
 workflow.add_edge("tools", "generate")
+
 
 def build_agent_app(
     checkpointer: BaseCheckpointSaver,

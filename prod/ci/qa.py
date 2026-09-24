@@ -42,9 +42,9 @@ def invoke(session_id: str, prompt: str) -> dict:
 CASES = [
     ("hello",             "Hello, who are you in one sentence?",                              ["assistant", "market", "agent", "help"]),
     ("yfinance-nvda",     "What is NVDA's current stock price?",                              ["$", "NVDA", "nvidia"]),
-    ("crm-list",          "List the first 3 customers in the CRM database.",                  ["customer"]),
+    ("crm-list",          "List the first 3 clients in the wealth-management database.",       ["client"]),
     ("filesystem-list",   "List the files in my workspace.",                                  ["file", "director", "workspace", "empty"]),
-    ("multi-tool",        "What's TSLA stock price, and how many customers are in the CRM?", ["TSLA", "customer"]),
+    ("multi-tool",        "What's TSLA stock price, and how many clients are in the database?", ["TSLA", "client"]),
     ("web-fallback",      "What is the latest news about Tesla this week?",                  ["tesla"]),
     ("memory-recall",     "What was the very first question I asked you in this session?",   ["who", "you", "one sentence"]),
 ]

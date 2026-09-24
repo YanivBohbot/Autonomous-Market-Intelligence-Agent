@@ -12,6 +12,7 @@ access — wiring to AgentCore Gateway happens in MiaGatewayStack.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from aws_cdk import CfnOutput, Duration, Stack
@@ -21,7 +22,20 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
+from stacks.storage_stack import CRM_DB_FILE
+
 LAMBDAS_DIR = Path(__file__).resolve().parents[2] / "lambdas"
+PYCACHE_EXCLUDES = ["__pycache__", "*.pyc"]
+
+
+def _crm_db_sha256() -> str:
+    """Hash of the repo's customers.db at synth time. Set as a Lambda env
+    var so a DB-only redeploy (customers.db content changed, no code change)
+    still updates the function configuration, forcing Lambda to replace
+    already-warm execution environments — otherwise `_ensure_db` in
+    handler.py caches /tmp/customers.db for the lifetime of the container and
+    a warm instance would keep answering from the stale DB indefinitely."""
+    return hashlib.sha256(CRM_DB_FILE.read_bytes()).hexdigest()
 
 
 class MiaMcpLambdasStack(Stack):
@@ -71,6 +85,7 @@ class MiaMcpLambdasStack(Stack):
             function_name=f"{project}-mcp-yfinance-{env_name}",
             code=_lambda.DockerImageCode.from_image_asset(
                 str(LAMBDAS_DIR / "yfinance"),
+                exclude=PYCACHE_EXCLUDES,
             ),
             architecture=_lambda.Architecture.ARM_64,
             memory_size=512,
@@ -105,7 +120,7 @@ class MiaMcpLambdasStack(Stack):
             runtime=_lambda.Runtime.PYTHON_3_12,
             architecture=_lambda.Architecture.ARM_64,
             handler="handler.lambda_handler",
-            code=_lambda.Code.from_asset(str(LAMBDAS_DIR / "filesystem")),
+            code=_lambda.Code.from_asset(str(LAMBDAS_DIR / "filesystem"), exclude=PYCACHE_EXCLUDES),
             memory_size=256,
             timeout=Duration.seconds(15),
             role=role,
@@ -143,7 +158,7 @@ class MiaMcpLambdasStack(Stack):
             runtime=_lambda.Runtime.PYTHON_3_12,
             architecture=_lambda.Architecture.ARM_64,
             handler="handler.lambda_handler",
-            code=_lambda.Code.from_asset(str(LAMBDAS_DIR / "sqlite_crm")),
+            code=_lambda.Code.from_asset(str(LAMBDAS_DIR / "sqlite_crm"), exclude=PYCACHE_EXCLUDES),
             memory_size=256,
             timeout=Duration.seconds(15),
             role=role,
@@ -152,5 +167,10 @@ class MiaMcpLambdasStack(Stack):
                 "DATA_S3_BUCKET": data_bucket.bucket_name,
                 "CRM_DB_KEY": "customers.db",
                 "LOG_LEVEL": "INFO",
+                # Forces a function-configuration update (and replacement of
+                # warm execution environments) whenever customers.db changes
+                # content, even when no Lambda code changed. See
+                # _crm_db_sha256() above for why this is needed.
+                "CRM_DB_SHA256": _crm_db_sha256(),
             },
         )
