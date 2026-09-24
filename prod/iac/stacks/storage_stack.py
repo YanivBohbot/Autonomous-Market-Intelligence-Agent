@@ -48,10 +48,14 @@ class MiaStorageStack(Stack):
             f"{project}-workspace-{self.account}",
             removal, auto_delete, versioned=True,
         )
+        # The data bucket holds customers.db and the RAG source PDFs: always
+        # RETAIN, never auto-delete, even in demo. A stack teardown (or a
+        # construct replacement) must never wipe the data. The workspace
+        # bucket only holds agent scratch output, so it follows env_name.
         self.data_bucket = self._make_bucket(
             "DataBucket",
             f"{project}-data-{self.account}",
-            removal, auto_delete, versioned=True,
+            RemovalPolicy.RETAIN, False, versioned=True,
         )
 
         # Keep S3 in sync with git: before this, customers.db was copied to

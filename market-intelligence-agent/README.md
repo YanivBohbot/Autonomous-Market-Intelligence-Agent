@@ -43,7 +43,7 @@ This scenario showcases the agent chaining a structured data query (MCP), a docu
 
 ### 1. The Complex User Prompt (Streamlit UI)
 
-> **"Find client Yaniv Bohbot in the CRM database. If their status is VIP, send them an email summarizing Amazon's AI strategy for 2024."**
+> **"Find client Yaniv Bohbot in the CRM database. If they are a VIP client (segment), send them an email summarizing Amazon's AI strategy for 2024."**
 
 ### 2. Expected Workflow and Interruptions
 
