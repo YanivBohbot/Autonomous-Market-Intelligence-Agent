@@ -50,7 +50,7 @@ TAVILY_API_KEY
 EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT
 ```
 
-Optional with defaults: `LOG_LEVEL` (INFO), `API_URL` (http://localhost:8000), `YFINANCE_TIMEOUT_S` (10), `WORKSPACE_ROOT` (data/workspace), `BROWSER_BACKEND` (local), `BROWSER_TOOL_ID` (none — required when `BROWSER_BACKEND=agentcore`), `BROWSER_IDLE_TTL_S` (300).
+Optional with defaults: `LOG_LEVEL` (INFO), `API_URL` (http://localhost:8000), `YFINANCE_TIMEOUT_S` (10), `WORKSPACE_ROOT` (data/workspace), `BROWSER_BACKEND` (local), `BROWSER_TOOL_ID` (none — required when `BROWSER_BACKEND=agentcore`), `BROWSER_IDLE_TTL_S` (300), `COPILOT_ENABLED` (False — enables the Market Desk AG-UI endpoint `/copilot/market-desk`; set `true` in local `.env`).
 
 The email tool falls back to a simulation (no real send) when `EMAIL_SENDER` still contains `"ton_email"`.
 
@@ -109,7 +109,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 
 ### Multi-agent mode (`app/agent/multi_agent/`)
 
-Router pattern: `record_question → supervisor → <specialist> → supervisor → END`. Not wired to the API/UI/voice — build with `build_multi_agent_app(checkpointer)` in tests/scripts.
+Router pattern: `record_question → supervisor → <specialist> → supervisor → END`. Wired only to the opt-in Market Desk endpoint (`COPILOT_ENABLED`, React console); not to `/stream`, Streamlit or voice. Build with `build_multi_agent_app(checkpointer)` in tests/scripts.
 
 - One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
 - `common.py`: `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 10 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` keep addresses. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
@@ -118,6 +118,7 @@ Router pattern: `record_question → supervisor → <specialist> → supervisor 
 ### API routers (`app/api/routers/`)
 
 - `health.py` — `/health` returns version + status (also `/ping` + `/invocations` for the AgentCore runtime contract).
+- `copilot.py` — `POST /copilot/market-desk` (AG-UI SSE over the multi-agent graph, agent id `market_desk`), included only when `COPILOT_ENABLED`; the agent is built in `lifespan`.
 - `stream.py` — `/stream` (SSE one-shot run; emits `node`, `token`, then `interrupted`/`done`/`error` events).
 - `approve.py` — `/approve` for HITL resume.
 - `gptlive_session.py` — `POST /gptlive/session` proxies the browser's WebRTC SDP offer to OpenAI (`client.live.create`) and spawns the voice delegation worker as a background task.

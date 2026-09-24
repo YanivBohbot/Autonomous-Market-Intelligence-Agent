@@ -9,6 +9,7 @@ from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
 from app.api.routers.agentcore import router as agentcore_router
 from app.api.routers.approve import router as approve_router
+from app.api.routers.copilot import attach_market_desk, router as copilot_router
 from app.api.routers.gptlive_session import router as gptlive_session_router
 from app.api.routers.health import router as health_router
 from app.api.routers.stream import router as stream_router
@@ -27,12 +28,25 @@ def _get_version() -> str:
         return "0.0.0"
 
 
+def setup_market_desk(app: FastAPI, checkpointer, store) -> None:
+    """Market Desk (multi-agent over AG-UI) is opt-in: COPILOT_ENABLED."""
+    if settings.COPILOT_ENABLED:
+        attach_market_desk(app, checkpointer, store)
+
+
+def include_market_desk_routes(app: FastAPI) -> None:
+    """Disabled -> /copilot/market-desk does not exist (404)."""
+    if settings.COPILOT_ENABLED:
+        app.include_router(copilot_router)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with create_checkpointer() as checkpointer:
         store = create_store()
         app.state.agent_app = build_agent_app(checkpointer, store)
         app.state.voice_agent_app = build_voice_agent_app(checkpointer, store)
+        setup_market_desk(app, checkpointer, store)
         yield
 
 
@@ -51,3 +65,4 @@ app.include_router(stream_router)
 app.include_router(gptlive_session_router)
 app.include_router(agentcore_router)
 app.include_router(workspace_router)
+include_market_desk_routes(app)
