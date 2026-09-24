@@ -12,6 +12,8 @@ from langchain.agents.middleware import (
     AgentMiddleware,
     ModelCallLimitMiddleware,
     ModelRequest,
+    PIIMiddleware,
+    SummarizationMiddleware,
     ToolErrorMiddleware,
     dynamic_prompt,
 )
@@ -25,6 +27,8 @@ from app.agent.prompts import with_today
 from app.core.config import settings
 
 MODEL_CALL_LIMIT = 10
+SUMMARY_TRIGGER_TOKENS = 8000
+SUMMARY_KEEP_MESSAGES = 10
 
 ToolResult = ToolMessage | Command[Any]
 
@@ -44,6 +48,31 @@ def call_limit() -> ModelCallLimitMiddleware:
     """Cap model calls per specialist run so a looping agent can't run up
     OpenAI cost; "end" finishes the run instead of raising."""
     return ModelCallLimitMiddleware(run_limit=MODEL_CALL_LIMIT, exit_behavior="end")
+
+
+def summarization() -> SummarizationMiddleware:
+    """Once the conversation passes SUMMARY_TRIGGER_TOKENS, older messages are
+    replaced by a summary (the last SUMMARY_KEEP_MESSAGES stay verbatim) so
+    cost per turn stays bounded. The specialist shares `messages` with the
+    supervisor, so this compacts the whole conversation — intended."""
+    return SummarizationMiddleware(
+        model=ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0),
+        trigger=("tokens", SUMMARY_TRIGGER_TOKENS),
+        keep=("messages", SUMMARY_KEEP_MESSAGES),
+    )
+
+
+def mask_credit_cards() -> PIIMiddleware:
+    """No specialist needs a card number: mask it (last 4 digits kept)
+    before it reaches OpenAI."""
+    return PIIMiddleware("credit_card", strategy="mask")
+
+
+def redact_emails() -> PIIMiddleware:
+    """For specialists that send queries to third parties (Tavily, Yahoo,
+    web pages) and never need an address. NOT for email/portfolio/memory/
+    filesystem, which need real addresses to work."""
+    return PIIMiddleware("email", strategy="redact")
 
 
 def _tool_error_content(exc: Exception, request: ToolCallRequest) -> str:
@@ -90,4 +119,4 @@ strip_tool_images = StripToolImages()
 
 
 def base_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
-    return [today_prompt, call_limit(), tool_errors_to_messages]
+    return [today_prompt, summarization(), mask_credit_cards(), call_limit(), tool_errors_to_messages]

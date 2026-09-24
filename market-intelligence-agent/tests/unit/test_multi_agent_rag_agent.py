@@ -22,7 +22,12 @@ def test_create_agent_call():
     assert kw["system_prompt"] == RAG_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "rag_agent"
-    assert [type(m) for m in kw["middleware"]] == [type(m) for m in base_middleware()]
+    mw = kw["middleware"]
+    base = base_middleware()
+    assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
+    # Queries go to third parties (Tavily / Yahoo): emails are redacted first.
+    assert (mw[len(base)].pii_type, mw[len(base)].strategy) == ("email", "redact")
+    assert len(mw) == len(base) + 1
     assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 

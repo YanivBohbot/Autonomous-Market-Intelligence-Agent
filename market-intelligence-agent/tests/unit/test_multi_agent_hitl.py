@@ -24,6 +24,10 @@ async def _fake_send_email(recipient: str, subject: str, body: str) -> str:
     return f"sent to {recipient}"
 
 
+async def _always_known(address: str) -> bool:
+    return True
+
+
 _CALL = {"id": "e1", "name": "send_email",
          "args": {"recipient": "a@example.com", "subject": "Hi", "body": "Report"}}
 
@@ -34,6 +38,7 @@ async def _run_until_interrupt():
     patches = [
         patch.object(email_mod, "specialist_model", return_value=fake),
         patch.object(email_mod, "_TOOLS", [_fake_send_email]),
+        patch.object(email_mod, "_is_client_email", _always_known),
         patch.object(supervisor_mod, "_router"),
     ]
     for p in patches:

@@ -23,12 +23,18 @@ def test_create_agent_call_with_hitl_on_write_file():
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "filesystem_agent"
     mw = kw["middleware"]
-    assert [type(m) for m in mw[:3]] == [type(m) for m in base_middleware()]
-    assert isinstance(mw[3], HumanInTheLoopMiddleware)
-    assert set(mw[3].interrupt_on) == {"write_file"}
-    assert len(mw) == 4
+    base = base_middleware()
+    assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
+    assert isinstance(mw[len(base)], HumanInTheLoopMiddleware)
+    assert set(mw[len(base)].interrupt_on) == {"write_file"}
+    assert len(mw) == len(base) + 1
 
 
 def test_builds_a_real_agent_with_hitl_node():
     nodes = mod.build_filesystem_agent().get_graph().nodes
     assert "HumanInTheLoopMiddleware.after_model" in nodes
+
+
+def test_keeps_email_addresses_it_needs_to_work():
+    kw = _kwargs()
+    assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])

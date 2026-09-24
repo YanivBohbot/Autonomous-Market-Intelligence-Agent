@@ -30,3 +30,8 @@ def test_create_agent_call():
 
 def test_builds_a_real_agent():
     assert "model" in mod.build_portfolio_agent().get_graph().nodes
+
+
+def test_keeps_email_addresses_it_needs_to_work():
+    kw = _kwargs()
+    assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
