@@ -20,15 +20,10 @@ SPECIALISTS = {
     "finance_agent": lambda: build_finance_agent(),
     "portfolio_agent": lambda: build_portfolio_agent(),
     "browser_agent": lambda: build_browser_agent(),
-}
-
-# Legacy specialists: hand back via Command(graph=Command.PARENT).
-_LEGACY_SPECIALISTS = {
     "memory_agent": lambda: build_memory_agent(),
     "filesystem_agent": lambda: build_filesystem_agent(),
     "email_agent": lambda: build_email_agent(),
 }
-
 
 def _build_workflow() -> StateGraph:
     workflow = StateGraph(SupervisorState)
@@ -39,8 +34,6 @@ def _build_workflow() -> StateGraph:
     for name, build in SPECIALISTS.items():
         workflow.add_node(name, build())
         workflow.add_edge(name, "supervisor")
-    for name, build in _LEGACY_SPECIALISTS.items():
-        workflow.add_node(name, build())
     workflow.add_edge(START, "record_question")
     workflow.add_edge("record_question", "supervisor")
     return workflow

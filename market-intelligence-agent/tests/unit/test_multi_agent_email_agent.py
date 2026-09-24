@@ -1,44 +1,34 @@
 from unittest.mock import patch
-from langchain_core.messages import AIMessage
-from langgraph.types import Command
 
-from app.agent.multi_agent import email_agent as email_agent_mod
-from app.agent.multi_agent.email_agent import email_agent_node, build_email_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
 
-
-def _state():
-    return {"question": "email a summary to x@y.com", "messages": [], "documents": [], "next_agent": None, "agent_hops": 0}
+from app.agent.multi_agent import email_agent as mod
+from app.agent.multi_agent.common import base_middleware
 
 
-def test_routes_to_approval_when_tool_calls_present():
-    ai_msg = AIMessage(content="", tool_calls=[{"id": "1", "name": "send_email", "args": {"recipient": "x@y.com", "subject": "s", "body": "b"}}])
-    with patch.object(email_agent_mod, "_llm_with_tools") as mock:
-        mock.invoke.return_value = ai_msg
-        result = email_agent_node(_state())
-    assert result.goto == "approval"
-    assert result.update["messages"] == [ai_msg]
+def _kwargs():
+    with patch.object(mod, "create_agent") as ca:
+        mod.build_email_agent()
+    return ca.call_args.kwargs
 
 
-def test_routes_to_supervisor_parent_when_no_tool_calls():
-    ai_msg = AIMessage(content="I need the recipient's email address first.")
-    with patch.object(email_agent_mod, "_llm_with_tools") as mock:
-        mock.invoke.return_value = ai_msg
-        result = email_agent_node(_state())
-    assert result.goto == "supervisor"
-    assert result.graph == Command.PARENT
+def test_tools():
+    assert {t.name for t in mod._TOOLS} == {"send_email"}
 
 
-def test_build_email_agent_compiles_with_expected_nodes():
-    graph = build_email_agent()
-    assert set(graph.get_graph().nodes) >= {"agent", "approval", "tools"}
+def test_create_agent_call_with_hitl_on_send_email():
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    kw = _kwargs()
+    assert kw["system_prompt"] == EMAIL_SYSTEM_PROMPT
+    assert kw["tools"] == mod._TOOLS
+    assert kw["name"] == "email_agent"
+    mw = kw["middleware"]
+    assert [type(m) for m in mw[:3]] == [type(m) for m in base_middleware()]
+    assert isinstance(mw[3], HumanInTheLoopMiddleware)
+    assert set(mw[3].interrupt_on) == {"send_email"}
+    assert len(mw) == 4
 
 
-def test_send_email_triggers_interrupt_since_it_is_a_side_effect_tool():
-    from app.agent.graph import approval_node
-
-    pending = AIMessage(content="", tool_calls=[{"id": "1", "name": "send_email", "args": {"recipient": "x@y.com", "subject": "s", "body": "b"}}])
-    state = {"messages": [pending], "question": "q", "documents": []}
-    with patch("app.agent.graph.interrupt", return_value=["approve"]) as mock_interrupt:
-        result = approval_node(state)
-    mock_interrupt.assert_called_once()
-    assert result == {}
+def test_builds_a_real_agent_with_hitl_node():
+    nodes = mod.build_email_agent().get_graph().nodes
+    assert "HumanInTheLoopMiddleware.after_model" in nodes
