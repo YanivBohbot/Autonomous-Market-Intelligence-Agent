@@ -11,7 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@copilotkit/react-core": "1.73.3",
+    "@copilotkit/react-core": "1.74.0",
     "livekit-client": "^2.5.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
