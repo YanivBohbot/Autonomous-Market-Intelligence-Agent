@@ -92,3 +92,29 @@ class MarketDeskDisplayMiddleware(AgentMiddleware):
 
 
 market_desk_display = MarketDeskDisplayMiddleware()
+
+
+def normalize_portfolio(text: str, args: dict) -> list[dict]:
+    data = json.loads(text)
+    positions = data["positions"]
+    table = {
+        "type": "portfolio_table",
+        "positions": [
+            {
+                "ticker": p["ticker"], "shares": p["shares"], "price": p["price"],
+                "market_value": p["market_value"], "cost_basis": p["cost_basis"],
+                "unrealized_pnl": p["unrealized_pnl"], "unrealized_pnl_pct": p["unrealized_pnl_pct"],
+                "weight_pct": p["weight_pct"], "sector": p["sector"],
+            }
+            for p in positions
+        ],
+        "totals": data["totals"],
+    }
+    chart = {
+        "type": "portfolio_chart",
+        "slices": [{"ticker": p["ticker"], "weight_pct": p["weight_pct"]} for p in positions],
+    }
+    return [table, chart]
+
+
+DISPLAY_NORMALIZERS["portfolio_metrics"] = normalize_portfolio
