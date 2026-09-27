@@ -161,6 +161,24 @@ def test_normalize_ticker_news_with_no_usable_items_shows_nothing():
     assert display.DISPLAY_NORMALIZERS["yfinance_get_ticker_news"]("[]", {"symbol": "XXXX"}) == []
 
 
+def test_normalize_ticker_news_caps_at_7_items():
+    # Live QA: the LLM can ask yfinance_get_ticker_news for more than the
+    # default 5 (its `limit` arg is model-controlled), and a long list makes
+    # the card unreadable. The card is capped regardless of what the tool
+    # returned — a display concern, not a data concern.
+    entries = [
+        {"id": str(i), "content": {
+            "title": f"Headline {i}", "summary": "", "provider": {"displayName": "Wire"},
+            "canonicalUrl": {"url": f"https://example.com/{i}"}, "pubDate": "2026-09-27T00:00:00Z",
+        }}
+        for i in range(10)
+    ]
+    displays = display.DISPLAY_NORMALIZERS["yfinance_get_ticker_news"](json.dumps(entries), {"symbol": "AAPL"})
+    assert len(displays[0]["items"]) == 7
+    assert displays[0]["items"][0]["title"] == "Headline 0"
+    assert displays[0]["items"][-1]["title"] == "Headline 6"
+
+
 # Real format from search_knowledge_base_tool (knowledge_base.py): chunks
 # joined by "\n\n", each "[Source: F, page N] excerpt". One excerpt here
 # contains an internal blank line, to prove the parser doesn't split on it.

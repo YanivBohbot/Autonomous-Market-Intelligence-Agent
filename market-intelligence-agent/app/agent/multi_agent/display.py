@@ -39,6 +39,11 @@ Normalizer = Callable[[str, dict], list[dict]]
 # Populated by Tasks 2-5, one entry per displayable tool name.
 DISPLAY_NORMALIZERS: dict[str, Normalizer] = {}
 
+# The news card is unreadable past a handful of items; capped here regardless
+# of the `limit` the model passed to yfinance_get_ticker_news (a display
+# concern, not a data concern — the tool's own limit stays model-controlled).
+MAX_NEWS_ITEMS = 7
+
 
 def _content_text(content: Any) -> str:
     """ToolMessage.content is a plain string for tools that return a Python
@@ -194,7 +199,7 @@ def normalize_ticker_news(text: str, args: dict) -> list[dict]:
         })
     if not items:
         return []
-    return [{"type": "ticker_news", "items": items}]
+    return [{"type": "ticker_news", "items": items[:MAX_NEWS_ITEMS]}]
 
 
 DISPLAY_NORMALIZERS["yfinance_get_price_history"] = normalize_price_history
