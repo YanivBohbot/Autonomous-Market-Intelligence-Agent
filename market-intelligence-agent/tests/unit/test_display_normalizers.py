@@ -159,3 +159,45 @@ def test_normalize_ticker_news():
 
 def test_normalize_ticker_news_with_no_usable_items_shows_nothing():
     assert display.DISPLAY_NORMALIZERS["yfinance_get_ticker_news"]("[]", {"symbol": "XXXX"}) == []
+
+
+# Real format from search_knowledge_base_tool (knowledge_base.py): chunks
+# joined by "\n\n", each "[Source: F, page N] excerpt". One excerpt here
+# contains an internal blank line, to prove the parser doesn't split on it.
+RAG_TEXT = (
+    "[Source: Amazon-2024-10K.pdf, page 12] Net sales increased 11% to $637.9 billion.\n\n"
+    "This growth was\n\ndriven by AWS.\n\n"
+    "[Source: Amazon-2024-10K.pdf, page 45] Operating income was $68.6 billion."
+)
+
+
+def test_normalize_rag_sources_anchors_on_source_headers_not_blank_lines():
+    displays = display.DISPLAY_NORMALIZERS["search_knowledge_base"](RAG_TEXT, {})
+    assert displays == [{"type": "rag_sources", "sources": [
+        {"filename": "Amazon-2024-10K.pdf", "page": "12",
+         "excerpt": "Net sales increased 11% to $637.9 billion.\n\nThis growth was\n\ndriven by AWS."},
+        {"filename": "Amazon-2024-10K.pdf", "page": "45", "excerpt": "Operating income was $68.6 billion."},
+    ]}]
+
+
+def test_normalize_rag_sources_with_no_results_shows_nothing():
+    assert display.DISPLAY_NORMALIZERS["search_knowledge_base"](
+        "No relevant results found in the knowledge base for this query.", {}) == []
+
+
+def test_normalize_rag_sources_on_a_search_failure_shows_nothing():
+    assert display.DISPLAY_NORMALIZERS["search_knowledge_base"]("Knowledge base search failed: timeout", {}) == []
+
+
+# Real (post-StripToolImages) text for the local @playwright/mcp backend —
+# verified in tests/unit/test_tool_output_image_stripping.py's own fixture.
+SCREENSHOT_TEXT = "### Result\n- [Screenshot of viewport](screenshots/evidence.png)"
+
+
+def test_normalize_screenshot_extracts_the_png_path():
+    displays = display.DISPLAY_NORMALIZERS["browser_take_screenshot"](SCREENSHOT_TEXT, {})
+    assert displays == [{"type": "screenshot", "url": "/workspace/screenshots/evidence.png"}]
+
+
+def test_normalize_screenshot_with_no_png_shows_nothing():
+    assert display.DISPLAY_NORMALIZERS["browser_take_screenshot"]("no page loaded yet", {}) == []

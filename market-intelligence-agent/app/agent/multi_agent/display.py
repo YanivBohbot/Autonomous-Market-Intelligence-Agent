@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
@@ -198,3 +200,31 @@ def normalize_ticker_news(text: str, args: dict) -> list[dict]:
 DISPLAY_NORMALIZERS["yfinance_get_price_history"] = normalize_price_history
 DISPLAY_NORMALIZERS["yfinance_get_ticker_info"] = normalize_ticker_info
 DISPLAY_NORMALIZERS["yfinance_get_ticker_news"] = normalize_ticker_news
+
+
+_SOURCE_HEADER = re.compile(r"\[Source: (.*?), page (.*?)\]\s*")
+_PNG_PATH = re.compile(r"([\w./\\-]+\.png)")
+
+
+def normalize_rag_sources(text: str, args: dict) -> list[dict]:
+    matches = list(_SOURCE_HEADER.finditer(text))
+    if not matches:
+        return []
+    sources = []
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        sources.append({"filename": m.group(1), "page": m.group(2), "excerpt": text[start:end].strip()})
+    return [{"type": "rag_sources", "sources": sources}]
+
+
+def normalize_screenshot(text: str, args: dict) -> list[dict]:
+    match = _PNG_PATH.search(text)
+    if not match:
+        return []
+    filename = Path(match.group(1)).name
+    return [{"type": "screenshot", "url": f"/workspace/screenshots/{filename}"}]
+
+
+DISPLAY_NORMALIZERS["search_knowledge_base"] = normalize_rag_sources
+DISPLAY_NORMALIZERS["browser_take_screenshot"] = normalize_screenshot
