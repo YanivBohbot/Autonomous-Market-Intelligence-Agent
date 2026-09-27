@@ -15,9 +15,12 @@ const SPECIALIST_LABELS: Record<string, string> = {
 const GENERIC_LABEL = "Thinking...";
 
 // Mirrors DeskActivityRail's subscribe pattern, but derives a single
-// human-readable "what's happening right now" line instead of a full log —
-// shown inline above the input while the run is in flight, hidden as soon
-// as real content (the assistant's own answer) starts streaming.
+// human-readable "what's happening right now" line instead of a full log.
+// Rendered by DeskView inline in CopilotChat's own message list (via the
+// messageView slot), right where the assistant's answer will appear, so
+// it reads as "the AI is working on this" rather than a separate widget.
+// Visible from the run starting until real content (the assistant's own
+// answer) starts streaming.
 export function ThinkingIndicator() {
   const { agent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
   const [label, setLabel] = useState<string | null>(null);
@@ -51,11 +54,11 @@ export function ThinkingIndicator() {
   if (!label) return null;
 
   return (
-    <div className="flex items-center gap-2 px-1 pb-2 font-mono text-xs text-terminal-muted">
+    <div className="flex items-center gap-2 rounded-xl border border-terminal-border bg-terminal-panel px-3 py-2 font-mono text-xs text-terminal-accent">
       <span className="flex gap-0.5">
-        <span className="h-1 w-1 animate-bounce rounded-full bg-terminal-accent [animation-delay:-0.3s]" />
-        <span className="h-1 w-1 animate-bounce rounded-full bg-terminal-accent [animation-delay:-0.15s]" />
-        <span className="h-1 w-1 animate-bounce rounded-full bg-terminal-accent" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-terminal-accent [animation-delay:-0.3s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-terminal-accent [animation-delay:-0.15s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-terminal-accent" />
       </span>
       {label}
     </div>

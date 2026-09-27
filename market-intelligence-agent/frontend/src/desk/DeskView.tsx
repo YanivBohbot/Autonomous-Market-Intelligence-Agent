@@ -40,7 +40,7 @@ function DeskBody({ threadId }: { threadId: string }) {
   return (
     <div className="flex min-h-0 flex-1">
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <div className="pointer-events-none absolute bottom-20 left-4 z-10">
+        <div className="pointer-events-none absolute inset-x-4 bottom-20 z-50 flex">
           <ThinkingIndicator />
         </div>
         <CopilotChat
