@@ -153,6 +153,36 @@ def test_hop_cap_short_circuits_without_calling_llm():
     mock.invoke.assert_not_called()
 
 
+def test_a_new_turns_human_message_resets_hops_left_over_from_earlier_turns():
+    """Regression: agent_hops was never reset between turns, so it accumulated
+    across the WHOLE conversation instead of per turn. After ~4 hops total —
+    often just 2-3 user turns — the hop cap above silently short-circuited to
+    FINISH with no LLM call and no answer, for every later turn: live QA (and
+    this session's own manual testing) hit exactly this, "the agent doesn't
+    respond anymore" after a handful of questions, no error anywhere. A fresh
+    HumanMessage means record_question just ran for a NEW question, so hops
+    left over from a previous turn must not count against this one."""
+    history = [HumanMessage(content="q1"), AIMessage(content="a1"), HumanMessage(content="q2")]
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="new question")
+        result = supervisor_node(_state(agent_hops=MAX_AGENT_HOPS, messages=history))
+
+    mock.invoke.assert_called_once()
+    assert result.goto == "finance_agent"
+    assert result.update["agent_hops"] == 1
+
+
+def test_hops_still_cap_mid_turn_even_right_after_a_human_message_was_seen_earlier():
+    """The reset only applies when the human message is the LAST message
+    (a turn just started); hops accumulated within the CURRENT turn (after
+    that human message, via one or more specialist hops) must still cap."""
+    history = [HumanMessage(content="q"), AIMessage(content="", tool_calls=[])]
+    with patch.object(supervisor_mod, "_router") as mock:
+        result = supervisor_node(_state(agent_hops=MAX_AGENT_HOPS, messages=history))
+    assert result.goto == END
+    mock.invoke.assert_not_called()
+
+
 def test_router_output_is_hidden_from_ag_ui_streams():
     # ag-ui-langgraph streams via astream_events and drops LLM chunks whose run
     # metadata says emit-messages/emit-tool-calls False. The routing JSON

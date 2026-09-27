@@ -49,7 +49,17 @@ MAX_AGENT_HOPS = 4
 
 
 def supervisor_node(state: SupervisorState) -> Command[Route]:
-    hops = state.get("agent_hops", 0)
+    # agent_hops is a per-turn recursion guard. record_question appends the
+    # new HumanMessage before this node runs, so a fresh HumanMessage as the
+    # last message means a new turn just started: any hops left over from a
+    # previous turn no longer apply. Without this reset, hops accumulated
+    # across the WHOLE conversation instead of per turn, and after ~4 hops
+    # total (often just 2-3 user turns) the supervisor would silently
+    # short-circuit to FINISH below with no LLM call and no answer, for
+    # every subsequent turn of the conversation.
+    messages = state.get("messages", [])
+    last = messages[-1] if messages else None
+    hops = 0 if isinstance(last, HumanMessage) else state.get("agent_hops", 0)
     if hops >= MAX_AGENT_HOPS:
         return _finish()
 
@@ -59,8 +69,6 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     # specialist to fetch the same answer again instead of picking FINISH —
     # prompt wording alone couldn't fully fix this non-determinism, so we
     # don't ask the LLM to reconfirm something we can already tell.
-    messages = state.get("messages", [])
-    last = messages[-1] if messages else None
     if (
         state.get("next_agent") is not None
         and isinstance(last, AIMessage)
