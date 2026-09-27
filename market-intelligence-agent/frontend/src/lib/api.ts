@@ -27,3 +27,11 @@ export function newThreadId(): string {
   const rand = Math.random().toString(36).slice(2, 10);
   return `web_session_${rand}`;
 }
+
+export async function uploadToWorkspace(file: File, base = API_BASE): Promise<{ path: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${base}/copilot/uploads`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(`upload ${res.status}: ${await res.text()}`);
+  return res.json();
+}
