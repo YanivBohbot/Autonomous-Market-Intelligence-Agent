@@ -7,20 +7,24 @@ handler mirrors ag_ui_langgraph.add_langgraph_fastapi_endpoint around it.
 Included only when settings.COPILOT_ENABLED is true (see server.py).
 """
 import logging
+from pathlib import Path
+from uuid import uuid4
 
 from ag_ui.core import EventType, RunErrorEvent
 from ag_ui.core.types import RunAgentInput
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 
 from app.agent.multi_agent import build_multi_agent_app
+from app.core.config import settings
 
 MARKET_DESK_AGENT_NAME = "market_desk"
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # matches the frontend's AttachmentsConfig.maxSize
 # Each create_agent model turn crosses several middleware nodes, so a normal
 # multi-tool answer overruns LangGraph's default of 25 steps. Model calls stay
 # bounded by ModelCallLimitMiddleware and the supervisor's MAX_AGENT_HOPS.
@@ -107,3 +111,16 @@ async def market_desk(input_data: RunAgentInput, request: Request):
             yield encoder.encode(RunErrorEvent(type=EventType.RUN_ERROR, message=str(exc)))
 
     return StreamingResponse(events(), media_type=encoder.get_content_type())
+
+
+@router.post("/copilot/uploads")
+async def upload_to_workspace(file: UploadFile = File(...)) -> dict:
+    body = await file.read()
+    if len(body) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large.")
+    safe_name = Path(file.filename or "upload").name  # strips ".." / directory components
+    unique_name = f"{uuid4().hex[:8]}_{safe_name}"
+    uploads_dir = Path(settings.WORKSPACE_ROOT) / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    (uploads_dir / unique_name).write_bytes(body)
+    return {"path": f"uploads/{unique_name}"}

@@ -62,3 +62,11 @@ def test_server_imports_without_ag_ui_installed():
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env)
     assert proc.returncode == 0, proc.stderr[-2000:]
     assert proc.stdout.strip().endswith("ok")
+
+
+def test_uploads_route_absent_when_disabled_returns_404(monkeypatch):
+    monkeypatch.setattr(server.settings, "COPILOT_ENABLED", False)
+    app = FastAPI()
+    server.include_market_desk_routes(app)
+    resp = TestClient(app).post("/copilot/uploads", files={"file": ("x.txt", b"x")})
+    assert resp.status_code == 404
