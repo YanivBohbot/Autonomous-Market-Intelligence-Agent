@@ -118,3 +118,21 @@ def normalize_portfolio(text: str, args: dict) -> list[dict]:
 
 
 DISPLAY_NORMALIZERS["portfolio_metrics"] = normalize_portfolio
+
+
+def normalize_concentration(text: str, args: dict) -> list[dict]:
+    data = json.loads(text)
+    breaches = data.get("breaches") or []
+    if not breaches:
+        return []
+    return [{
+        "type": "concentration_alert",
+        "threshold_pct": data["threshold_pct"],
+        "breaches": [
+            {"label": b["label"], "ticker": b["ticker"], "weight_pct": b["weight_pct"], "market_value": b["market_value"]}
+            for b in breaches
+        ],
+    }]
+
+
+DISPLAY_NORMALIZERS["concentration_screen"] = normalize_concentration

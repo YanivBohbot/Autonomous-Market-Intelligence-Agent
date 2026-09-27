@@ -37,3 +37,31 @@ def test_normalize_portfolio_produces_table_and_chart():
 
     chart = displays[1]
     assert chart["slices"] == [{"ticker": "BND", "weight_pct": 13.62}, {"ticker": "NVDA", "weight_pct": 57.5}]
+
+
+# Real shape of screen_clients()'s return (concentration.py) — "prices" is
+# dropped by the normalizer, it's not display-relevant.
+CONCENTRATION_JSON = json.dumps({
+    "threshold_pct": 30.0, "screened_count": 2, "screened_labels": ["Margaret Collins", "Martin Levy"],
+    "breach_count": 1,
+    "breaches": [{"label": "Margaret Collins", "ticker": "NVDA", "weight_pct": 57.5,
+                  "market_value": 89436.0, "portfolio_market_value": 155564.81}],
+    "prices": {"NVDA": 1259.66},
+})
+
+CONCENTRATION_NO_BREACHES_JSON = json.dumps({
+    "threshold_pct": 30.0, "screened_count": 1, "screened_labels": ["Diversified Dan"],
+    "breach_count": 0, "breaches": [], "prices": {},
+})
+
+
+def test_normalize_concentration_produces_an_alert_per_breach():
+    displays = display.DISPLAY_NORMALIZERS["concentration_screen"](CONCENTRATION_JSON, {})
+    assert displays == [{
+        "type": "concentration_alert", "threshold_pct": 30.0,
+        "breaches": [{"label": "Margaret Collins", "ticker": "NVDA", "weight_pct": 57.5, "market_value": 89436.0}],
+    }]
+
+
+def test_normalize_concentration_with_no_breaches_shows_nothing():
+    assert display.DISPLAY_NORMALIZERS["concentration_screen"](CONCENTRATION_NO_BREACHES_JSON, {}) == []
