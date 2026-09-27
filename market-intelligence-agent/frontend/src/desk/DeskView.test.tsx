@@ -28,4 +28,18 @@ describe("DeskView", () => {
     expect(attachments.enabled).toBe(true);
     expect(typeof attachments.onUpload).toBe("function");
   });
+
+  it("includes the saved workspace path as attachment metadata the model can read", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ path: "uploads/ab12_report.pdf" }) }));
+    render(<DeskView threadId="t1" />);
+    const props = chatProps[chatProps.length - 1];
+    const attachments = props.attachments as { onUpload: (f: File) => Promise<{ type: string; value: string; metadata?: Record<string, unknown> }> };
+    const file = new File(["x"], "report.pdf", { type: "application/pdf" });
+    const result = await attachments.onUpload(file);
+    expect(result).toEqual({
+      type: "url",
+      value: "uploads/ab12_report.pdf",
+      metadata: { filename: "report.pdf", note: "Read this with read_text_file at path uploads/ab12_report.pdf if relevant." },
+    });
+  });
 });

@@ -48,7 +48,11 @@ function DeskBody({ threadId }: { threadId: string }) {
             maxSize: 20 * 1024 * 1024,
             onUpload: async (file) => {
               const { path } = await uploadToWorkspace(file);
-              return { type: "url", value: path, metadata: { filename: file.name } };
+              return {
+                type: "url",
+                value: path,
+                metadata: { filename: file.name, note: `Read this with read_text_file at path ${path} if relevant.` },
+              };
             },
           }}
         />
