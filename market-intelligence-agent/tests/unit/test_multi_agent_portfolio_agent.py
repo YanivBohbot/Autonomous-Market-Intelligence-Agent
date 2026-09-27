@@ -4,6 +4,7 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import portfolio_agent as mod
 from app.agent.multi_agent.common import base_middleware
+from app.agent.multi_agent.display import market_desk_display
 
 
 def _kwargs():
@@ -24,7 +25,8 @@ def test_create_agent_call():
     assert kw["system_prompt"] == PORTFOLIO_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "portfolio_agent"
-    assert [type(m) for m in kw["middleware"]] == [type(m) for m in base_middleware()]
+    assert [type(m) for m in kw["middleware"][:-1]] == [type(m) for m in base_middleware()]
+    assert kw["middleware"][-1] is market_desk_display
     assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 

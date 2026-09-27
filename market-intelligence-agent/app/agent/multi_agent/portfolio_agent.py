@@ -1,6 +1,7 @@
 from langchain.agents import create_agent
 
 from app.agent.multi_agent.common import base_middleware, specialist_model
+from app.agent.multi_agent.display import market_desk_display
 from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
 from app.agent.tools import (
     concentration_screen_tool,
@@ -31,6 +32,6 @@ def build_portfolio_agent():
         model=specialist_model(),
         tools=_TOOLS,
         system_prompt=PORTFOLIO_SYSTEM_PROMPT,
-        middleware=[*base_middleware()],
+        middleware=[*base_middleware(), market_desk_display],
         name="portfolio_agent",
     )

@@ -1,6 +1,7 @@
 from langchain.agents import create_agent
 
 from app.agent.multi_agent.common import base_middleware, redact_emails, specialist_model
+from app.agent.multi_agent.display import market_desk_display
 from app.agent.prompts.specialist_agent_prompts import RAG_SYSTEM_PROMPT
 from app.agent.tools import search_knowledge_base_tool, web_search_tool
 
@@ -13,6 +14,6 @@ def build_rag_agent():
         tools=_TOOLS,
         system_prompt=RAG_SYSTEM_PROMPT,
         # Queries go to third parties (Tavily / Yahoo / web pages): no addresses.
-        middleware=[*base_middleware(), redact_emails()],
+        middleware=[*base_middleware(), redact_emails(), market_desk_display],
         name="rag_agent",
     )

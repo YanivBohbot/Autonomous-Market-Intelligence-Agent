@@ -14,6 +14,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from app.agent.multi_agent import email_agent as email_mod
 from app.agent.multi_agent import finance_agent as finance_mod
+from app.agent.multi_agent import portfolio_agent as portfolio_mod
 from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import RoutingDecision
 from app.api.routers.copilot import attach_market_desk, router
@@ -74,6 +75,18 @@ def email_client():
         stack.enter_context(patch.object(email_mod, "_TOOLS", [_fake_send_email]))
         stack.enter_context(patch.object(email_mod, "_is_client_email", _always_known))
         client, _ = _client_with(stack, "email_agent")
+        yield client
+
+
+@pytest.fixture
+def portfolio_client():
+    call = {"id": "p1", "name": "portfolio_metrics",
+            "args": {"positions": [{"ticker": "BND", "shares": 300, "avg_cost": 73.33, "price": 70.63, "sector": "ETF"}]}}
+    fake = StreamingFakeToolModel([AIMessage(content="", tool_calls=[call]),
+                                    AIMessage(content="BND is worth $21,189.")])
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(portfolio_mod, "specialist_model", return_value=fake))
+        client, _ = _client_with(stack, "portfolio_agent")
         yield client
 
 
@@ -221,3 +234,13 @@ def test_cancel_rejects_the_pending_calls_and_frees_the_thread(email_client):
     assert events[-1]["type"] == "RUN_FINISHED"
     assert (events[-1].get("outcome") or {}).get("type") != "interrupt"
     assert SENT == []
+
+
+def test_portfolio_result_is_enveloped_for_the_frontend(portfolio_client):
+    events = _events(portfolio_client.post(PATH, json=_run_input(
+        "t9", "r1", [{"id": "u1", "role": "user", "content": "BND value?"}])).text)
+    texts = _snapshot_texts(events)
+    envelopes = [json.loads(t) for t in texts if t.startswith('{"summary"')]
+    assert envelopes, "expected an enveloped tool message in the snapshot"
+    assert envelopes[0]["displays"][0]["type"] == "portfolio_table"
+    assert envelopes[0]["displays"][1]["type"] == "portfolio_chart"

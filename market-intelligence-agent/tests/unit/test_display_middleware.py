@@ -84,3 +84,30 @@ async def test_async_path_mirrors_the_sync_path():
     with patch.dict(display.DISPLAY_NORMALIZERS, {"fake_tool": lambda text, args: [{"type": "fake"}]}):
         result = await display.market_desk_display.awrap_tool_call(_request("fake_tool", {}), await _ahandler_returning("hi"))
     assert json.loads(result.content) == {"summary": "hi", "displays": [{"type": "fake"}]}
+
+
+def test_browser_agent_strips_images_before_enveloping():
+    # Regression: AgentMiddleware.wrap_tool_call chains "first = outermost"
+    # (langchain/agents/factory.py, _chain_tool_call_wrappers) — the display
+    # middleware must be listed BEFORE strip_tool_images in browser_agent's
+    # middleware list, so it only ever sees text, never a raw image block.
+    from app.agent.multi_agent.common import strip_tool_images
+
+    image_and_text = [
+        {"type": "text", "text": "### Result\n- [Screenshot of viewport](screenshots/x.png)"},
+        {"type": "image", "data": "base64...", "mimeType": "image/png"},
+    ]
+
+    def raw_handler(request):
+        return ToolMessage(content=image_and_text, name="browser_take_screenshot", tool_call_id="c1")
+
+    # Simulate the chain exactly as build_browser_agent() wires it: display
+    # middleware listed before strip_tool_images -> display's handler(request)
+    # call resolves through strip_tool_images first.
+    def strip_then_raw(request):
+        return strip_tool_images.wrap_tool_call(request, raw_handler)
+
+    result = display.market_desk_display.wrap_tool_call(_request("browser_take_screenshot", {}), strip_then_raw)
+    envelope = json.loads(result.content)
+    assert envelope["displays"] == [{"type": "screenshot", "url": "/workspace/screenshots/x.png"}]
+    assert "base64" not in result.content

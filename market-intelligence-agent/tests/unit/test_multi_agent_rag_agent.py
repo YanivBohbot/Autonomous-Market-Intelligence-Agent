@@ -4,6 +4,7 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import rag_agent as mod
 from app.agent.multi_agent.common import base_middleware
+from app.agent.multi_agent.display import market_desk_display
 
 
 def _kwargs():
@@ -27,7 +28,8 @@ def test_create_agent_call():
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
     # Queries go to third parties (Tavily / Yahoo): emails are redacted first.
     assert (mw[len(base)].pii_type, mw[len(base)].strategy) == ("email", "redact")
-    assert len(mw) == len(base) + 1
+    assert mw[len(base) + 1] is market_desk_display
+    assert len(mw) == len(base) + 2
     assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 
