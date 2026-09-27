@@ -3,6 +3,7 @@ import { CopilotChat, CopilotKitProvider, HttpAgent, useConfigureSuggestions } f
 import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
 import { DeskActivityRail } from "./DeskActivityRail";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useDeskInterrupt } from "./useDeskInterrupt";
 import { useToolDisplay } from "./displays/useToolDisplay";
 import { uploadToWorkspace } from "../lib/api";
@@ -38,7 +39,10 @@ function DeskBody({ threadId }: { threadId: string }) {
   }, []);
   return (
     <div className="flex min-h-0 flex-1">
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="relative flex min-w-0 flex-1 flex-col">
+        <div className="pointer-events-none absolute bottom-20 left-4 z-10">
+          <ThinkingIndicator />
+        </div>
         <CopilotChat
           agentId={MARKET_DESK_AGENT_ID}
           threadId={threadId}
