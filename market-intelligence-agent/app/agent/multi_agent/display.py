@@ -136,3 +136,65 @@ def normalize_concentration(text: str, args: dict) -> list[dict]:
 
 
 DISPLAY_NORMALIZERS["concentration_screen"] = normalize_concentration
+
+
+def _row_ticker(args: dict) -> str:
+    return str(args.get("symbol") or args.get("ticker") or "").upper()
+
+
+def normalize_price_history(text: str, args: dict) -> list[dict]:
+    points = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 5 or not cells[0][:4].isdigit():
+            continue  # skips the header row ("Date") and the ":---" separator row
+        try:
+            close = float(cells[4])
+        except ValueError:
+            continue
+        points.append({"date": cells[0][:10], "close": close})
+    if not points:
+        return []
+    return [{"type": "price_chart", "ticker": _row_ticker(args), "points": points}]
+
+
+def normalize_ticker_info(text: str, args: dict) -> list[dict]:
+    data = json.loads(text)
+    price = data.get("currentPrice") or data.get("regularMarketPrice")
+    if price is None:
+        return []
+    return [{
+        "type": "ticker_info", "ticker": _row_ticker(args) or str(data.get("symbol") or ""),
+        "name": data.get("shortName") or data.get("longName") or "",
+        "sector": data.get("sector"), "industry": data.get("industry"),
+        "current_price": float(price), "currency": data.get("currency") or "USD",
+        "market_cap": data.get("marketCap"), "fifty_two_week_low": data.get("fiftyTwoWeekLow"),
+        "fifty_two_week_high": data.get("fiftyTwoWeekHigh"),
+    }]
+
+
+def normalize_ticker_news(text: str, args: dict) -> list[dict]:
+    entries = json.loads(text)
+    items = []
+    for entry in entries:
+        content = entry.get("content", {}) if isinstance(entry, dict) else {}
+        title = content.get("title")
+        url = (content.get("canonicalUrl") or {}).get("url") or (content.get("clickThroughUrl") or {}).get("url")
+        if not title or not url:
+            continue
+        items.append({
+            "title": title, "summary": content.get("summary") or "",
+            "source": (content.get("provider") or {}).get("displayName") or "",
+            "url": url, "published_at": content.get("pubDate") or "",
+        })
+    if not items:
+        return []
+    return [{"type": "ticker_news", "items": items}]
+
+
+DISPLAY_NORMALIZERS["yfinance_get_price_history"] = normalize_price_history
+DISPLAY_NORMALIZERS["yfinance_get_ticker_info"] = normalize_ticker_info
+DISPLAY_NORMALIZERS["yfinance_get_ticker_news"] = normalize_ticker_news

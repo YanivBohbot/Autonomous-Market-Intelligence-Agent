@@ -65,3 +65,97 @@ def test_normalize_concentration_produces_an_alert_per_breach():
 
 def test_normalize_concentration_with_no_breaches_shows_nothing():
     assert display.DISPLAY_NORMALIZERS["concentration_screen"](CONCENTRATION_NO_BREACHES_JSON, {}) == []
+
+
+# Real (trimmed) yfinance_get_price_history text — a markdown table, not
+# JSON. Captured live: the raw MCP result is
+# [{"type": "text", "text": THIS_STRING, "id": "..."}]; _content_text already
+# extracts THIS_STRING before the normalizer runs. No ticker column exists in
+# the table itself — the tool call's own args carry it.
+PRICE_HISTORY_TEXT = (
+    "| Date                      |   Open |   High |    Low |   Close |      Volume |   Dividends |   Stock Splits |\n"
+    "|:--------------------------|-------:|-------:|-------:|--------:|------------:|------------:|---------------:|\n"
+    "| 2026-09-21 00:00:00-04:00 | 335.28 | 339.64 | 333.05 |  338.98 | 3.49992e+07 |           0 |              0 |\n"
+    "| 2026-09-22 00:00:00-04:00 | 340.14 | 345.34 | 338.75 |  339.75 | 4.07118e+07 |           0 |              0 |\n"
+    "| 2026-09-23 00:00:00-04:00 | 341.08 | 341.8  | 335.5  |  337.02 | 3.16588e+07 |           0 |              0 |"
+)
+
+
+def test_normalize_price_history_parses_the_markdown_table():
+    displays = display.DISPLAY_NORMALIZERS["yfinance_get_price_history"](PRICE_HISTORY_TEXT, {"symbol": "AAPL"})
+    assert displays == [{
+        "type": "price_chart", "ticker": "AAPL",
+        "points": [
+            {"date": "2026-09-21", "close": 338.98},
+            {"date": "2026-09-22", "close": 339.75},
+            {"date": "2026-09-23", "close": 337.02},
+        ],
+    }]
+
+
+def test_normalize_price_history_falls_back_to_the_ticker_arg_name():
+    displays = display.DISPLAY_NORMALIZERS["yfinance_get_price_history"](PRICE_HISTORY_TEXT, {"ticker": "aapl"})
+    assert displays[0]["ticker"] == "AAPL"
+
+
+def test_normalize_price_history_with_no_rows_shows_nothing():
+    assert display.DISPLAY_NORMALIZERS["yfinance_get_price_history"]("no data available", {"symbol": "XXXX"}) == []
+
+
+# Trimmed real yfinance_get_ticker_info JSON text (captured live for AAPL) —
+# only the fields the display needs, but with the exact real key names.
+TICKER_INFO_JSON = json.dumps({
+    "shortName": "Apple Inc.", "longName": "Apple Inc.", "sector": "Technology",
+    "industry": "Consumer Electronics", "currentPrice": 341.07, "regularMarketPrice": 341.07,
+    "currency": "USD", "marketCap": 4977636933632, "fiftyTwoWeekLow": 243.42, "fiftyTwoWeekHigh": 345.34,
+})
+
+
+def test_normalize_ticker_info():
+    displays = display.DISPLAY_NORMALIZERS["yfinance_get_ticker_info"](TICKER_INFO_JSON, {"symbol": "AAPL"})
+    assert displays == [{
+        "type": "ticker_info", "ticker": "AAPL", "name": "Apple Inc.", "sector": "Technology",
+        "industry": "Consumer Electronics", "current_price": 341.07, "currency": "USD",
+        "market_cap": 4977636933632, "fifty_two_week_low": 243.42, "fifty_two_week_high": 345.34,
+    }]
+
+
+def test_normalize_ticker_info_with_no_price_shows_nothing():
+    assert display.DISPLAY_NORMALIZERS["yfinance_get_ticker_info"](json.dumps({"shortName": "Delisted Co"}), {"symbol": "XXXX"}) == []
+
+
+# Trimmed real yfinance_get_ticker_news JSON text (captured live for AAPL) —
+# real nesting (content.title, content.provider.displayName, ...), one item
+# missing a canonicalUrl to prove the clickThroughUrl fallback, one item
+# missing a title entirely to prove it gets dropped rather than crashing.
+TICKER_NEWS_JSON = json.dumps([
+    {"id": "1", "content": {
+        "title": "Does the S&P 500 Have a Magnificent Seven Problem?",
+        "summary": "If the AI revolution doesn't live up to the hype, the whole market feels it.",
+        "pubDate": "2026-09-27T13:09:00Z",
+        "provider": {"displayName": "Motley Fool"},
+        "canonicalUrl": {"url": "https://www.fool.com/a"},
+        "clickThroughUrl": {"url": "https://finance.yahoo.com/a"},
+    }},
+    {"id": "2", "content": {
+        "title": "Apple stock ticks up", "summary": "", "pubDate": "2026-09-27T10:00:00Z",
+        "provider": {"displayName": "Reuters"}, "canonicalUrl": None,
+        "clickThroughUrl": {"url": "https://finance.yahoo.com/b"},
+    }},
+    {"id": "3", "content": {"title": None, "summary": "no title, must be dropped", "provider": {}}},
+])
+
+
+def test_normalize_ticker_news():
+    displays = display.DISPLAY_NORMALIZERS["yfinance_get_ticker_news"](TICKER_NEWS_JSON, {"symbol": "AAPL"})
+    assert displays == [{"type": "ticker_news", "items": [
+        {"title": "Does the S&P 500 Have a Magnificent Seven Problem?",
+         "summary": "If the AI revolution doesn't live up to the hype, the whole market feels it.",
+         "source": "Motley Fool", "url": "https://www.fool.com/a", "published_at": "2026-09-27T13:09:00Z"},
+        {"title": "Apple stock ticks up", "summary": "", "source": "Reuters",
+         "url": "https://finance.yahoo.com/b", "published_at": "2026-09-27T10:00:00Z"},
+    ]}]
+
+
+def test_normalize_ticker_news_with_no_usable_items_shows_nothing():
+    assert display.DISPLAY_NORMALIZERS["yfinance_get_ticker_news"]("[]", {"symbol": "XXXX"}) == []
