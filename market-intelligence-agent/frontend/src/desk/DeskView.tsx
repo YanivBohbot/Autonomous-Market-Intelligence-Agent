@@ -4,6 +4,7 @@ import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
 import { DeskActivityRail } from "./DeskActivityRail";
 import { useDeskInterrupt } from "./useDeskInterrupt";
+import { useToolDisplay } from "./displays/useToolDisplay";
 
 // Market Desk: CopilotKit v2 talking AG-UI straight to FastAPI (no runtime).
 // Remounted per thread by App (key={threadId}), so New session starts clean.
@@ -26,6 +27,7 @@ export function DeskView({ threadId }: { threadId: string }) {
 
 function DeskBody({ threadId }: { threadId: string }) {
   useDeskInterrupt();
+  useToolDisplay();
   return (
     <div className="flex min-h-0 flex-1">
       <main className="flex min-w-0 flex-1 flex-col">

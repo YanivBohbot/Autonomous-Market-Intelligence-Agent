@@ -5,7 +5,6 @@ class ResizeObserver {
   unobserve() {}
   disconnect() {}
 }
-// @ts-expect-error jsdom has no ResizeObserver; recharts' ResponsiveContainer needs one.
 window.ResizeObserver = window.ResizeObserver || ResizeObserver;
 
 Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, value: 400 });
