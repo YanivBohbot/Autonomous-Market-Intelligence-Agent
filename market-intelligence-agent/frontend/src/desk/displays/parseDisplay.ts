@@ -15,6 +15,7 @@ const VALIDATORS: Record<DisplayPayload["type"], (d: Record<string, unknown>) =>
   concentration_alert: (d) => Array.isArray(d.breaches),
   screenshot: (d) => typeof d.url === "string",
   rag_sources: (d) => Array.isArray(d.sources),
+  report_file: (d) => typeof d.filename === "string" && typeof d.url === "string",
 };
 
 function isValidDisplay(entry: unknown): entry is DisplayPayload {

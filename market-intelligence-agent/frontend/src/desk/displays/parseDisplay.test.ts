@@ -41,4 +41,18 @@ describe("parseDisplay", () => {
   it("returns an envelope with an empty displays list rather than null", () => {
     expect(parseDisplay(JSON.stringify({ summary: "text", displays: [] }))).toEqual({ summary: "text", displays: [] });
   });
+
+  it("validates a report_file display", () => {
+    const reportFile = { type: "report_file", filename: "brief.html", url: "/workspace/files/brief.html" };
+    const envelope = parseDisplay(JSON.stringify({ summary: "text", displays: [reportFile] }));
+    expect(envelope?.displays).toEqual([reportFile]);
+  });
+
+  it("drops a report_file entry missing url", () => {
+    const envelope = parseDisplay(JSON.stringify({
+      summary: "text",
+      displays: [portfolioTable, { type: "report_file", filename: "brief.html" }],
+    }));
+    expect(envelope?.displays).toEqual([portfolioTable]);
+  });
 });

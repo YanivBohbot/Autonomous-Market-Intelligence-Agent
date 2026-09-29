@@ -22,7 +22,8 @@ export type DisplayPayload =
   | { type: "ticker_news"; items: { title: string; summary: string; source: string; url: string; published_at: string }[] }
   | { type: "concentration_alert"; threshold_pct: number; breaches: { label: string; ticker: string; weight_pct: number; market_value: number }[] }
   | { type: "screenshot"; url: string }
-  | { type: "rag_sources"; sources: { filename: string; page: string; excerpt: string }[] };
+  | { type: "rag_sources"; sources: { filename: string; page: string; excerpt: string }[] }
+  | { type: "report_file"; filename: string; url: string };
 
 export interface DisplayEnvelope {
   summary: string;
