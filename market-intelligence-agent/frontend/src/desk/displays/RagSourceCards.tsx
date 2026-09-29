@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
 import { MARKET_DESK_AGENT_ID } from "../constants";
 import type { DisplayPayload } from "./types";
@@ -16,32 +16,36 @@ function citedKeys(text: string): Set<string> {
 
 // Narrows the card to the source(s) the reply actually cites (e.g.
 // "[Source: Amazon-2024-10K.pdf, page 50]"), instead of every chunk
-// search_knowledge_base retrieved (k=4 by default) regardless of whether the
-// model used it. Falls back to every source if the reply hasn't streamed a
-// recognizable citation yet (or cites something that doesn't match), so the
-// card never goes empty.
-function useCitedSources(toolCallId: string | undefined, sources: Source[]): Source[] {
+// search_knowledge_base retrieved (k=4 by default), most of which the model
+// never references. Tracks the run's streamed text itself, mirroring
+// ThinkingIndicator/DeskActivityRail's agent.subscribe pattern, instead of
+// reading agent.messages directly — that array's identity doesn't reliably
+// change as tokens stream in, which left an earlier version of this stuck
+// showing every source forever. Falls back to every source until a
+// recognizable citation has streamed in.
+function useCitedSources(sources: Source[]): Source[] {
   const { agent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
-  const messages = agent.messages;
-  return useMemo(() => {
-    if (!toolCallId) return sources;
-    const toolIdx = messages.findIndex(
-      (m) => m.role === "tool" && (m as { toolCallId?: string }).toolCallId === toolCallId,
-    );
-    if (toolIdx === -1) return sources;
-    const reply = messages
-      .slice(toolIdx + 1)
-      .find((m) => m.role === "assistant" && typeof m.content === "string" && m.content.length > 0);
-    if (!reply || typeof reply.content !== "string") return sources;
-    const cited = citedKeys(reply.content);
-    if (cited.size === 0) return sources;
-    const filtered = sources.filter((s) => cited.has(`${s.filename}|${s.page}`));
-    return filtered.length > 0 ? filtered : sources;
-  }, [messages, toolCallId, sources]);
+  const [replyText, setReplyText] = useState("");
+
+  useEffect(() => {
+    const sub = agent.subscribe({
+      onEvent: ({ event }) => {
+        const e = event as { type: string; delta?: string };
+        if (e.type === "RUN_STARTED") setReplyText("");
+        else if (e.type === "TEXT_MESSAGE_CONTENT") setReplyText((prev) => prev + (e.delta ?? ""));
+      },
+    });
+    return () => sub.unsubscribe();
+  }, [agent]);
+
+  const cited = citedKeys(replyText);
+  if (cited.size === 0) return sources;
+  const filtered = sources.filter((s) => cited.has(`${s.filename}|${s.page}`));
+  return filtered.length > 0 ? filtered : sources;
 }
 
-export function RagSourceCards({ display, toolCallId }: { display: RagSourcesDisplay; toolCallId?: string }) {
-  const sources = useCitedSources(toolCallId, display.sources);
+export function RagSourceCards({ display }: { display: RagSourcesDisplay }) {
+  const sources = useCitedSources(display.sources);
   return (
     <div className="flex flex-col gap-1.5">
       {sources.map((s, i) => (

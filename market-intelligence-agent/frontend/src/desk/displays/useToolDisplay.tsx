@@ -11,7 +11,7 @@ import { ScreenshotCard } from "./ScreenshotCard";
 import { RagSourceCards } from "./RagSourceCards";
 import type { DisplayPayload } from "./types";
 
-function Rendered({ displays, toolCallId }: { displays: DisplayPayload[]; toolCallId?: string }) {
+function Rendered({ displays }: { displays: DisplayPayload[] }) {
   return (
     <div className="flex flex-col gap-2">
       {displays.map((d, i) => {
@@ -23,20 +23,20 @@ function Rendered({ displays, toolCallId }: { displays: DisplayPayload[]; toolCa
           case "ticker_news": return <TickerNewsList key={i} display={d} />;
           case "concentration_alert": return <ConcentrationAlert key={i} display={d} />;
           case "screenshot": return <ScreenshotCard key={i} display={d} />;
-          case "rag_sources": return <RagSourceCards key={i} display={d} toolCallId={toolCallId} />;
+          case "rag_sources": return <RagSourceCards key={i} display={d} />;
         }
       })}
     </div>
   );
 }
 
-function renderDisplayResult(props: { status: string; result?: string; toolCallId?: string }) {
+function renderDisplayResult(props: { status: string; result?: string }) {
   // The activity rail already covers "still running"; nothing extra to show
   // here until the tool call actually has a result.
   if (props.status !== "complete") return null;
   const envelope = parseDisplay(props.result);
   if (!envelope || envelope.displays.length === 0) return null;
-  return <Rendered displays={envelope.displays} toolCallId={props.toolCallId} />;
+  return <Rendered displays={envelope.displays} />;
 }
 
 // Mirrors app/agent/multi_agent/display.py's DISPLAY_NORMALIZERS keys exactly.
