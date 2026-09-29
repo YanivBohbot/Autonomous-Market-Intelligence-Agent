@@ -9,6 +9,7 @@ import { TickerNewsList } from "./TickerNewsList";
 import { ConcentrationAlert } from "./ConcentrationAlert";
 import { ScreenshotCard } from "./ScreenshotCard";
 import { RagSourceCards } from "./RagSourceCards";
+import { ReportFileCard } from "./ReportFileCard";
 import type { DisplayPayload } from "./types";
 
 function Rendered({ displays, toolCallId }: { displays: DisplayPayload[]; toolCallId?: string }) {
@@ -24,6 +25,7 @@ function Rendered({ displays, toolCallId }: { displays: DisplayPayload[]; toolCa
           case "concentration_alert": return <ConcentrationAlert key={i} display={d} />;
           case "screenshot": return <ScreenshotCard key={i} display={d} />;
           case "rag_sources": return <RagSourceCards key={i} display={d} toolCallId={toolCallId} />;
+          case "report_file": return <ReportFileCard key={i} display={d} />;
         }
       })}
     </div>
@@ -49,11 +51,16 @@ const DISPLAYABLE_TOOLS = [
   "yfinance_get_ticker_news",
   "search_knowledge_base",
   "browser_take_screenshot",
+  "write_file",
 ] as const;
 
 // One named registration per tool — leaves every other tool call (read_query,
-// write_file, save_memory, browser_navigate, browser_snapshot, ...) to
-// CopilotKit's own default card, completely untouched.
+// save_memory, browser_navigate, browser_snapshot, send_email, ...) to
+// CopilotKit's own default card, completely untouched. write_file is
+// registered too, but its normalizer (display.py) only produces a display
+// for a path under "reports/" -- a plain filesystem_agent write still falls
+// through to the default card via the same "no displays" path every other
+// unregistered tool uses.
 export function useToolDisplay(): void {
   for (const name of DISPLAYABLE_TOOLS) {
     // eslint-disable-next-line react-hooks/rules-of-hooks -- DISPLAYABLE_TOOLS is a fixed compile-time list, never conditional or reordered across renders.
