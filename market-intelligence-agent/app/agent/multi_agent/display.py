@@ -125,6 +125,7 @@ def normalize_portfolio(text: str, args: dict) -> list[dict]:
 
 
 DISPLAY_NORMALIZERS["portfolio_metrics"] = normalize_portfolio
+DISPLAY_NORMALIZERS["client_portfolio"] = normalize_portfolio
 
 
 def normalize_concentration(text: str, args: dict) -> list[dict]:

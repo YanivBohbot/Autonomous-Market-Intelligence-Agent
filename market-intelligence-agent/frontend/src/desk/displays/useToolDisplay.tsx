@@ -43,6 +43,7 @@ function renderDisplayResult(props: { status: string; result?: string; toolCallI
 const DISPLAYABLE_TOOLS = [
   "portfolio_metrics",
   "concentration_screen",
+  "client_portfolio",
   "yfinance_get_price_history",
   "yfinance_get_ticker_info",
   "yfinance_get_ticker_news",

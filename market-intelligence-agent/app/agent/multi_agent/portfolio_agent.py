@@ -4,6 +4,7 @@ from app.agent.multi_agent.common import base_middleware, specialist_model
 from app.agent.multi_agent.display import market_desk_display
 from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
 from app.agent.tools import (
+    client_portfolio_tool,
     concentration_screen_tool,
     crm_describe_table_tool,
     crm_list_tables_tool,
@@ -24,6 +25,7 @@ _TOOLS = [
     portfolio_metrics_tool,
     pct_change_tool,
     concentration_screen_tool,
+    client_portfolio_tool,
 ]
 
 

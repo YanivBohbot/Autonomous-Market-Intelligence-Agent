@@ -39,6 +39,17 @@ def test_normalize_portfolio_produces_table_and_chart():
     assert chart["slices"] == [{"ticker": "BND", "weight_pct": 13.62}, {"ticker": "NVDA", "weight_pct": 57.5}]
 
 
+def test_client_portfolio_shares_the_portfolio_metrics_normalizer():
+    """client_portfolio.py's result has the same positions/totals shape as
+    portfolio_metrics (plus a client_name field the normalizer ignores), so
+    it's registered against the identical normalize_portfolio function."""
+    assert display.DISPLAY_NORMALIZERS["client_portfolio"] is display.DISPLAY_NORMALIZERS["portfolio_metrics"]
+    displays = display.DISPLAY_NORMALIZERS["client_portfolio"](
+        json.dumps({**json.loads(PORTFOLIO_METRICS_JSON), "client_name": "Margaret Collins"}), {},
+    )
+    assert [d["type"] for d in displays] == ["portfolio_table", "portfolio_chart"]
+
+
 # Real shape of screen_clients()'s return (concentration.py) — "prices" is
 # dropped by the normalizer, it's not display-relevant.
 CONCENTRATION_JSON = json.dumps({
