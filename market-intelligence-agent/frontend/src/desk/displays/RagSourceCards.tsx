@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
 import { MARKET_DESK_AGENT_ID } from "../constants";
 import type { DisplayPayload } from "./types";
 
 type RagSourcesDisplay = Extract<DisplayPayload, { type: "rag_sources" }>;
 type Source = RagSourcesDisplay["sources"][number];
+type AgentMessage = { role: string; content?: unknown; toolCallId?: string };
 
 const CITATION = /\[Source: (.*?), page (.*?)\]/g;
 
@@ -17,35 +18,36 @@ function citedKeys(text: string): Set<string> {
 // Narrows the card to the source(s) the reply actually cites (e.g.
 // "[Source: Amazon-2024-10K.pdf, page 50]"), instead of every chunk
 // search_knowledge_base retrieved (k=4 by default), most of which the model
-// never references. Tracks the run's streamed text itself, mirroring
-// ThinkingIndicator/DeskActivityRail's agent.subscribe pattern, instead of
-// reading agent.messages directly — that array's identity doesn't reliably
-// change as tokens stream in, which left an earlier version of this stuck
-// showing every source forever. Falls back to every source until a
-// recognizable citation has streamed in.
-function useCitedSources(sources: Source[]): Source[] {
+// never references. Reads agent.messages directly at render time rather
+// than subscribing to the event stream — by the time this card mounts,
+// status is already "complete" and the run's final text is already in
+// agent.messages (mounting happens right as the run finishes, confirmed
+// live), so there's nothing left to stream in. Scans the whole turn (every
+// assistant message back to the nearest preceding user message), not just
+// what follows the tool result in array order — this backend appends the
+// ToolMessage AFTER the assistant's final text, not before, so "after the
+// tool call" missed every citation. Falls back to every source if nothing
+// recognizable is cited.
+function useCitedSources(toolCallId: string | undefined, sources: Source[]): Source[] {
   const { agent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
-  const [replyText, setReplyText] = useState("");
-
-  useEffect(() => {
-    const sub = agent.subscribe({
-      onEvent: ({ event }) => {
-        const e = event as { type: string; delta?: string };
-        if (e.type === "RUN_STARTED") setReplyText("");
-        else if (e.type === "TEXT_MESSAGE_CONTENT") setReplyText((prev) => prev + (e.delta ?? ""));
-      },
-    });
-    return () => sub.unsubscribe();
-  }, [agent]);
-
+  const messages = agent.messages as AgentMessage[];
+  if (!toolCallId) return sources;
+  const toolIdx = messages.findIndex((m) => m.role === "tool" && m.toolCallId === toolCallId);
+  if (toolIdx === -1) return sources;
+  let turnStart = toolIdx;
+  while (turnStart > 0 && messages[turnStart - 1].role !== "user") turnStart--;
+  let replyText = "";
+  for (const m of messages.slice(turnStart)) {
+    if (m.role === "assistant" && typeof m.content === "string" && m.content.length > 0) replyText += m.content;
+  }
   const cited = citedKeys(replyText);
   if (cited.size === 0) return sources;
   const filtered = sources.filter((s) => cited.has(`${s.filename}|${s.page}`));
   return filtered.length > 0 ? filtered : sources;
 }
 
-export function RagSourceCards({ display }: { display: RagSourcesDisplay }) {
-  const sources = useCitedSources(display.sources);
+export function RagSourceCards({ display, toolCallId }: { display: RagSourcesDisplay; toolCallId?: string }) {
+  const sources = useCitedSources(toolCallId, display.sources);
   return (
     <div className="flex flex-col gap-1.5">
       {sources.map((s, i) => (
