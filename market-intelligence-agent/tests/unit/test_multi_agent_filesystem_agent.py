@@ -38,3 +38,12 @@ def test_builds_a_real_agent_with_hitl_node():
 def test_keeps_email_addresses_it_needs_to_work():
     kw = _kwargs()
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
+
+
+def test_prompt_tells_the_model_not_to_pre_confirm_in_prose():
+    """Regression: live QA showed the model reply "Would you like me to
+    proceed with writing the file X?" in plain text and end the turn WITHOUT
+    calling write_file at all -- costing the user an extra "yes" before the
+    real HITL approval card (which already asks for consent) ever appeared."""
+    from app.agent.prompts.specialist_agent_prompts import FILESYSTEM_SYSTEM_PROMPT
+    assert "do not ask the user to confirm in your reply" in FILESYSTEM_SYSTEM_PROMPT.lower()
