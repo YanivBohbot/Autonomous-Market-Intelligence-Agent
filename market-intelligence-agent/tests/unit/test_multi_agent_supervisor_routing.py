@@ -86,6 +86,20 @@ def test_routing_prompt_lists_ingested_documents_so_rag_isnt_skipped_for_them():
     assert "Amazon-2024-Annual-Report.pdf" in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
 
 
+def test_routing_prompt_keeps_saving_a_portfolio_report_with_portfolio_agent():
+    """Regression: live QA showed "Yes, save it as a downloadable report"
+    (a follow-up to a portfolio_agent answer) get routed to filesystem_agent
+    instead -- both bullets said "save" without distinguishing a portfolio
+    report (portfolio_agent now owns write_file too) from a generic
+    workspace file. filesystem_agent then wrote a hand-typed .txt summary
+    with no chart, completely bypassing generate_portfolio_report."""
+    prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT
+    portfolio_bullet = prompt.split("- portfolio_agent")[1].split("\n-")[0]
+    filesystem_bullet = prompt.split("- filesystem_agent")[1].split("\n-")[0]
+    assert "report" in portfolio_bullet.lower()
+    assert "portfolio" in filesystem_bullet.lower()
+
+
 def test_routes_to_rag_agent():
     with patch.object(supervisor_mod, "_router") as mock:
         mock.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="general question")
