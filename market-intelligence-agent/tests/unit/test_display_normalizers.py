@@ -230,3 +230,24 @@ def test_normalize_screenshot_extracts_the_png_path():
 
 def test_normalize_screenshot_with_no_png_shows_nothing():
     assert display.DISPLAY_NORMALIZERS["browser_take_screenshot"]("no page loaded yet", {}) == []
+
+
+def test_normalize_report_file_fires_only_for_paths_under_reports():
+    displays = display.DISPLAY_NORMALIZERS["write_file"](
+        "irrelevant success text", {"path": "reports/margaret-collins-portfolio-brief-2026-09-29.html"},
+    )
+    assert displays == [{
+        "type": "report_file",
+        "filename": "margaret-collins-portfolio-brief-2026-09-29.html",
+        "url": "/workspace/files/margaret-collins-portfolio-brief-2026-09-29.html",
+    }]
+
+
+def test_normalize_report_file_ignores_a_plain_filesystem_write():
+    # filesystem_agent's own write_file calls (e.g. notes.txt at the
+    # workspace root) must not produce a download card.
+    assert display.DISPLAY_NORMALIZERS["write_file"]("ok", {"path": "notes.txt"}) == []
+
+
+def test_normalize_report_file_handles_missing_path_arg():
+    assert display.DISPLAY_NORMALIZERS["write_file"]("ok", {}) == []
