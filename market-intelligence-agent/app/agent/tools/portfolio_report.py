@@ -72,3 +72,52 @@ def build_pie_chart_svg(positions: list[dict], *, size: int = 220) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{size}" '
         f'viewBox="0 0 {width} {size}">{arcs}{legend}</svg>'
     )
+
+
+def build_portfolio_report_html(portfolio: dict, *, threshold_pct: float = 30.0) -> str:
+    client_name = portfolio["client_name"]
+    positions = portfolio["positions"]
+    totals = portfolio["totals"]
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    rows = "".join(
+        f'<tr><td>{p["ticker"]}</td><td>{p["shares"]:g}</td>'
+        f'<td>${p["price"]:,.2f}</td><td>${p["market_value"]:,.2f}</td>'
+        f'<td>{p["weight_pct"]:.1f}%</td></tr>'
+        for p in positions
+    )
+
+    breaches = [p for p in positions if p["weight_pct"] > threshold_pct]
+    concentration_note = ""
+    if breaches:
+        names = ", ".join(f'{p["ticker"]} ({p["weight_pct"]:.1f}%)' for p in breaches)
+        verb = "exceeds" if len(breaches) == 1 else "exceed"
+        concentration_note = (
+            f'<p class="warning">Concentration note: {names} {verb} '
+            f'{threshold_pct:g}% of the portfolio.</p>'
+        )
+
+    chart_svg = build_pie_chart_svg([
+        {"ticker": p["ticker"], "weight_pct": p["weight_pct"]} for p in positions
+    ])
+
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Portfolio Brief — {client_name}</title>
+<style>
+body {{ font-family: -apple-system, Arial, sans-serif; color: #1a1a1a; background: #fff; max-width: 720px; margin: 40px auto; padding: 0 20px; }}
+h1 {{ font-size: 20px; }}
+table {{ width: 100%; border-collapse: collapse; margin: 16px 0; }}
+th, td {{ text-align: left; padding: 6px 10px; border-bottom: 1px solid #e2e2e2; font-size: 13px; }}
+th {{ color: #666; font-weight: 600; }}
+.warning {{ color: #b45309; font-size: 13px; }}
+.total {{ font-weight: 600; margin-top: 8px; }}
+</style></head>
+<body>
+<h1>Portfolio Brief — {client_name}</h1>
+<p>Generated {today}</p>
+<table><thead><tr><th>Ticker</th><th>Shares</th><th>Price</th><th>Market Value</th><th>Weight</th></tr></thead>
+<tbody>{rows}</tbody></table>
+<p class="total">Total market value: ${totals["market_value"]:,.2f}</p>
+{concentration_note}
+{chart_svg}
+</body></html>"""
