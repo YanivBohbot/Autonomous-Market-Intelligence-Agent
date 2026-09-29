@@ -76,6 +76,16 @@ def test_routing_prompt_describes_portfolio_agent_not_crm_agent():
     assert "crm_agent" not in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
 
 
+def test_routing_prompt_lists_ingested_documents_so_rag_isnt_skipped_for_them():
+    """Regression: with no document names in the prompt, the router had no
+    way to recognize "Tesla's Q2 2026 update" as an ingested PDF rather than
+    a request to check a live website, so it sent Tesla questions to
+    browser_agent instead of rag_agent — live QA reproduced this, and it
+    only worked once the user explicitly said "internal documents"."""
+    assert "Tesla-TSLA-Q2-2026-Update.pdf" in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
+    assert "Amazon-2024-Annual-Report.pdf" in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
+
+
 def test_routes_to_rag_agent():
     with patch.object(supervisor_mod, "_router") as mock:
         mock.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="general question")
