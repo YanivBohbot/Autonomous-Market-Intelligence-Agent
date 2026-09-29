@@ -90,3 +90,54 @@ def test_report_is_self_contained_no_external_assets():
     # A real external reference would show up as src="http..." or url(http...).
     assert 'src="http' not in html and "url(http" not in html
     assert "<img" not in html  # the only image-like content is the inline <svg>
+
+
+import asyncio
+
+from app.agent.tools.portfolio_report import generate_portfolio_report
+
+_ROWS = [
+    {"name": "Margaret Collins", "ticker": "BND", "shares": 300.0, "avg_cost": 73.33, "sector": "ETF"},
+    {"name": "Margaret Collins", "ticker": "NVDA", "shares": 400.0, "avg_cost": 30.7, "sector": "Technology"},
+]
+_PRICES = {"BND": 70.075, "NVDA": 229.26}
+
+
+def _run(rows=_ROWS, prices=_PRICES, client_name="Margaret Collins"):
+    async def run_sql(sql):
+        return rows
+
+    async def get_price(ticker):
+        return prices[ticker]
+
+    return asyncio.run(generate_portfolio_report(run_sql=run_sql, get_price=get_price, client_name=client_name))
+
+
+def test_suggested_path_is_under_reports_and_ends_in_html():
+    result = _run()
+    assert result["suggested_path"].startswith("reports/")
+    assert result["suggested_path"].endswith(".html")
+
+
+def test_html_contains_the_resolved_client_name():
+    result = _run()
+    assert "Margaret Collins" in result["html"]
+
+
+def test_apostrophe_in_client_name_never_reaches_the_filename():
+    rows = [{"name": "Pat O'Brien", "ticker": "AAPL", "shares": 10.0, "avg_cost": 100.0, "sector": "Technology"}]
+    result = _run(rows=rows, prices={"AAPL": 150.0}, client_name="O'Brien")
+    assert "'" not in result["suggested_path"]
+    assert "/" not in result["suggested_path"].removeprefix("reports/")
+
+
+def test_unresolved_client_returns_the_same_error_shape_load_client_portfolio_uses():
+    result = _run(rows=[], client_name="Nobody Real")
+    assert result == {"error": "No client matching 'Nobody Real' found, or they have no holdings."}
+    assert "html" not in result
+
+
+def test_tool_name_and_llm_facing_args():
+    from app.agent.tools.portfolio_report import generate_portfolio_report_tool
+    assert generate_portfolio_report_tool.name == "generate_portfolio_report"
+    assert set(generate_portfolio_report_tool.args) == {"client_name"}

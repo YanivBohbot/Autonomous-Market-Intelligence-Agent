@@ -13,7 +13,13 @@ dependency, one self-contained HTML file with the chart inlined as SVG.
 from __future__ import annotations
 
 import math
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+
+from langchain_core.tools import tool
+from pydantic import BaseModel, Field
+
+from app.agent.tools.client_portfolio import load_client_portfolio
 
 # Same categorical palette PortfolioPieChart.tsx already uses in the chat --
 # copied here (not shared/imported; there is no shared Python/TS config
@@ -121,3 +127,56 @@ th {{ color: #666; font-weight: 600; }}
 {concentration_note}
 {chart_svg}
 </body></html>"""
+
+
+def _slugify(name: str) -> str:
+    # Lowercase, spaces to hyphens, drop anything that isn't alnum/hyphen --
+    # a client name can contain an apostrophe (O'Brien) that must never
+    # reach a filesystem path unescaped.
+    cleaned = "".join(c if c.isalnum() or c in (" ", "-") else "" for c in name.lower())
+    return "-".join(cleaned.split())
+
+
+async def generate_portfolio_report(
+    *,
+    run_sql: Callable[[str], Awaitable[list[dict]]],
+    get_price: Callable[[str], Awaitable[float]],
+    client_name: str,
+) -> dict:
+    portfolio = await load_client_portfolio(run_sql=run_sql, get_price=get_price, client_name=client_name)
+    if "error" in portfolio:
+        return portfolio
+
+    html = build_portfolio_report_html(portfolio)
+    today = datetime.now(timezone.utc).date().isoformat()
+    suggested_path = f"reports/{_slugify(portfolio['client_name'])}-portfolio-brief-{today}.html"
+    return {"client_name": portfolio["client_name"], "suggested_path": suggested_path, "html": html}
+
+
+class GeneratePortfolioReportInput(BaseModel):
+    client_name: str = Field(description="Full or partial client name, e.g. 'Margaret Collins' or 'Collins'.")
+
+
+@tool("generate_portfolio_report", args_schema=GeneratePortfolioReportInput)
+async def generate_portfolio_report_tool(client_name: str) -> dict:
+    """Build a downloadable HTML portfolio brief (positions table + a weight
+    pie chart) for one named client. Resolves the client and fetches
+    holdings and live prices itself -- do NOT call client_portfolio or fetch
+    prices first, just pass client_name. Returns {"client_name",
+    "suggested_path" (always under "reports/"), "html"} or {"error"} if the
+    name matches zero or multiple clients. Pass the html value UNEDITED as
+    write_file's content and suggested_path as its path -- do not
+    summarize, truncate, or reformat the HTML yourself."""
+    from app.agent.tools.concentration import parse_tool_payload, price_from_quote
+    from app.agent.tools.mcp_clients.mcp_client import crm_tool
+    from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
+
+    symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"
+
+    async def run_sql(sql: str) -> list[dict]:
+        return parse_tool_payload(await crm_tool.ainvoke({"query": sql}))
+
+    async def get_price(ticker: str) -> float:
+        return price_from_quote(parse_tool_payload(await yf_quote_tool.ainvoke({symbol_arg: ticker})))
+
+    return await generate_portfolio_report(run_sql=run_sql, get_price=get_price, client_name=client_name)
