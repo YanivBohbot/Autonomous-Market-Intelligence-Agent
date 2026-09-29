@@ -29,3 +29,16 @@ async def get_screenshot(filename: str) -> FileResponse:
         if candidate.is_file():
             return FileResponse(candidate, media_type="image/png")
     raise HTTPException(status_code=404, detail="Screenshot not found")
+
+
+@router.get("/files/{filename}")
+async def get_report_file(filename: str) -> FileResponse:
+    # Path(...).name strips any directory components (including "..") the
+    # same way the screenshots route above sanitizes its filename.
+    safe_name = Path(filename).name
+    candidate = Path(settings.WORKSPACE_ROOT) / "reports" / safe_name
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    # filename= forces Content-Disposition: attachment (a real download,
+    # not the browser rendering the file inline).
+    return FileResponse(candidate, filename=safe_name)
