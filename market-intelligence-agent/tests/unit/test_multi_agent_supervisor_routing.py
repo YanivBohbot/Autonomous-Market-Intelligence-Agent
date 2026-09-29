@@ -100,6 +100,21 @@ def test_routing_prompt_keeps_saving_a_portfolio_report_with_portfolio_agent():
     assert "portfolio" in filesystem_bullet.lower()
 
 
+def test_routing_prompt_has_a_worked_example_for_saving_a_portfolio_report():
+    """Regression: the prose disambiguation alone (added above) did not
+    change the LLM's actual routing decision in live re-testing -- it still
+    sent "Yes, save it as a downloadable report" to filesystem_agent. A
+    concrete worked example is what fixed the analogous RAG/Tesla misroute
+    earlier this session; apply the same fix here."""
+    prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT
+    assert "save it as a downloadable report" in prompt.lower()
+    # The example must appear after the portfolio_agent's own answer, in the
+    # same worked-example block style as the existing FINISH example.
+    example_section = prompt.rsplit("Example:", 1)[1]
+    assert "portfolio_agent" in example_section
+    assert "filesystem_agent" in example_section
+
+
 def test_routes_to_rag_agent():
     with patch.object(supervisor_mod, "_router") as mock:
         mock.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="general question")

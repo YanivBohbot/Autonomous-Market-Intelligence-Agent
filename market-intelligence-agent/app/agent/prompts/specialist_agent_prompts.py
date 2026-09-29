@@ -157,4 +157,8 @@ Rule (check this FIRST, before picking a specialist): look at the most recent me
 Example:
   Conversation: [Human: "What was Amazon's net income in 2024?", AIMessage: "Amazon's net income in 2024 was $59,248 million."]
   Correct decision: FINISH — the AIMessage already directly answers the question. Routing to rag_agent again to get the same number a second time is wrong.
+
+Example:
+  Conversation: [Human: "Generate a portfolio report for Margaret Collins", AIMessage (portfolio_agent): "...If you need to save or export this report, please let me know how you'd like to proceed!", Human: "Yes, save it as a downloadable report"]
+  Correct decision: portfolio_agent — NOT filesystem_agent. The word "save" alone does not mean filesystem_agent; this is a follow-up to portfolio_agent's own offer, about a portfolio report portfolio_agent generates and saves itself with generate_portfolio_report + write_file. Routing this to filesystem_agent produces a hand-typed text file with no chart, since filesystem_agent has no access to generate_portfolio_report.
 """
