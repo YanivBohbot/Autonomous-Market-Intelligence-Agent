@@ -16,7 +16,8 @@ def _kwargs():
 def test_tools():
     names = {t.name.rsplit("___", 1)[-1] for t in mod._TOOLS}
     assert names == {"read_query", "list_tables", "describe_table", "yfinance_get_ticker_info",
-                     "portfolio_metrics", "pct_change", "concentration_screen", "client_portfolio"}
+                     "portfolio_metrics", "pct_change", "concentration_screen", "client_portfolio",
+                     "generate_portfolio_report", "write_file"}
 
 
 def test_create_agent_call():
@@ -25,9 +26,13 @@ def test_create_agent_call():
     assert kw["system_prompt"] == PORTFOLIO_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "portfolio_agent"
-    assert [type(m) for m in kw["middleware"][:-1]] == [type(m) for m in base_middleware()]
+    base = base_middleware()
+    assert [type(m) for m in kw["middleware"][:len(base)]] == [type(m) for m in base]
+    hitl = kw["middleware"][len(base)]
+    assert isinstance(hitl, HumanInTheLoopMiddleware)
+    assert set(hitl.interrupt_on) == {"write_file"}
     assert kw["middleware"][-1] is market_desk_display
-    assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
+    assert len(kw["middleware"]) == len(base) + 2
 
 
 def test_builds_a_real_agent():
