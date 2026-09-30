@@ -39,6 +39,7 @@ tavily-python>=0.7.13
 
 # Tools
 emails>=0.6
+xlsxwriter==3.2.9
 
 # Config + secrets
 pydantic>=2.12.4
