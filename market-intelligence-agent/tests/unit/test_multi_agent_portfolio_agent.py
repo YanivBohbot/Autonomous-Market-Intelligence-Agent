@@ -55,30 +55,23 @@ def test_keeps_email_addresses_it_needs_to_work():
 
 
 def test_portfolio_recipe_defers_to_report_recipe_for_save_or_export_requests():
-    """Regression: live QA showed "Generate a portfolio report for Margaret
-    Collins and save it" made the LLM call client_portfolio (Portfolio
-    recipe) instead of generate_portfolio_report + write_file (Report
-    recipe), then falsely claim in prose that it had generated the report.
-    Both recipes matched on "portfolio"/"client" with nothing telling the
-    model which one wins -- the Portfolio recipe bullet must explicitly
-    exclude generate/save/export/report requests."""
     from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
 
     portfolio_bullet = PORTFOLIO_SYSTEM_PROMPT.split("Portfolio recipe:")[1].split("\n-")[0]
     assert "report recipe" in portfolio_bullet.lower()
 
 
-def test_report_recipe_has_a_worked_example_for_the_combined_generate_and_save_phrasing():
-    """Regression: the Portfolio-recipe exclusion clause alone did not change
-    the live LLM's tool choice -- live re-test of "Generate a portfolio
-    report for Margaret Collins and save it" still called only
-    client_portfolio and falsely claimed a report was generated. A concrete
-    worked example is the pattern already proven to change routing behavior
-    elsewhere in this file (SUPERVISOR_ROUTING_PROMPT's RAG/Tesla and
-    save-report examples); apply the same fix here."""
+def test_report_recipe_calls_the_single_atomic_save_tool():
+    # Regression: the old two-tool recipe (generate_portfolio_report then
+    # write_file with its output pasted in) is gone -- there is exactly
+    # one tool call now, and nothing about "unedited"/"pass its output"
+    # should remain, since there is no longer any content to pass.
     from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
 
     report_section = PORTFOLIO_SYSTEM_PROMPT.split("Report recipe:")[1]
+    assert "save_portfolio_report" in report_section
+    assert "generate_portfolio_report" not in PORTFOLIO_SYSTEM_PROMPT
+    assert "write_file" not in PORTFOLIO_SYSTEM_PROMPT
     example = report_section.split("Example:", 1)[1]
-    assert "generate_portfolio_report" in example
+    assert "save_portfolio_report" in example
     assert "client_portfolio" in example
