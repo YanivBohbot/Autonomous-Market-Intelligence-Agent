@@ -6,8 +6,15 @@ from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import supervisor_node, RoutingDecision, MAX_AGENT_HOPS
 
 
-def _state(agent_hops=0, messages=None):
-    return {"question": "q", "messages": messages or [], "documents": [], "next_agent": None, "agent_hops": agent_hops}
+def _state(agent_hops=0, messages=None, last_agent=None):
+    return {
+        "question": "q",
+        "messages": messages or [],
+        "documents": [],
+        "next_agent": None,
+        "agent_hops": agent_hops,
+        "last_agent": last_agent,
+    }
 
 
 def test_finishes_deterministically_after_specialist_returns_a_plain_answer_without_calling_llm():
@@ -69,6 +76,67 @@ def test_routes_to_portfolio_agent():
         mock.invoke.return_value = RoutingDecision(next="portfolio_agent", reasoning="client portfolio question")
         result = supervisor_node(_state())
     assert result.goto == "portfolio_agent"
+    assert result.update["last_agent"] == "portfolio_agent"
+
+
+def test_sticky_routes_back_to_portfolio_agent_without_calling_llm_when_human_confirms_saving():
+    """Regression: two rounds of prose/worked-example prompt fixes both failed
+    live re-testing -- "Yes, save it as a downloadable report" (a follow-up to
+    portfolio_agent's own offer) still got routed to filesystem_agent by the
+    LLM router, producing a hand-typed .txt with no chart. Prompt wording
+    alone isn't reliable here, so this is now a deterministic code rule, the
+    same class of fix as the existing FINISH-after-plain-answer rule: a fresh
+    human turn that mentions save/export/download, right after portfolio_agent
+    itself last answered, stays with portfolio_agent -- no LLM call."""
+    history = [
+        HumanMessage(content="Generate a portfolio report for Margaret Collins"),
+        AIMessage(content="I've generated the portfolio report. Let me know if you'd like to save or export it."),
+        HumanMessage(content="Yes, save it as a downloadable report"),
+    ]
+    state = _state(messages=history, last_agent="portfolio_agent")
+
+    with patch.object(supervisor_mod, "_router") as mock:
+        result = supervisor_node(state)
+
+    mock.invoke.assert_not_called()
+    assert result.goto == "portfolio_agent"
+    assert result.update["next_agent"] == "portfolio_agent"
+    assert result.update["last_agent"] == "portfolio_agent"
+    assert result.update["agent_hops"] == 1
+
+
+def test_sticky_rule_does_not_fire_when_last_agent_was_not_portfolio_agent():
+    history = [
+        HumanMessage(content="What files are in the workspace?"),
+        AIMessage(content="You have notes.txt and report.html."),
+        HumanMessage(content="Yes, save it as a downloadable report"),
+    ]
+    state = _state(messages=history, last_agent="filesystem_agent")
+
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="filesystem_agent", reasoning="file question")
+        result = supervisor_node(state)
+
+    mock.invoke.assert_called_once()
+    assert result.goto == "filesystem_agent"
+
+
+def test_sticky_rule_does_not_fire_when_the_new_message_has_no_save_language():
+    """A genuinely new question right after portfolio_agent answered must
+    still go through the router, not stick to portfolio_agent by default."""
+    history = [
+        HumanMessage(content="Generate a portfolio report for Margaret Collins"),
+        AIMessage(content="I've generated the portfolio report. Let me know if you'd like to save or export it."),
+        HumanMessage(content="What's Tesla's stock price?"),
+    ]
+    state = _state(messages=history, last_agent="portfolio_agent")
+
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="stock price question")
+        result = supervisor_node(state)
+
+    mock.invoke.assert_called_once()
+    assert result.goto == "finance_agent"
 
 
 def test_routing_prompt_describes_portfolio_agent_not_crm_agent():

@@ -1,3 +1,4 @@
+import re
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field
@@ -47,6 +48,10 @@ _router = _llm.with_structured_output(RoutingDecision).with_config(
 
 MAX_AGENT_HOPS = 4
 
+# Matches app/voice/hitl.py's precedent of a lightweight keyword classifier
+# for a resume/continuation decision, rather than another LLM call.
+_SAVE_LANGUAGE_RE = re.compile(r"\b(save|export|download)\b", re.IGNORECASE)
+
 
 def supervisor_node(state: SupervisorState) -> Command[Route]:
     # agent_hops is a per-turn recursion guard. record_question appends the
@@ -76,6 +81,25 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     ):
         return _finish()
 
+    # Deterministic sticky route: two rounds of prose/worked-example prompt
+    # fixes both failed live re-testing -- the LLM router still sent a
+    # "save it" follow-up to filesystem_agent instead of portfolio_agent,
+    # producing a hand-typed .txt with no chart. Prompt wording alone isn't
+    # reliable here, so -- like the FINISH-after-plain-answer rule above --
+    # this is now decided in code: a fresh human turn that mentions
+    # save/export/download, arriving right after portfolio_agent itself last
+    # answered, stays with portfolio_agent without asking the LLM.
+    if (
+        hops == 0
+        and isinstance(last, HumanMessage)
+        and state.get("last_agent") == "portfolio_agent"
+        and _SAVE_LANGUAGE_RE.search(last.content or "")
+    ):
+        return Command(
+            goto="portfolio_agent",
+            update={"next_agent": "portfolio_agent", "last_agent": "portfolio_agent", "agent_hops": 1},
+        )
+
     # NOTE: the conversation history already carries the user's question as
     # its first HumanMessage (record_question runs before this node), so we
     # don't re-inject it here. An earlier version did, and live QA showed the
@@ -103,7 +127,7 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
 
     return Command(
         goto=next_agent,
-        update={"next_agent": next_agent, "agent_hops": hops + 1},
+        update={"next_agent": next_agent, "last_agent": next_agent, "agent_hops": hops + 1},
     )
 
 

@@ -42,3 +42,17 @@ def test_builds_a_real_agent():
 def test_keeps_email_addresses_it_needs_to_work():
     kw = _kwargs()
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
+
+
+def test_portfolio_recipe_defers_to_report_recipe_for_save_or_export_requests():
+    """Regression: live QA showed "Generate a portfolio report for Margaret
+    Collins and save it" made the LLM call client_portfolio (Portfolio
+    recipe) instead of generate_portfolio_report + write_file (Report
+    recipe), then falsely claim in prose that it had generated the report.
+    Both recipes matched on "portfolio"/"client" with nothing telling the
+    model which one wins -- the Portfolio recipe bullet must explicitly
+    exclude generate/save/export/report requests."""
+    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+
+    portfolio_bullet = PORTFOLIO_SYSTEM_PROMPT.split("Portfolio recipe:")[1].split("\n-")[0]
+    assert "report recipe" in portfolio_bullet.lower()
