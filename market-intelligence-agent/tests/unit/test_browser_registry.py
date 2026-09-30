@@ -69,6 +69,27 @@ def test_browser_backend_local_uses_playwright_mcp(monkeypatch):
     assert "@playwright/mcp@latest" in " ".join(cfg_dict["browser"]["args"])
 
 
+def test_stdio_config_pre_creates_the_reports_folder(monkeypatch, tmp_path):
+    """Regression: live QA showed write_file failing with ENOENT for
+    reports/<name>.html -- the official @modelcontextprotocol/server-filesystem
+    write_file does not create missing parent directories, and nothing ever
+    created data/workspace/reports/. portfolio_agent's HITL card showed
+    "done" and the chat rendered a ReportFileCard with a working-looking
+    Download button, but the file was never written -- a silent failure that
+    looked like success. screenshots/ already gets this same pre-creation
+    (line below); reports/ needs it too."""
+    monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+    from app.core import config as cfg
+    cfg.settings = cfg.Settings(WORKSPACE_ROOT=tmp_path)
+    sys.modules.pop("app.agent.tools.mcp_clients.registry", None)
+    registry = _load_registry()
+    registry.settings = cfg.settings
+
+    registry._server_config()
+
+    assert (tmp_path / "reports").is_dir()
+
+
 def test_local_browser_runs_in_the_screenshots_folder(monkeypatch):
     """@playwright/mcp resolves a relative screenshot filename against its cwd,
     and the chat UI serves /workspace/screenshots/<name>: so cwd must be the

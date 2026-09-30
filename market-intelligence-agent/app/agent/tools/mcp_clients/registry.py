@@ -138,6 +138,11 @@ def _stdio_config() -> dict:
     workspace_root = settings.WORKSPACE_ROOT.resolve()
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "screenshots").mkdir(parents=True, exist_ok=True)
+    # write_file (@modelcontextprotocol/server-filesystem) does not create
+    # missing parent directories -- without this, generate_portfolio_report's
+    # reports/<name>.html write fails with ENOENT, silently, since the error
+    # ToolMessage still let the LLM claim success in its reply.
+    (workspace_root / "reports").mkdir(parents=True, exist_ok=True)
     return {
         "crm": {
             "command": "uv",
