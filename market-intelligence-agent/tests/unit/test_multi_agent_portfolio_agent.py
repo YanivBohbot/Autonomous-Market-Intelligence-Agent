@@ -56,3 +56,19 @@ def test_portfolio_recipe_defers_to_report_recipe_for_save_or_export_requests():
 
     portfolio_bullet = PORTFOLIO_SYSTEM_PROMPT.split("Portfolio recipe:")[1].split("\n-")[0]
     assert "report recipe" in portfolio_bullet.lower()
+
+
+def test_report_recipe_has_a_worked_example_for_the_combined_generate_and_save_phrasing():
+    """Regression: the Portfolio-recipe exclusion clause alone did not change
+    the live LLM's tool choice -- live re-test of "Generate a portfolio
+    report for Margaret Collins and save it" still called only
+    client_portfolio and falsely claimed a report was generated. A concrete
+    worked example is the pattern already proven to change routing behavior
+    elsewhere in this file (SUPERVISOR_ROUTING_PROMPT's RAG/Tesla and
+    save-report examples); apply the same fix here."""
+    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+
+    report_section = PORTFOLIO_SYSTEM_PROMPT.split("Report recipe:")[1]
+    example = report_section.split("Example:", 1)[1]
+    assert "generate_portfolio_report" in example
+    assert "client_portfolio" in example
