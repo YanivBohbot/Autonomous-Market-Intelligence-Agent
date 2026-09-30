@@ -17,7 +17,7 @@ def test_tools():
     names = {t.name.rsplit("___", 1)[-1] for t in mod._TOOLS}
     assert names == {"read_query", "list_tables", "describe_table", "yfinance_get_ticker_info",
                      "portfolio_metrics", "pct_change", "concentration_screen", "client_portfolio",
-                     "generate_portfolio_report", "write_file"}
+                     "save_portfolio_report"}
 
 
 def test_create_agent_call():
@@ -30,9 +30,19 @@ def test_create_agent_call():
     assert [type(m) for m in kw["middleware"][:len(base)]] == [type(m) for m in base]
     hitl = kw["middleware"][len(base)]
     assert isinstance(hitl, HumanInTheLoopMiddleware)
-    assert set(hitl.interrupt_on) == {"write_file"}
+    assert set(hitl.interrupt_on) == {"save_portfolio_report"}
     assert kw["middleware"][-1] is market_desk_display
     assert len(kw["middleware"]) == len(base) + 2
+
+
+def test_hitl_gate_has_no_content_argument_to_preview():
+    # The user explicitly chose a plain action-confirmation card (no data
+    # summary) over previewing content, since HITL fires before the tool
+    # runs and there is no result yet to show. save_portfolio_report's
+    # only argument is client_name -- there is nothing content-shaped in
+    # the approval card by construction.
+    save_tool = next(t for t in mod._TOOLS if t.name == "save_portfolio_report")
+    assert set(save_tool.args) == {"client_name"}
 
 
 def test_builds_a_real_agent():

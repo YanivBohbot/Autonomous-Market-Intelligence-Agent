@@ -10,20 +10,18 @@ from app.agent.tools import (
     crm_describe_table_tool,
     crm_list_tables_tool,
     crm_tool,
-    fs_write_file_tool,
-    generate_portfolio_report_tool,
     pct_change_tool,
     portfolio_metrics_tool,
+    save_portfolio_report_tool,
     yf_quote_tool,
 )
 
 # Everything a portfolio computation needs lives in this one specialist: the
 # supervisor finishes as soon as a specialist returns a plain answer, so
-# chaining crm -> finance -> calc across specialists would not work. Same
-# reasoning extends to write_file: portfolio_agent needs it directly so
-# "generate a report, then save it" happens in one turn, not a two-hop
-# handoff to filesystem_agent that depends on the router recognizing the
-# answer as incomplete.
+# chaining crm -> finance -> calc across specialists would not work.
+# save_portfolio_report_tool loads, builds, and writes the report itself in
+# one atomic call -- no write_file, no chaining to filesystem_agent, and
+# nothing content-shaped for the LLM to touch.
 _TOOLS = [
     crm_tool,
     crm_list_tables_tool,
@@ -33,8 +31,7 @@ _TOOLS = [
     pct_change_tool,
     concentration_screen_tool,
     client_portfolio_tool,
-    generate_portfolio_report_tool,
-    fs_write_file_tool,
+    save_portfolio_report_tool,
 ]
 
 
@@ -45,7 +42,7 @@ def build_portfolio_agent():
         system_prompt=PORTFOLIO_SYSTEM_PROMPT,
         middleware=[
             *base_middleware(),
-            HumanInTheLoopMiddleware(interrupt_on={"write_file": True}),
+            HumanInTheLoopMiddleware(interrupt_on={"save_portfolio_report": True}),
             market_desk_display,
         ],
         name="portfolio_agent",
