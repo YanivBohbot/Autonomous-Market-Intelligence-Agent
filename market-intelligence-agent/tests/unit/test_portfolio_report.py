@@ -190,3 +190,21 @@ def test_tool_name_and_llm_facing_args():
     from app.agent.tools.portfolio_report import save_portfolio_report_tool
     assert save_portfolio_report_tool.name == "save_portfolio_report"
     assert set(save_portfolio_report_tool.args) == {"client_name"}
+
+
+def test_gateway_mode_returns_a_clear_error_instead_of_silently_losing_the_file(monkeypatch):
+    # Regression (final review): the tool writes directly to local disk via
+    # Path.write_bytes. In gateway mode (MCP_TRANSPORT=gateway, the
+    # AgentCore/S3 prod deployment) that disk is the container's own
+    # ephemeral storage, not the S3-backed workspace write_file uses --
+    # unlike the old generate_portfolio_report + write_file flow, which
+    # delegated persistence to the S3-backed MCP filesystem server. A
+    # silent "saved successfully" for a file that vanishes when the
+    # microVM recycles is worse than an explicit error.
+    from app.agent.tools.portfolio_report import save_portfolio_report_tool
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MCP_TRANSPORT", "gateway")
+    result = asyncio.run(save_portfolio_report_tool.ainvoke({"client_name": "Margaret Collins"}))
+    assert "error" in result
+    assert "gateway" in result["error"].lower()

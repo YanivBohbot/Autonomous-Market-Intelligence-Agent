@@ -158,6 +158,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **File:** `app/agent/tools/portfolio_report.py`
 - **What:** Resolves a named client, loads their holdings and live prices, builds a styled Excel workbook (positions table + native pie chart of position weights) entirely in memory, and writes it directly to `data/workspace/reports/<slug>-portfolio-brief-<date>.xlsx` -- one atomic tool call, gated by HITL approval, no separate write step.
 - **Why:** An advisor-facing deliverable for a client meeting. Like `concentration_screen`/`client_portfolio`, nothing here is left to the LLM to compute or reproduce -- the tool that builds the report is the same tool that saves it, so there is no content argument an LLM could mistype on the way to disk.
+- **Prod limitation:** writes straight to local disk (`Path.write_bytes`), not through the S3-backed filesystem Lambda `write_file` uses in `MCP_TRANSPORT=gateway` mode. In gateway mode the tool returns `{"error": ...}` instead of silently writing to the AgentCore container's ephemeral disk. No S3 write path is implemented yet for this tool.
 
 ## How to add a new tool
 

@@ -168,6 +168,20 @@ async def save_portfolio_report_tool(client_name: str) -> dict:
     step and no content to pass anywhere. Returns {"client_name",
     "filename"} or {"error"} if the name matches zero or multiple clients."""
     from app.core.config import settings
+
+    if settings.MCP_TRANSPORT.lower() == "gateway":
+        # Unlike the old generate_portfolio_report + write_file flow (which
+        # delegated persistence to the S3-backed filesystem Lambda behind
+        # AgentCore Gateway), this tool writes to local disk itself -- in
+        # gateway mode that's the container's own ephemeral storage, not
+        # S3. A silent "saved successfully" for a file that vanishes when
+        # the microVM recycles is worse than an explicit error: there is no
+        # S3 write path implemented yet for this tool.
+        return {
+            "error": "save_portfolio_report is not available in this deployment "
+            "(MCP_TRANSPORT=gateway has no S3 write path for this tool yet)."
+        }
+
     from app.agent.tools.concentration import parse_tool_payload, price_from_quote
     from app.agent.tools.mcp_clients.mcp_client import crm_tool
     from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
