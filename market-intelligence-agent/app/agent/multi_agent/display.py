@@ -239,14 +239,14 @@ def normalize_screenshot(text: str, args: dict) -> list[dict]:
     return [{"type": "screenshot", "url": f"/workspace/screenshots/{filename}"}]
 
 
-def normalize_report_file(text: str, args: dict) -> list[dict]:
-    path = args.get("path", "")
-    if not path.startswith("reports/"):
-        return []  # a plain filesystem_agent write (e.g. notes.txt) -- not a report, no card
-    filename = Path(path).name
+def normalize_saved_report(text: str, args: dict) -> list[dict]:
+    data = json.loads(text)
+    if "error" in data:
+        return []
+    filename = data["filename"]
     return [{"type": "report_file", "filename": filename, "url": f"/workspace/files/{filename}"}]
 
 
 DISPLAY_NORMALIZERS["search_knowledge_base"] = normalize_rag_sources
 DISPLAY_NORMALIZERS["browser_take_screenshot"] = normalize_screenshot
-DISPLAY_NORMALIZERS["write_file"] = normalize_report_file
+DISPLAY_NORMALIZERS["save_portfolio_report"] = normalize_saved_report

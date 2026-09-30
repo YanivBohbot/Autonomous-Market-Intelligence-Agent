@@ -232,22 +232,28 @@ def test_normalize_screenshot_with_no_png_shows_nothing():
     assert display.DISPLAY_NORMALIZERS["browser_take_screenshot"]("no page loaded yet", {}) == []
 
 
-def test_normalize_report_file_fires_only_for_paths_under_reports():
-    displays = display.DISPLAY_NORMALIZERS["write_file"](
-        "irrelevant success text", {"path": "reports/margaret-collins-portfolio-brief-2026-09-29.html"},
-    )
+def test_normalize_saved_report_reads_the_filename_from_the_tool_result():
+    # save_portfolio_report has no "path" argument -- its only argument is
+    # client_name -- so the normalizer reads the filename from the tool's
+    # RESULT (its JSON text), unlike the old write_file-args-based version.
+    text = json.dumps({"client_name": "Margaret Collins", "filename": "margaret-collins-portfolio-brief-2026-09-30.xlsx"})
+    displays = display.DISPLAY_NORMALIZERS["save_portfolio_report"](text, {"client_name": "Margaret Collins"})
     assert displays == [{
         "type": "report_file",
-        "filename": "margaret-collins-portfolio-brief-2026-09-29.html",
-        "url": "/workspace/files/margaret-collins-portfolio-brief-2026-09-29.html",
+        "filename": "margaret-collins-portfolio-brief-2026-09-30.xlsx",
+        "url": "/workspace/files/margaret-collins-portfolio-brief-2026-09-30.xlsx",
     }]
 
 
-def test_normalize_report_file_ignores_a_plain_filesystem_write():
-    # filesystem_agent's own write_file calls (e.g. notes.txt at the
-    # workspace root) must not produce a download card.
-    assert display.DISPLAY_NORMALIZERS["write_file"]("ok", {"path": "notes.txt"}) == []
+def test_normalize_saved_report_on_a_resolution_error_shows_nothing():
+    text = json.dumps({"error": "No client matching 'Nobody Real' found, or they have no holdings."})
+    assert display.DISPLAY_NORMALIZERS["save_portfolio_report"](text, {"client_name": "Nobody Real"}) == []
 
 
-def test_normalize_report_file_handles_missing_path_arg():
-    assert display.DISPLAY_NORMALIZERS["write_file"]("ok", {}) == []
+def test_write_file_has_no_special_casing_anymore():
+    # portfolio_agent no longer calls write_file at all -- it reverts to
+    # having no normalizer, exactly as it was before the original HTML
+    # report feature existed. filesystem_agent's plain writes fall through
+    # to CopilotKit's default card via the same "unregistered tool" path
+    # every other tool uses.
+    assert "write_file" not in display.DISPLAY_NORMALIZERS
