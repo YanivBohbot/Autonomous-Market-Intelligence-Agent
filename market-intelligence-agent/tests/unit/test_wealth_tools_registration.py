@@ -40,3 +40,16 @@ def test_describe_table_returns_columns():
     out = str(asyncio.run(crm_describe_table_tool.ainvoke({"table_name": "holdings"})))
     for column in ("client_id", "ticker", "shares", "avg_cost"):
         assert column in out
+
+
+def test_save_portfolio_report_is_registered_but_not_read_only():
+    # Regression risk this plan introduces: generate_portfolio_report (the
+    # tool this replaces) WAS read-only, since it never wrote anything
+    # itself. save_portfolio_report DOES write to disk now -- if it were
+    # ever added to READ_ONLY_TOOLS (by habit, copying the old entry), the
+    # single-agent graph's approval_node would skip the HITL interrupt
+    # entirely and the tool would execute with no approval gate at all.
+    assert "save_portfolio_report" in _names()
+    assert "save_portfolio_report" not in READ_ONLY_TOOLS
+    assert not is_read_only("save_portfolio_report")
+    assert not is_read_only("sqlite-crm___save_portfolio_report")

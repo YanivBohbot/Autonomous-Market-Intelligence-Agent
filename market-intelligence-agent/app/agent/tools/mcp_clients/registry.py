@@ -138,10 +138,12 @@ def _stdio_config() -> dict:
     workspace_root = settings.WORKSPACE_ROOT.resolve()
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "screenshots").mkdir(parents=True, exist_ok=True)
-    # write_file (@modelcontextprotocol/server-filesystem) does not create
-    # missing parent directories -- without this, generate_portfolio_report's
-    # reports/<name>.html write fails with ENOENT, silently, since the error
-    # ToolMessage still let the LLM claim success in its reply.
+    # Defense in depth: save_portfolio_report also creates this directory
+    # itself immediately before every write (app/agent/tools/portfolio_report.py),
+    # but pre-creating it here too means a plain filesystem_agent write_file
+    # call targeting reports/<name> (via @modelcontextprotocol/server-filesystem,
+    # which does not create missing parent directories) never hits the same
+    # silent ENOENT failure this directory once caused.
     (workspace_root / "reports").mkdir(parents=True, exist_ok=True)
     return {
         "crm": {
