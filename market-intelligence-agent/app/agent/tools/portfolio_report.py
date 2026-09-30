@@ -93,7 +93,13 @@ def build_portfolio_report_html(portfolio: dict, *, threshold_pct: float = 30.0)
         for p in positions
     )
 
-    breaches = [p for p in positions if p["weight_pct"] > threshold_pct]
+    # Same default exclusion as finance_calc.compute_concentration_screen
+    # (exclude_sectors=["ETF"]): a diversified fund over threshold is not the
+    # single-stock overweight risk this note exists to flag, and disagreeing
+    # with concentration_screen's own verdict for the same client would be
+    # confusing at best -- a client whose only "concentration" is a bond ETF
+    # must not see a warning concentration_screen already said doesn't apply.
+    breaches = [p for p in positions if p["weight_pct"] > threshold_pct and p.get("sector") != "ETF"]
     concentration_note = ""
     if breaches:
         names = ", ".join(f'{p["ticker"]} ({p["weight_pct"]:.1f}%)' for p in breaches)

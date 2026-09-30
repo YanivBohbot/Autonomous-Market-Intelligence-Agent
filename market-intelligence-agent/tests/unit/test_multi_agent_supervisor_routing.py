@@ -105,6 +105,29 @@ def test_sticky_routes_back_to_portfolio_agent_without_calling_llm_when_human_co
     assert result.update["agent_hops"] == 1
 
 
+def test_sticky_rule_does_not_fire_when_the_prior_answer_never_mentioned_a_report():
+    """Regression (final review): the sticky rule fired for ANY save/export/
+    download follow-up after ANY portfolio_agent turn, not just a follow-up
+    to a report offer. "What's Margaret's portfolio worth?" -> "Save that my
+    investment horizon is 10 years" (a memory_agent request) would have stuck
+    to portfolio_agent, which has no save_memory tool -- the fact never gets
+    saved. Requiring the prior AIMessage to mention report/brief scopes the
+    rule to the actual bug it was written to fix."""
+    history = [
+        HumanMessage(content="What's Margaret's portfolio worth?"),
+        AIMessage(content="Margaret's portfolio is worth $156,078."),
+        HumanMessage(content="Save that my investment horizon is 10 years"),
+    ]
+    state = _state(messages=history, last_agent="portfolio_agent")
+
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="memory_agent", reasoning="remember a fact")
+        result = supervisor_node(state)
+
+    mock.invoke.assert_called_once()
+    assert result.goto == "memory_agent"
+
+
 def test_sticky_rule_does_not_fire_when_last_agent_was_not_portfolio_agent():
     history = [
         HumanMessage(content="What files are in the workspace?"),
@@ -119,6 +142,27 @@ def test_sticky_rule_does_not_fire_when_last_agent_was_not_portfolio_agent():
 
     mock.invoke.assert_called_once()
     assert result.goto == "filesystem_agent"
+
+
+def test_sticky_rule_check_survives_list_typed_message_content():
+    """Defensive: AG-UI can in principle deliver HumanMessage.content as a
+    list of content blocks (multimodal), not a plain str. A naive regex
+    .search(last.content) would raise TypeError and crash the whole graph
+    run over a routing heuristic. The text must be extracted the same way
+    display._content_text already does for ToolMessage content, so the rule
+    still works correctly instead of just not-crashing."""
+    history = [
+        HumanMessage(content="Generate a portfolio report for Margaret Collins"),
+        AIMessage(content="I've generated the portfolio report. Let me know if you'd like to save or export it."),
+        HumanMessage(content=[{"type": "text", "text": "Yes, save it as a downloadable report"}]),
+    ]
+    state = _state(messages=history, last_agent="portfolio_agent")
+
+    with patch.object(supervisor_mod, "_router") as mock:
+        result = supervisor_node(state)  # must not raise
+
+    mock.invoke.assert_not_called()
+    assert result.goto == "portfolio_agent"
 
 
 def test_sticky_rule_does_not_fire_when_the_new_message_has_no_save_language():

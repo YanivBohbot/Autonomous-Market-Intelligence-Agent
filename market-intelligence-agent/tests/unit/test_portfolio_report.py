@@ -83,6 +83,32 @@ def test_concentration_note_appears_only_above_threshold():
     assert "Concentration note" not in below_threshold
 
 
+def test_concentration_note_excludes_etfs_same_as_concentration_screen():
+    # Regression (final review): concentration_screen excludes ETF-sector
+    # positions from breaches by default (finance_calc.compute_concentration_screen,
+    # exclude_sectors=["ETF"]) because a diversified bond/index fund over 30%
+    # is not the single-stock overweight risk the screen exists to catch. The
+    # report's own concentration note used a plain weight_pct > threshold_pct
+    # filter with no sector exclusion, so an advisor could see "no client
+    # exceeds 30%" from concentration_screen and then a client's own report
+    # warning about the same ETF position -- two disagreeing verdicts.
+    etf_heavy = {
+        "client_name": "Christopher Lee",
+        "positions": [
+            {"ticker": "BND", "shares": 100.0, "avg_cost": 70.0, "price": 70.0, "sector": "ETF",
+             "market_value": 70000.0, "cost_basis": 70000.0, "unrealized_pnl": 0.0,
+             "unrealized_pnl_pct": 0.0, "weight_pct": 71.6},
+            {"ticker": "JNJ", "shares": 100.0, "avg_cost": 150.0, "price": 150.0, "sector": "Healthcare",
+             "market_value": 15000.0, "cost_basis": 15000.0, "unrealized_pnl": 0.0,
+             "unrealized_pnl_pct": 0.0, "weight_pct": 15.3},
+        ],
+        "totals": {"market_value": 85000.0, "cost_basis": 85000.0, "unrealized_pnl": 0.0, "unrealized_pnl_pct": 0.0},
+        "sector_allocation": {"ETF": 71.6, "Healthcare": 15.3},
+    }
+    html = build_portfolio_report_html(etf_heavy, threshold_pct=30.0)
+    assert "Concentration note" not in html
+
+
 def test_report_is_self_contained_no_external_assets():
     html = build_portfolio_report_html(_PORTFOLIO)
     # "http://www.w3.org/2000/svg" is the SVG xmlns namespace, a required

@@ -51,6 +51,28 @@ MAX_AGENT_HOPS = 4
 # Matches app/voice/hitl.py's precedent of a lightweight keyword classifier
 # for a resume/continuation decision, rather than another LLM call.
 _SAVE_LANGUAGE_RE = re.compile(r"\b(save|export|download)\b", re.IGNORECASE)
+# The sticky rule below must also confirm the PRIOR turn was actually about a
+# report -- otherwise "save"/"export"/"download" alone is ambiguous with a
+# memory_agent or finance_agent request that happens to follow a portfolio
+# question (see test_sticky_rule_does_not_fire_when_the_prior_answer_never_mentioned_a_report).
+_REPORT_LANGUAGE_RE = re.compile(r"\b(report|brief)\b", re.IGNORECASE)
+
+
+def _message_text(message) -> str:
+    """Same shape as display._content_text: message.content is normally a
+    plain str, but AG-UI/MCP content can in principle be a list of blocks
+    ([{"type": "text", "text": ...}, ...]). A regex against the raw content
+    would crash the whole graph run on a routing heuristic if it ever isn't
+    a string."""
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            block.get("text", "") for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return str(content or "")
 
 
 def supervisor_node(state: SupervisorState) -> Command[Route]:
@@ -87,13 +109,21 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     # producing a hand-typed .txt with no chart. Prompt wording alone isn't
     # reliable here, so -- like the FINISH-after-plain-answer rule above --
     # this is now decided in code: a fresh human turn that mentions
-    # save/export/download, arriving right after portfolio_agent itself last
-    # answered, stays with portfolio_agent without asking the LLM.
+    # save/export/download, arriving right after portfolio_agent itself
+    # OFFERED A REPORT, stays with portfolio_agent without asking the LLM.
+    # Requiring the prior AIMessage to mention report/brief (not just
+    # last_agent == portfolio_agent) matters: without it, "Save that my
+    # investment horizon is 10 years" right after an unrelated portfolio
+    # question would also stick to portfolio_agent, which has no
+    # save_memory tool, and the fact would silently never get saved.
     if (
         hops == 0
         and isinstance(last, HumanMessage)
         and state.get("last_agent") == "portfolio_agent"
-        and _SAVE_LANGUAGE_RE.search(last.content or "")
+        and len(messages) >= 2
+        and isinstance(messages[-2], AIMessage)
+        and _REPORT_LANGUAGE_RE.search(_message_text(messages[-2]))
+        and _SAVE_LANGUAGE_RE.search(_message_text(last))
     ):
         return Command(
             goto="portfolio_agent",

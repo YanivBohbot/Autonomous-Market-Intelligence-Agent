@@ -47,6 +47,23 @@ def test_path_traversal_is_blocked(tmp_path, monkeypatch):
     assert b"do not leak me" not in res.content
 
 
+def test_backslash_path_traversal_is_blocked(tmp_path, monkeypatch):
+    # Regression (final review): "..%2Fsecret.txt" never reaches the handler
+    # at all -- Starlette decodes %2F and the {filename} path segment simply
+    # doesn't match, so that existing test passes even against a handler with
+    # NO sanitization. "..%5Csecret.txt" (a literal backslash) DOES reach the
+    # handler as '..\\secret.txt' on Windows and must be blocked by the
+    # handler's own Path(filename).name stripping, not by routing luck.
+    secret = tmp_path / "secret.txt"
+    secret.write_text("do not leak me")
+    (tmp_path / "reports").mkdir(parents=True)
+
+    client = _client(tmp_path, monkeypatch)
+    res = client.get("/workspace/files/..%5Csecret.txt")
+    assert res.status_code in (403, 404)
+    assert b"do not leak me" not in res.content
+
+
 def test_a_file_outside_reports_is_not_served(tmp_path, monkeypatch):
     # Only WORKSPACE_ROOT/reports is in scope -- a root-level file (like an
     # upload, or a plain filesystem_agent write) must not be reachable here.

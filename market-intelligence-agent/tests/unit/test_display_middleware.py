@@ -21,9 +21,11 @@ def _request(name: str, args: dict) -> ToolCallRequest:
     )
 
 
-def _handler_returning(content):
+def _handler_returning(content, status="success"):
     def handler(request):
-        return ToolMessage(content=content, name=request.tool_call["name"], tool_call_id=request.tool_call["id"])
+        return ToolMessage(
+            content=content, name=request.tool_call["name"], tool_call_id=request.tool_call["id"], status=status,
+        )
     return handler
 
 
@@ -70,6 +72,21 @@ def test_list_content_is_flattened_to_text_before_normalizing():
         result = display.market_desk_display.wrap_tool_call(_request("fake_tool", {}), _handler_returning(list_content))
     envelope = json.loads(result.content)
     assert envelope == {"summary": "hello", "displays": [{"type": "fake", "text": "hello"}]}
+
+
+def test_an_error_tool_message_is_never_enveloped():
+    # Regression (final review, portfolio-report-artifact plan): with the
+    # default handle_tool_errors=True, an MCP write_file failure (e.g. ENOENT
+    # for a path whose parent directory doesn't exist) comes back as a
+    # ToolMessage(status="error"), not a raised exception -- the same shape
+    # as a success. Enveloping it built a working-looking report_file card
+    # (filename + Download button) for a file that was never written. A
+    # failed tool call must never produce a display, registered or not.
+    with patch.dict(display.DISPLAY_NORMALIZERS, {"fake_tool": lambda text, args: [{"type": "fake", "text": text}]}):
+        result = display.market_desk_display.wrap_tool_call(
+            _request("fake_tool", {}), _handler_returning("ENOENT: no such file or directory", status="error"),
+        )
+    assert result.content == "ENOENT: no such file or directory"
 
 
 def test_a_non_toolmessage_result_passes_through():

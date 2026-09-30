@@ -71,6 +71,13 @@ class MarketDeskDisplayMiddleware(AgentMiddleware):
     def _envelope(result: ToolResult, args: dict) -> ToolResult:
         if not isinstance(result, ToolMessage):
             return result
+        if result.status == "error":
+            # handle_tool_errors=True (the default) turns a raised tool
+            # exception into ToolMessage(status="error") rather than
+            # propagating it -- the same shape as a success. Enveloping an
+            # error built a working-looking report_file card (filename +
+            # Download button) for a write that never happened.
+            return result
         normalizer = DISPLAY_NORMALIZERS.get(result.name or "")
         if normalizer is None:
             return result
