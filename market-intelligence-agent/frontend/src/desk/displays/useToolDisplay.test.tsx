@@ -23,8 +23,8 @@ describe("useToolDisplay", () => {
     render(<Harness />);
     expect(Object.keys(registrations).sort()).toEqual([
       "browser_take_screenshot", "client_portfolio", "concentration_screen", "portfolio_metrics",
-      "search_knowledge_base", "write_file", "yfinance_get_price_history", "yfinance_get_ticker_info",
-      "yfinance_get_ticker_news",
+      "save_portfolio_report", "search_knowledge_base", "yfinance_get_price_history",
+      "yfinance_get_ticker_info", "yfinance_get_ticker_news",
     ]);
   });
 
@@ -54,9 +54,9 @@ describe("useToolDisplay", () => {
     render(<Harness />);
     const envelope = JSON.stringify({
       summary: "Report saved.",
-      displays: [{ type: "report_file", filename: "brief.html", url: "/workspace/files/brief.html" }],
+      displays: [{ type: "report_file", filename: "brief.xlsx", url: "/workspace/files/brief.xlsx" }],
     });
-    render(<>{registrations["write_file"]({ status: "complete", result: envelope })}</>);
-    expect(screen.getByText("brief.html")).toBeInTheDocument();
+    render(<>{registrations["save_portfolio_report"]({ status: "complete", result: envelope })}</>);
+    expect(screen.getByText("brief.xlsx")).toBeInTheDocument();
   });
 });

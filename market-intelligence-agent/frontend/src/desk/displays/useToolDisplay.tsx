@@ -51,16 +51,15 @@ const DISPLAYABLE_TOOLS = [
   "yfinance_get_ticker_news",
   "search_knowledge_base",
   "browser_take_screenshot",
-  "write_file",
+  "save_portfolio_report",
 ] as const;
 
 // One named registration per tool — leaves every other tool call (read_query,
-// save_memory, browser_navigate, browser_snapshot, send_email, ...) to
-// CopilotKit's own default card, completely untouched. write_file is
-// registered too, but its normalizer (display.py) only produces a display
-// for a path under "reports/" -- a plain filesystem_agent write still falls
-// through to the default card via the same "no displays" path every other
-// unregistered tool uses.
+// save_memory, browser_navigate, browser_snapshot, send_email, write_file,
+// ...) to CopilotKit's own default card, completely untouched.
+// save_portfolio_report is the only write-shaped tool registered here: it
+// builds and saves the report in one atomic call, so there is exactly one
+// tool name to watch for the report_file card.
 export function useToolDisplay(): void {
   for (const name of DISPLAYABLE_TOOLS) {
     // eslint-disable-next-line react-hooks/rules-of-hooks -- DISPLAYABLE_TOOLS is a fixed compile-time list, never conditional or reordered across renders.
