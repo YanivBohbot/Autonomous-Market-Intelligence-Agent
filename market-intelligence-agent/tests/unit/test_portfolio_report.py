@@ -105,8 +105,9 @@ def test_concentration_note_excludes_etfs_same_as_concentration_screen():
 
 
 import asyncio
+from pathlib import Path
 
-from app.agent.tools.portfolio_report import generate_portfolio_report
+from app.agent.tools.portfolio_report import save_portfolio_report
 
 _ROWS = [
     {"name": "Margaret Collins", "ticker": "BND", "shares": 300.0, "avg_cost": 73.33, "sector": "ETF"},
@@ -115,41 +116,77 @@ _ROWS = [
 _PRICES = {"BND": 70.075, "NVDA": 229.26}
 
 
-def _run(rows=_ROWS, prices=_PRICES, client_name="Margaret Collins"):
+def _run(tmp_path, rows=_ROWS, prices=_PRICES, client_name="Margaret Collins"):
     async def run_sql(sql):
         return rows
 
     async def get_price(ticker):
         return prices[ticker]
 
-    return asyncio.run(generate_portfolio_report(run_sql=run_sql, get_price=get_price, client_name=client_name))
+    return asyncio.run(save_portfolio_report(
+        run_sql=run_sql, get_price=get_price, client_name=client_name, reports_dir=tmp_path / "reports",
+    ))
 
 
-def test_suggested_path_is_under_reports_and_ends_in_html():
-    result = _run()
-    assert result["suggested_path"].startswith("reports/")
-    assert result["suggested_path"].endswith(".html")
+def test_writes_a_real_xlsx_file_to_reports_dir(tmp_path):
+    result = _run(tmp_path)
+    written = tmp_path / "reports" / result["filename"]
+    assert written.is_file()
+    assert written.read_bytes()[:2] == b"PK"  # .xlsx is a zip archive
 
 
-def test_html_contains_the_resolved_client_name():
-    result = _run()
-    assert "Margaret Collins" in result["html"]
+def test_filename_is_under_reports_and_ends_in_xlsx(tmp_path):
+    result = _run(tmp_path)
+    assert result["filename"].endswith(".xlsx")
+    assert "/" not in result["filename"]  # filename only -- reports_dir is where it lives, not part of the name
 
 
-def test_apostrophe_in_client_name_never_reaches_the_filename():
+def test_creates_reports_dir_when_missing(tmp_path):
+    reports_dir = tmp_path / "reports"
+    assert not reports_dir.exists()
+    _run(tmp_path)
+    assert reports_dir.is_dir()
+
+
+def test_apostrophe_in_client_name_never_reaches_the_filename(tmp_path):
     rows = [{"name": "Pat O'Brien", "ticker": "AAPL", "shares": 10.0, "avg_cost": 100.0, "sector": "Technology"}]
-    result = _run(rows=rows, prices={"AAPL": 150.0}, client_name="O'Brien")
-    assert "'" not in result["suggested_path"]
-    assert "/" not in result["suggested_path"].removeprefix("reports/")
+    result = _run(tmp_path, rows=rows, prices={"AAPL": 150.0}, client_name="O'Brien")
+    assert "'" not in result["filename"]
 
 
-def test_unresolved_client_returns_the_same_error_shape_load_client_portfolio_uses():
-    result = _run(rows=[], client_name="Nobody Real")
+def test_partial_name_match_resolves_to_the_full_client_name_in_the_filename(tmp_path):
+    # "Collins" resolves to "Margaret Collins" via load_client_portfolio --
+    # the filename must reflect the resolved name, not the partial input.
+    result = _run(tmp_path, client_name="Collins")
+    assert result["client_name"] == "Margaret Collins"
+    assert "margaret-collins" in result["filename"]
+
+
+def test_unresolved_client_returns_the_same_error_shape_load_client_portfolio_uses(tmp_path):
+    result = _run(tmp_path, rows=[], client_name="Nobody Real")
     assert result == {"error": "No client matching 'Nobody Real' found, or they have no holdings."}
-    assert "html" not in result
+    assert not (tmp_path / "reports").exists()  # nothing written on error
+
+
+def test_a_build_failure_leaves_no_file_on_disk(tmp_path, monkeypatch):
+    # The write only happens after build_portfolio_report_xlsx fully
+    # returns bytes -- a failure during the build must not leave a
+    # partial or empty file behind.
+    import app.agent.tools.portfolio_report as mod
+
+    def boom(portfolio, *, threshold_pct=30.0):
+        raise RuntimeError("simulated build failure")
+
+    monkeypatch.setattr(mod, "build_portfolio_report_xlsx", boom)
+    try:
+        _run(tmp_path)
+    except RuntimeError:
+        pass
+    reports_dir = tmp_path / "reports"
+    assert not reports_dir.exists() or list(reports_dir.iterdir()) == []
 
 
 def test_tool_name_and_llm_facing_args():
-    from app.agent.tools.portfolio_report import generate_portfolio_report_tool
-    assert generate_portfolio_report_tool.name == "generate_portfolio_report"
-    assert set(generate_portfolio_report_tool.args) == {"client_name"}
+    from app.agent.tools.portfolio_report import save_portfolio_report_tool
+    assert save_portfolio_report_tool.name == "save_portfolio_report"
+    assert set(save_portfolio_report_tool.args) == {"client_name"}

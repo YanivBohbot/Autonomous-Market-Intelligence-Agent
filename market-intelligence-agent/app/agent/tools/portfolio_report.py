@@ -127,36 +127,47 @@ def _slugify(name: str) -> str:
     return "-".join(cleaned.split())
 
 
-async def generate_portfolio_report(
+async def save_portfolio_report(
     *,
     run_sql: Callable[[str], Awaitable[list[dict]]],
     get_price: Callable[[str], Awaitable[float]],
     client_name: str,
+    reports_dir: Path,
 ) -> dict:
     portfolio = await load_client_portfolio(run_sql=run_sql, get_price=get_price, client_name=client_name)
     if "error" in portfolio:
         return portfolio
 
-    html = build_portfolio_report_html(portfolio)
+    # build_portfolio_report_xlsx's Workbook.close() is the actual blocking
+    # work (compiling XML, chart data, zipping the file) -- run it in a
+    # thread so it never blocks the event loop.
+    xlsx_bytes = await asyncio.to_thread(build_portfolio_report_xlsx, portfolio)
+
     today = datetime.now(timezone.utc).date().isoformat()
-    suggested_path = f"reports/{_slugify(portfolio['client_name'])}-portfolio-brief-{today}.html"
-    return {"client_name": portfolio["client_name"], "suggested_path": suggested_path, "html": html}
+    filename = f"{_slugify(portfolio['client_name'])}-portfolio-brief-{today}.xlsx"
+
+    def _write() -> None:
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        (reports_dir / filename).write_bytes(xlsx_bytes)
+
+    await asyncio.to_thread(_write)
+
+    return {"client_name": portfolio["client_name"], "filename": filename}
 
 
-class GeneratePortfolioReportInput(BaseModel):
+class SavePortfolioReportInput(BaseModel):
     client_name: str = Field(description="Full or partial client name, e.g. 'Margaret Collins' or 'Collins'.")
 
 
-@tool("generate_portfolio_report", args_schema=GeneratePortfolioReportInput)
-async def generate_portfolio_report_tool(client_name: str) -> dict:
-    """Build a downloadable HTML portfolio brief (positions table + a weight
-    pie chart) for one named client. Resolves the client and fetches
-    holdings and live prices itself -- do NOT call client_portfolio or fetch
-    prices first, just pass client_name. Returns {"client_name",
-    "suggested_path" (always under "reports/"), "html"} or {"error"} if the
-    name matches zero or multiple clients. Pass the html value UNEDITED as
-    write_file's content and suggested_path as its path -- do not
-    summarize, truncate, or reformat the HTML yourself."""
+@tool("save_portfolio_report", args_schema=SavePortfolioReportInput)
+async def save_portfolio_report_tool(client_name: str) -> dict:
+    """Build and save a downloadable Excel portfolio brief (styled table +
+    a native pie chart) for one named client, in one atomic step -- resolves
+    the client, fetches holdings and live prices, builds the file, and
+    writes it to the workspace itself. There is no separate write_file
+    step and no content to pass anywhere. Returns {"client_name",
+    "filename"} or {"error"} if the name matches zero or multiple clients."""
+    from app.core.config import settings
     from app.agent.tools.concentration import parse_tool_payload, price_from_quote
     from app.agent.tools.mcp_clients.mcp_client import crm_tool
     from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
@@ -169,4 +180,7 @@ async def generate_portfolio_report_tool(client_name: str) -> dict:
     async def get_price(ticker: str) -> float:
         return price_from_quote(parse_tool_payload(await yf_quote_tool.ainvoke({symbol_arg: ticker})))
 
-    return await generate_portfolio_report(run_sql=run_sql, get_price=get_price, client_name=client_name)
+    reports_dir = settings.WORKSPACE_ROOT.resolve() / "reports"
+    return await save_portfolio_report(
+        run_sql=run_sql, get_price=get_price, client_name=client_name, reports_dir=reports_dir,
+    )

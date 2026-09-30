@@ -8,7 +8,7 @@ from app.agent.tools.mcp_clients.mcp_client import crm_tool, crm_list_tables_too
 from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool
 from app.agent.tools.concentration import concentration_screen_tool
 from app.agent.tools.client_portfolio import client_portfolio_tool
-from app.agent.tools.portfolio_report import generate_portfolio_report_tool
+from app.agent.tools.portfolio_report import save_portfolio_report_tool
 from app.agent.tools.mcp_clients.yfinance_client import (
     yf_quote_tool,
     yf_history_tool,
@@ -45,7 +45,7 @@ TOOLS = [
     pct_change_tool,
     concentration_screen_tool,
     client_portfolio_tool,
-    generate_portfolio_report_tool,
+    save_portfolio_report_tool,
     yf_quote_tool,
     yf_history_tool,
     yf_news_tool,
@@ -68,7 +68,6 @@ _BASE_READ_ONLY_TOOLS: set[str] = {
     "pct_change",
     "concentration_screen",
     "client_portfolio",
-    "generate_portfolio_report",
     "yfinance_get_ticker_info",
     "yfinance_get_price_history",
     "yfinance_get_ticker_news",
@@ -123,7 +122,7 @@ __all__ = [
     "pct_change_tool",
     "concentration_screen_tool",
     "client_portfolio_tool",
-    "generate_portfolio_report_tool",
+    "save_portfolio_report_tool",
     "yf_quote_tool",
     "yf_history_tool",
     "yf_news_tool",

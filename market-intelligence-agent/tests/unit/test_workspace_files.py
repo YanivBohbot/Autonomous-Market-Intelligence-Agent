@@ -30,6 +30,24 @@ def test_serves_a_report_and_forces_download(tmp_path, monkeypatch):
     assert "attachment" in res.headers["content-disposition"]
 
 
+def test_serves_a_binary_report_byte_for_byte(tmp_path, monkeypatch):
+    # Regression: the HTML-era version of this test used res.text (string
+    # comparison), which is meaningless for a binary .xlsx file -- a
+    # naive copy-paste of that test would give false confidence. Must
+    # compare raw bytes.
+    reports = tmp_path / "reports"
+    reports.mkdir(parents=True)
+    fake_xlsx = b"PK\x03\x04not a real zip but binary enough for this test\x00\xff\xfe"
+    (reports / "margaret-collins-portfolio-brief-2026-09-30.xlsx").write_bytes(fake_xlsx)
+
+    client = _client(tmp_path, monkeypatch)
+    res = client.get("/workspace/files/margaret-collins-portfolio-brief-2026-09-30.xlsx")
+
+    assert res.status_code == 200
+    assert res.content == fake_xlsx
+    assert "attachment" in res.headers["content-disposition"]
+
+
 def test_missing_file_returns_404(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     res = client.get("/workspace/files/does-not-exist.html")
