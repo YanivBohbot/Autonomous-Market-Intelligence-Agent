@@ -1,52 +1,13 @@
-"""Portfolio report artifact generation — chart math, HTML rendering, and the
-self-loading tool wrapper, in that order (each layer tested independently,
-same discipline as finance_calc.py / concentration.py / client_portfolio.py)."""
-import re
+"""Portfolio report artifact generation -- Excel table+chart building, then
+the self-loading atomic tool, in that order (each layer tested
+independently, same discipline as finance_calc.py / concentration.py /
+client_portfolio.py)."""
+import io
 
+import openpyxl
 import pytest
 
-from app.agent.tools.portfolio_report import build_pie_chart_svg
-
-
-def test_single_position_renders_a_full_circle_not_a_degenerate_arc():
-    svg = build_pie_chart_svg([{"ticker": "NVDA", "weight_pct": 100.0}])
-    assert "<circle" in svg
-    assert "<path" not in svg
-
-
-def test_multiple_positions_render_one_arc_path_each():
-    svg = build_pie_chart_svg([
-        {"ticker": "BND", "weight_pct": 40.0},
-        {"ticker": "NVDA", "weight_pct": 60.0},
-    ])
-    assert svg.count("<path") == 2
-
-
-def test_includes_a_legend_entry_per_position_with_ticker_and_percent():
-    svg = build_pie_chart_svg([
-        {"ticker": "BND", "weight_pct": 40.0},
-        {"ticker": "NVDA", "weight_pct": 60.0},
-    ])
-    assert "BND 40.0%" in svg
-    assert "NVDA 60.0%" in svg
-
-
-def test_no_nan_or_negative_coordinates_for_a_three_way_split():
-    svg = build_pie_chart_svg([
-        {"ticker": "A", "weight_pct": 33.3},
-        {"ticker": "B", "weight_pct": 33.3},
-        {"ticker": "C", "weight_pct": 33.4},
-    ])
-    assert "nan" not in svg.lower()
-    assert re.search(r"-\d", svg) is None  # a hyphen directly before a digit would be a real negative number (font-size/font-family have no digit after their hyphen)
-
-
-def test_empty_positions_raises():
-    with pytest.raises(ValueError, match="at least one position"):
-        build_pie_chart_svg([])
-
-
-from app.agent.tools.portfolio_report import build_portfolio_report_html
+from app.agent.tools.portfolio_report import build_portfolio_report_xlsx
 
 _PORTFOLIO = {
     "client_name": "Margaret Collins",
@@ -63,35 +24,68 @@ _PORTFOLIO = {
 }
 
 
+def _load(data: bytes):
+    return openpyxl.load_workbook(io.BytesIO(data))
+
+
+def _all_cell_values(ws):
+    return [c.value for row in ws.iter_rows() for c in row if c.value is not None]
+
+
 def test_report_contains_client_name_and_exact_copied_numbers():
-    html = build_portfolio_report_html(_PORTFOLIO)
-    assert "Margaret Collins" in html
-    assert "156,780.20" in html  # copied verbatim from totals, never recomputed
-    assert "NVDA" in html and "58.5%" in html
+    wb = _load(build_portfolio_report_xlsx(_PORTFOLIO))
+    ws = wb["Portfolio Brief"]
+    values = _all_cell_values(ws)
+    assert any("Margaret Collins" in str(v) for v in values)
+    assert 156780.20 in [v for v in values if isinstance(v, (int, float))]
+    assert "NVDA" in values
 
 
-def test_report_embeds_an_svg_chart():
-    html = build_portfolio_report_html(_PORTFOLIO)
-    assert "<svg" in html
+def test_report_includes_a_native_chart():
+    wb = _load(build_portfolio_report_xlsx(_PORTFOLIO))
+    ws = wb["Portfolio Brief"]
+    assert len(ws._charts) == 1
+
+
+def test_single_position_renders_a_chart_without_error():
+    # Unlike hand-computed SVG arcs, a native Excel pie chart has no
+    # "can't express a full 360 degree sweep as one path" special case --
+    # this just needs to not raise and to still produce a chart.
+    single = {
+        "client_name": "Solo Holder",
+        "positions": [
+            {"ticker": "NVDA", "shares": 100.0, "avg_cost": 30.0, "price": 229.26, "sector": "Technology",
+             "market_value": 22926.0, "cost_basis": 3000.0, "unrealized_pnl": 19926.0,
+             "unrealized_pnl_pct": 664.2, "weight_pct": 100.0},
+        ],
+        "totals": {"market_value": 22926.0, "cost_basis": 3000.0, "unrealized_pnl": 19926.0, "unrealized_pnl_pct": 664.2},
+        "sector_allocation": {"Technology": 100.0},
+    }
+    wb = _load(build_portfolio_report_xlsx(single))
+    ws = wb["Portfolio Brief"]
+    assert len(ws._charts) == 1
+
+
+def test_empty_positions_raises():
+    with pytest.raises(ValueError, match="at least one position"):
+        build_portfolio_report_xlsx({**_PORTFOLIO, "positions": []})
 
 
 def test_concentration_note_appears_only_above_threshold():
-    html = build_portfolio_report_html(_PORTFOLIO, threshold_pct=30.0)
-    assert "NVDA" in html.split("Concentration note")[1]
+    wb_above = _load(build_portfolio_report_xlsx(_PORTFOLIO, threshold_pct=30.0))
+    values_above = " ".join(str(v) for v in _all_cell_values(wb_above["Portfolio Brief"]))
+    assert "Concentration note" in values_above
+    assert "NVDA" in values_above.split("Concentration note")[1]
 
-    below_threshold = build_portfolio_report_html(_PORTFOLIO, threshold_pct=90.0)
-    assert "Concentration note" not in below_threshold
+    wb_below = _load(build_portfolio_report_xlsx(_PORTFOLIO, threshold_pct=90.0))
+    values_below = " ".join(str(v) for v in _all_cell_values(wb_below["Portfolio Brief"]))
+    assert "Concentration note" not in values_below
 
 
 def test_concentration_note_excludes_etfs_same_as_concentration_screen():
-    # Regression (final review): concentration_screen excludes ETF-sector
-    # positions from breaches by default (finance_calc.compute_concentration_screen,
-    # exclude_sectors=["ETF"]) because a diversified bond/index fund over 30%
-    # is not the single-stock overweight risk the screen exists to catch. The
-    # report's own concentration note used a plain weight_pct > threshold_pct
-    # filter with no sector exclusion, so an advisor could see "no client
-    # exceeds 30%" from concentration_screen and then a client's own report
-    # warning about the same ETF position -- two disagreeing verdicts.
+    # Same rationale as the HTML-era version of this test: concentration_screen
+    # excludes ETF-sector positions from breaches by default, so the report
+    # must not disagree with it for the same client.
     etf_heavy = {
         "client_name": "Christopher Lee",
         "positions": [
@@ -105,17 +99,9 @@ def test_concentration_note_excludes_etfs_same_as_concentration_screen():
         "totals": {"market_value": 85000.0, "cost_basis": 85000.0, "unrealized_pnl": 0.0, "unrealized_pnl_pct": 0.0},
         "sector_allocation": {"ETF": 71.6, "Healthcare": 15.3},
     }
-    html = build_portfolio_report_html(etf_heavy, threshold_pct=30.0)
-    assert "Concentration note" not in html
-
-
-def test_report_is_self_contained_no_external_assets():
-    html = build_portfolio_report_html(_PORTFOLIO)
-    # "http://www.w3.org/2000/svg" is the SVG xmlns namespace, a required
-    # identifier the browser never fetches -- not an external asset load.
-    # A real external reference would show up as src="http..." or url(http...).
-    assert 'src="http' not in html and "url(http" not in html
-    assert "<img" not in html  # the only image-like content is the inline <svg>
+    wb = _load(build_portfolio_report_xlsx(etf_heavy, threshold_pct=30.0))
+    values = " ".join(str(v) for v in _all_cell_values(wb["Portfolio Brief"]))
+    assert "Concentration note" not in values
 
 
 import asyncio
