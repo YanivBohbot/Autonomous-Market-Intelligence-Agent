@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import rag_agent as mod
-from app.agent.common import base_middleware
+from app.agent.middleware import base_middleware
 from app.agent.multi_agent.display import market_desk_display
 
 

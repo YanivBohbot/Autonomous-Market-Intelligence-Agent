@@ -108,7 +108,7 @@ def test_browser_agent_strips_images_before_enveloping():
     # (langchain/agents/factory.py, _chain_tool_call_wrappers) — the display
     # middleware must be listed BEFORE strip_tool_images in browser_agent's
     # middleware list, so it only ever sees text, never a raw image block.
-    from app.agent.common import strip_tool_images
+    from app.agent.middleware import strip_tool_images
 
     image_and_text = [
         {"type": "text", "text": "### Result\n- [Screenshot of viewport](screenshots/x.png)"},

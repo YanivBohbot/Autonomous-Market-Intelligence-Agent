@@ -3,8 +3,8 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import filesystem_agent as mod
-from app.agent.common import base_middleware
-from app.agent.pii import SensitiveDataGuard
+from app.agent.middleware import base_middleware
+from app.agent.guardrails import SensitiveDataGuard
 
 
 def _kwargs():

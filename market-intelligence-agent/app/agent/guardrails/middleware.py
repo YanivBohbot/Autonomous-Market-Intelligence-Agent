@@ -6,7 +6,7 @@ from typing import Any
 from langchain.agents.middleware import AgentMiddleware, AgentState, Runtime, hook_config
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.agent.pii.detection import SENSITIVE_DATA_WARNING, contains_sensitive_data
+from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING, contains_sensitive_data
 
 
 class SensitiveDataGuard(AgentMiddleware):

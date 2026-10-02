@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 
 from langchain.agents.middleware import PIIMiddleware, SummarizationMiddleware
 
-from app.agent.common import (
+from app.agent.middleware import (
     base_middleware,
     call_limit,
     mask_credit_cards,
@@ -19,7 +19,7 @@ from app.agent.common import (
     today_prompt,
     tool_errors_to_messages,
 )
-from app.agent.pii import SensitiveDataGuard
+from app.agent.guardrails import SensitiveDataGuard
 from tests.unit.fake_chat import FakeToolModel
 
 

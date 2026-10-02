@@ -6,7 +6,7 @@ from langgraph.types import interrupt
 from langchain_core.messages import HumanMessage, ToolMessage
 from app.agent.state import AgentState
 from app.agent.nodes.generate import generate_answer
-from app.agent.pii import pii_guard_node, route_after_pii_guard
+from app.agent.guardrails import pii_guard_node, route_after_pii_guard
 from app.agent.tools import TOOLS, READ_ONLY_TOOLS, is_read_only
 from app.agent.nodes.tool_utils import strip_image_content as _strip_image_content
 

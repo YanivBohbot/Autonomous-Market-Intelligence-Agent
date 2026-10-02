@@ -6,9 +6,9 @@ like the existing `PIIMiddleware` mask/redact strategies in
 `app/agent/common.py` do. Room to grow: more detectors, more guard points.
 """
 
-from app.agent.pii.detection import SENSITIVE_DATA_WARNING, contains_sensitive_data
-from app.agent.pii.middleware import SensitiveDataGuard
-from app.agent.pii.node import pii_guard_node, route_after_pii_guard
+from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING, contains_sensitive_data
+from app.agent.guardrails.middleware import SensitiveDataGuard
+from app.agent.guardrails.node import pii_guard_node, route_after_pii_guard
 
 __all__ = [
     "SENSITIVE_DATA_WARNING",

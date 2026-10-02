@@ -28,6 +28,13 @@ Content = str | list[str | dict[str, Any]] | None
 def _trips(guard: PIIMiddleware, content: Content) -> bool:
     if not content:
         return False
+    # Calling before_model directly, outside a real create_agent run, isn't a
+    # documented usage of PIIMiddleware -- it works only because its
+    # implementation never actually touches the `runtime` argument today, so
+    # passing None here doesn't break anything. Nothing guarantees that stays
+    # true in a future langchain release; if this starts failing, check
+    # whether before_model started using `runtime` and fall back to calling
+    # guard.detector(text) + apply_strategy directly instead.
     try:
         guard.before_model({"messages": [HumanMessage(content=content)]}, None)
     except PIIDetectionError:

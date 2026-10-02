@@ -38,6 +38,13 @@ class RoutingDecision(BaseModel):
     reasoning: str = Field(description="One sentence: why this specialist (or FINISH).")
 
 
+# Deliberately not the official `langgraph-supervisor` package (handoff
+# tools the LLM calls, routed via Command(goto=..., graph=Command.PARENT)):
+# that pattern gives the LLM the routing decision as a tool call, with no
+# plain-Python hook before it takes effect. The sticky-rule override below
+# (a deterministic route that skips the LLM entirely for one specific
+# follow-up) needs exactly that hook, so this supervisor stays a plain node
+# that calls `with_structured_output` itself and returns `Command` directly.
 _llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
 # The routing decision is internal: Market Desk (ag-ui-langgraph, which streams
 # via astream_events) must not render its JSON as chat text. The decision stays

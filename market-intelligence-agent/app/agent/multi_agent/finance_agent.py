@@ -1,6 +1,6 @@
 from langchain.agents import create_agent
 
-from app.agent.common import (
+from app.agent.middleware import (
     base_middleware,
     redact_emails,
     specialist_model,

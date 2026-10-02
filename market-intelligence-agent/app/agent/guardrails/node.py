@@ -10,7 +10,7 @@ addresses to work — same reason `email_agent` is exempt in
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import END
 
-from app.agent.pii.detection import SENSITIVE_DATA_WARNING, contains_sensitive_data
+from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING, contains_sensitive_data
 from app.agent.state import AgentState
 
 

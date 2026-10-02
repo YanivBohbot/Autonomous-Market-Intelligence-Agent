@@ -23,7 +23,7 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
 from app.agent.nodes.tool_utils import strip_image_content
-from app.agent.pii import SensitiveDataGuard
+from app.agent.guardrails import SensitiveDataGuard
 from app.agent.prompts import with_today
 from app.core.config import settings
 
@@ -94,6 +94,9 @@ def _tool_error_content(exc: Exception, request: ToolCallRequest) -> str:
 tool_errors_to_messages = ToolErrorMiddleware(on_error=_tool_error_content)
 
 
+# Class-based: the @wrap_tool_call decorator only types sync functions, and the
+# MCP tools are async-only; AgentMiddleware types wrap_tool_call and
+# awrap_tool_call.
 class StripToolImages(AgentMiddleware):
     """OpenAI rejects image parts in tool messages; drop them (browser
     screenshots) and keep the text."""

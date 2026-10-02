@@ -3,14 +3,14 @@ from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import END
 
-from app.agent.pii import (
+from app.agent.guardrails import (
     SENSITIVE_DATA_WARNING,
     SensitiveDataGuard,
     contains_sensitive_data,
     pii_guard_node,
     route_after_pii_guard,
 )
-from app.agent.pii.detection import contains_credit_card, contains_email
+from app.agent.guardrails.detection import contains_credit_card, contains_email
 from tests.unit.fake_chat import FakeToolModel
 
 

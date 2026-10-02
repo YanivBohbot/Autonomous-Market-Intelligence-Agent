@@ -1,7 +1,7 @@
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
-from app.agent.common import base_middleware, specialist_model
+from app.agent.middleware import base_middleware, specialist_model
 from app.agent.multi_agent.display import market_desk_display
 from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
 from app.agent.tools import (
