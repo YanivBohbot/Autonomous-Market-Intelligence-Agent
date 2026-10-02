@@ -120,6 +120,7 @@ single-agent-specific additions:
 | `model_retry()` | `base_middleware()` | replaces today's hand-rolled `.with_retry()` |
 | `ErrorRecoveryMiddleware` (**new**) | `app/agent/single_agent.py` | preserves `ERROR_RECOVERY_PROMPT` behavior — decision 1 |
 | `HumanInTheLoopMiddleware(interrupt_on={...})` | official | replaces `approval_node` + `READ_ONLY_TOOLS` check |
+| `strip_tool_images` | `app/agent/middleware.py` | replaces `run_tools`'s inline `_strip_image_content` loop — same singleton `browser_agent` already uses, applied here to all tools (harmless no-op on non-image content, confirmed via `app/agent/nodes/tool_utils.py`'s `strip_image_content`) |
 | `tool_errors_to_messages` | `base_middleware()` | unchanged |
 
 `interrupt_on` built from the side-effect subset of `TOOLS` (confirmed via
@@ -193,6 +194,12 @@ cleared) instead of forwarding the normal request unchanged.
   no longer exists — replace with tests against the new
   `HumanInTheLoopMiddleware` wiring (mirroring
   `tests/unit/test_multi_agent_hitl.py`'s approve/reject/edit pattern).
+- `tests/unit/test_tool_output_image_stripping.py`: imports
+  `_strip_image_content` from `app.agent.graph` (the re-export disappears
+  with `run_tools`) — update the import to
+  `app.agent.nodes.tool_utils.strip_image_content` directly.
+  `tests/unit/test_tool_utils.py` already imports from the correct module
+  and needs no change.
 - Full regression: `uv run pytest tests/ -q` must stay green throughout.
 
 ## Out of scope
