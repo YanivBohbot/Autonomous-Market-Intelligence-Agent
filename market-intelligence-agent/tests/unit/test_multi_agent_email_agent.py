@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import email_agent as mod
-from app.agent.multi_agent.common import base_middleware
+from app.agent.common import base_middleware
 
 
 def _kwargs():

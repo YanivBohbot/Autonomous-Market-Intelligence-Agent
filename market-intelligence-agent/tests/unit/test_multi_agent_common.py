@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 
 from langchain.agents.middleware import PIIMiddleware, SummarizationMiddleware
 
-from app.agent.multi_agent.common import (
+from app.agent.common import (
     base_middleware,
     call_limit,
     mask_credit_cards,
@@ -19,6 +19,7 @@ from app.agent.multi_agent.common import (
     today_prompt,
     tool_errors_to_messages,
 )
+from app.agent.pii import SensitiveDataGuard
 from tests.unit.fake_chat import FakeToolModel
 
 
@@ -38,18 +39,19 @@ def test_call_limit_is_10_per_run_and_ends_gracefully():
 
 def test_base_middleware_order():
     mw = base_middleware()
-    assert mw[0] is today_prompt
-    assert isinstance(mw[1], SummarizationMiddleware)
-    assert isinstance(mw[2], PIIMiddleware) and mw[2].pii_type == "credit_card"
-    assert isinstance(mw[3], ModelCallLimitMiddleware)
-    assert mw[4] is tool_errors_to_messages
-    assert len(mw) == 5
+    assert isinstance(mw[0], SensitiveDataGuard)
+    assert mw[1] is today_prompt
+    assert isinstance(mw[2], SummarizationMiddleware)
+    assert isinstance(mw[3], PIIMiddleware) and mw[3].pii_type == "credit_card"
+    assert isinstance(mw[4], ModelCallLimitMiddleware)
+    assert mw[5] is tool_errors_to_messages
+    assert len(mw) == 6
 
 
-def test_summarization_triggers_at_6000_tokens_and_keeps_last_10_messages():
+def test_summarization_triggers_at_6000_tokens_and_keeps_last_50_messages():
     m = summarization()
     assert m.trigger == ("tokens", 6000)
-    assert m.keep == ("messages", 10)
+    assert m.keep == ("messages", 50)
 
 
 def test_mask_credit_cards_and_redact_emails_configuration():

@@ -5,7 +5,7 @@ from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddlewar
 from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 
-from app.agent.multi_agent.common import ToolResult, base_middleware, specialist_model
+from app.agent.common import ToolResult, base_middleware, specialist_model
 from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
 from app.agent.tools import crm_tool, send_email_tool
 from app.agent.tools.concentration import parse_tool_payload

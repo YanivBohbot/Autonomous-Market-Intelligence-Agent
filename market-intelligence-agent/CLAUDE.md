@@ -61,11 +61,14 @@ The email tool falls back to a simulation (no real send) when `EMAIL_SENDER` sti
 Compiled with a **SQLite checkpointer** (`data/checkpoints.db`, see `app/agent/memory/checkpointer.py`). HITL uses the **dynamic `interrupt()` pattern** with `Command(resume=...)` — no `interrupt_before`. Flow:
 
 ```
-START → record_question → generate → (tool_calls?) → approval → [tools | generate]
+START → record_question → pii_guard → (sensitive?) → END
+                              ↓ no
+                           generate → (tool_calls?) → approval → [tools | generate]
 tools → generate → … → END
 ```
 
 - **record_question**: persists the user's turn as a `HumanMessage` so it shows up in checkpointed history.
+- **pii_guard** (`app/agent/pii/node.py`): if the last `HumanMessage` contains a credit card or email, short-circuits straight to `END` with a warning `AIMessage` — `generate` never runs, no user data reaches the LLM. Shared detection logic lives in `app/agent/pii/`.
 - **generate**: LLM (with `TOOLS` bound) loaded from `app/agent/prompts/system.py` (`SYSTEM_PROMPT`, `ERROR_RECOVERY_PROMPT`). Decides whether to call a tool or emit a final answer.
 - **approval**: inspects the last `AIMessage`'s `tool_calls`. If every call is in `READ_ONLY_TOOLS`, returns immediately. Otherwise calls `interrupt(requests)` surfacing only side-effect calls. **Atomic batch rule**: any reject cancels the entire batch via `ToolMessage`s.
 - **tools** (LangGraph `ToolNode`): runs whatever the LLM called.
@@ -112,7 +115,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 Router pattern: `record_question → supervisor → <specialist> → supervisor → END`. Wired only to the opt-in Market Desk endpoint (`COPILOT_ENABLED`, React console); not to `/stream`, Streamlit or voice. Build with `build_multi_agent_app(checkpointer)` in tests/scripts.
 
 - One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
-- `common.py`: `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 10 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` keep addresses. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
+- `app/agent/common.py` (shared with the single-agent graph, so it lives outside `multi_agent/`): `specialist_model()` and `base_middleware()` = `today_prompt` (date in the system prompt), `SensitiveDataGuard()` (`app/agent/pii/`: blocks before any model call if the user's message contains a credit card or email — see below), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 50 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` keep addresses. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
 - HITL uses the official `HumanInTheLoopMiddleware` (email: `send_email`, filesystem: `write_file`, memory: `save_memory`). Resume with `Command(resume={"decisions": [{"type": "approve"} | {"type": "reject", "message": ...} | {"type": "edit", "edited_action": {...}}]})`, one decision per pending call — different from the single-agent `/approve` contract.
 
 ### API routers (`app/api/routers/`)

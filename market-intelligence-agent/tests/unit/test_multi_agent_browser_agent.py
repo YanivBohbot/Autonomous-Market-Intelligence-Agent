@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import browser_agent as mod
-from app.agent.multi_agent.common import base_middleware
+from app.agent.common import base_middleware
 from app.agent.multi_agent.display import market_desk_display
 
 
@@ -23,7 +23,7 @@ def test_create_agent_call():
     assert kw["system_prompt"] == BROWSER_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "browser_agent"
-    from app.agent.multi_agent.common import strip_tool_images
+    from app.agent.common import strip_tool_images
     mw = kw["middleware"]
     base = base_middleware()
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]

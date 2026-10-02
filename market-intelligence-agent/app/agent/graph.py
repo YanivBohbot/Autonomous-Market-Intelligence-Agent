@@ -6,6 +6,7 @@ from langgraph.types import interrupt
 from langchain_core.messages import HumanMessage, ToolMessage
 from app.agent.state import AgentState
 from app.agent.nodes.generate import generate_answer
+from app.agent.pii import pii_guard_node, route_after_pii_guard
 from app.agent.tools import TOOLS, READ_ONLY_TOOLS, is_read_only
 from app.agent.nodes.tool_utils import strip_image_content as _strip_image_content
 
@@ -97,12 +98,18 @@ async def run_tools(state: AgentState) -> dict:
 
 workflow = StateGraph(AgentState)
 workflow.add_node("record_question", record_question)
+workflow.add_node("pii_guard", pii_guard_node)
 workflow.add_node("generate", generate_answer)
 workflow.add_node("approval", approval_node)
 workflow.add_node("tools", run_tools)
 
 workflow.add_edge(START, "record_question")
-workflow.add_edge("record_question", "generate")
+workflow.add_edge("record_question", "pii_guard")
+workflow.add_conditional_edges(
+    "pii_guard",
+    route_after_pii_guard,
+    {"generate": "generate", END: END},
+)
 workflow.add_conditional_edges(
     "generate",
     route_after_generate,

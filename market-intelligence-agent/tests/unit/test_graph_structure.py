@@ -13,7 +13,7 @@ def test_graph_compiles():
 
 def test_graph_has_exactly_the_expected_nodes():
     nodes = set(_build().get_graph().nodes) - {"__start__", "__end__"}
-    assert nodes == {"record_question", "generate", "approval", "tools"}
+    assert nodes == {"record_question", "pii_guard", "generate", "approval", "tools"}
 
 
 def test_graph_no_longer_has_rag_pipeline_nodes():
