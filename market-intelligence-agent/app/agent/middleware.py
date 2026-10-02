@@ -11,7 +11,9 @@ from typing import Any
 from langchain.agents.middleware import (
     AgentMiddleware,
     ModelCallLimitMiddleware,
+    ModelFallbackMiddleware,
     ModelRequest,
+    ModelRetryMiddleware,
     PIIMiddleware,
     SummarizationMiddleware,
     ToolErrorMiddleware,
@@ -49,6 +51,29 @@ def call_limit() -> ModelCallLimitMiddleware:
     """Cap model calls per specialist run so a looping agent can't run up
     OpenAI cost; "end" finishes the run instead of raising."""
     return ModelCallLimitMiddleware(run_limit=MODEL_CALL_LIMIT, exit_behavior="end")
+
+
+def model_retry() -> ModelRetryMiddleware:
+    """A transient OpenAI error (rate limit, timeout, 5xx) during the model
+    call itself isn't a tool error -- ToolErrorMiddleware never sees it, and
+    nothing else in this stack retries it, so the whole run used to fail
+    outright. Defaults (2 retries, exponential backoff with jitter) retry
+    only the model call, before any tool executes -- safe even for
+    specialists with side-effect tools."""
+    return ModelRetryMiddleware()
+
+
+def model_fallback() -> ModelFallbackMiddleware | None:
+    """Switches to Anthropic if OpenAI is still down after model_retry()'s
+    own retries are exhausted (first-in-list wraps outermost for
+    wrap_model_call middleware, so this must be listed before model_retry()
+    in base_middleware() -- outer catches the final failure and re-invokes
+    the inner retry layer against the fallback model). Opt-in: `None` (and
+    therefore omitted from the middleware list) when no ANTHROPIC_API_KEY is
+    configured, since this is an extra safety net, not a requirement."""
+    if not settings.ANTHROPIC_API_KEY:
+        return None
+    return ModelFallbackMiddleware("anthropic:claude-sonnet-5-5")
 
 
 def summarization() -> SummarizationMiddleware:
@@ -129,11 +154,17 @@ def base_middleware(*, check_email: bool = True) -> list[AgentMiddleware[Any, An
     """`check_email=False` for specialists that need a real address to work
     (send_email, or anything that saves a report/fact tied to a client) —
     same exemption `redact_emails()` already makes, see its docstring."""
-    return [
+    middleware: list[AgentMiddleware[Any, Any, Any]] = [
         SensitiveDataGuard(check_email=check_email),
         today_prompt,
         summarization(),
         mask_credit_cards(),
         call_limit(),
-        tool_errors_to_messages,
     ]
+    fallback = model_fallback()
+    if fallback is not None:
+        # Must precede model_retry() — see model_fallback()'s docstring.
+        middleware.append(fallback)
+    middleware.append(model_retry())
+    middleware.append(tool_errors_to_messages)
+    return middleware

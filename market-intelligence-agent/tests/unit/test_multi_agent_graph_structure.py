@@ -38,3 +38,11 @@ def test_create_agent_specialists_return_to_supervisor():
     edges = {(e.source, e.target) for e in _build().get_graph().edges}
     for name in SPECIALISTS:
         assert (name, "supervisor") in edges
+
+
+def test_supervisor_node_has_a_retry_policy():
+    # supervisor_node calls the model directly (no create_agent middleware
+    # stack attaches to it), so a transient OpenAI error has nothing else
+    # retrying it -- RetryPolicy is the only available safety net here.
+    app = _build()
+    assert app.builder.nodes["supervisor"].retry_policy is not None

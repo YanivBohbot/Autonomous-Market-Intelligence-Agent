@@ -2,7 +2,11 @@ from datetime import date
 
 import pytest
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ModelFallbackMiddleware,
+    ModelRetryMiddleware,
+)
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
@@ -37,7 +41,29 @@ def test_call_limit_is_10_per_run_and_ends_gracefully():
     assert m.exit_behavior == "end"
 
 
-def test_base_middleware_order():
+def test_model_retry_uses_default_backoff():
+    from app.agent.middleware import model_retry
+    m = model_retry()
+    assert isinstance(m, ModelRetryMiddleware)
+    assert m.max_retries == 2
+
+
+def test_model_fallback_is_none_without_an_anthropic_key(monkeypatch):
+    import app.agent.middleware as mod
+    monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "")
+    assert mod.model_fallback() is None
+
+
+def test_model_fallback_targets_claude_when_a_key_is_configured(monkeypatch):
+    import app.agent.middleware as mod
+    monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "sk-ant-test")
+    fb = mod.model_fallback()
+    assert isinstance(fb, ModelFallbackMiddleware)
+
+
+def test_base_middleware_order(monkeypatch):
+    import app.agent.middleware as mod
+    monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "")
     mw = base_middleware()
     assert isinstance(mw[0], SensitiveDataGuard)
     assert mw[0].check_email is True
@@ -45,8 +71,19 @@ def test_base_middleware_order():
     assert isinstance(mw[2], SummarizationMiddleware)
     assert isinstance(mw[3], PIIMiddleware) and mw[3].pii_type == "credit_card"
     assert isinstance(mw[4], ModelCallLimitMiddleware)
-    assert mw[5] is tool_errors_to_messages
-    assert len(mw) == 6
+    assert isinstance(mw[5], ModelRetryMiddleware)
+    assert mw[6] is tool_errors_to_messages
+    assert len(mw) == 7
+
+
+def test_base_middleware_includes_fallback_before_retry_when_key_configured(monkeypatch):
+    import app.agent.middleware as mod
+    monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "sk-ant-test")
+    mw = base_middleware()
+    assert isinstance(mw[5], ModelFallbackMiddleware)
+    assert isinstance(mw[6], ModelRetryMiddleware)
+    assert mw[7] is tool_errors_to_messages
+    assert len(mw) == 8
 
 
 def test_base_middleware_check_email_false_for_specialists_that_need_real_addresses():

@@ -1,6 +1,7 @@
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import START, StateGraph
 from langgraph.store.base import BaseStore
+from langgraph.types import RetryPolicy
 from app.agent.graph import record_question
 from app.agent.multi_agent.browser_agent import build_browser_agent
 from app.agent.multi_agent.email_agent import build_email_agent
@@ -27,7 +28,14 @@ SPECIALISTS = {
 def _build_workflow() -> StateGraph:
     workflow = StateGraph(SupervisorState)
     workflow.add_node("record_question", record_question)
-    workflow.add_node("supervisor", supervisor_node)
+    # supervisor_node's _router.invoke() is a raw ChatOpenAI call outside any
+    # create_agent middleware stack -- ModelRetryMiddleware can't attach to
+    # it, so a transient OpenAI error here has nothing else retrying it.
+    # RetryPolicy is safe at this specific node: no tool/side-effect runs
+    # inside supervisor_node, so re-executing it on retry can't double a
+    # side effect (unlike a specialist node, where retrying the whole
+    # subgraph could re-run a tool that already succeeded).
+    workflow.add_node("supervisor", supervisor_node, retry_policy=RetryPolicy())
     for name, agent_specialist in SPECIALISTS.items():
         workflow.add_node(name, agent_specialist())
         workflow.add_edge(name, "supervisor")

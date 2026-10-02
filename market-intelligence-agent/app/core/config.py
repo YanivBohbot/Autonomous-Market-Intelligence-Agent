@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Market Desk (CopilotKit / AG-UI) endpoint for the multi-agent graph.
     # Local dev only until prod exposure is decided.
     COPILOT_ENABLED: bool = False
+    # Optional: ModelFallbackMiddleware's safety net if OpenAI is down after
+    # ModelRetryMiddleware's own retries are exhausted. Empty (the default)
+    # disables the fallback entirely -- this is an opt-in extra, not a
+    # requirement.
+    ANTHROPIC_API_KEY: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

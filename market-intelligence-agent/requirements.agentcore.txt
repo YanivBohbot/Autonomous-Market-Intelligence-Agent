@@ -15,8 +15,9 @@ python-multipart>=0.0.20
 # versions here. Transitive family members are pinned below too.
 langgraph==1.2.12
 langchain==1.4.2
-langchain-core==1.6.4
+langchain-core==1.6.6
 langchain-openai==1.6.6
+langchain-anthropic==1.7.5
 langchain-pinecone==0.2.13
 langchain-mcp-adapters==0.3.2
 langchain-community==0.4.2
@@ -33,6 +34,7 @@ mcp>=1.22.0
 
 # LLM + retrieval
 openai>=3.13.0
+anthropic>=1.11.0
 tiktoken>=0.12.0
 pinecone>=7.3.0
 tavily-python>=0.7.13

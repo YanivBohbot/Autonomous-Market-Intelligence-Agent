@@ -10,7 +10,27 @@ from app.agent.prompts.system import SYSTEM_PROMPT, ERROR_RECOVERY_PROMPT
 logger = logging.getLogger(__name__)
 
 _llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, streaming=True)
-_llm_with_tools = _llm.bind_tools(TOOLS)
+# A transient OpenAI error (rate limit, timeout, 5xx) has nothing retrying it
+# here -- unlike the multi-agent specialists' ModelRetryMiddleware, this graph
+# calls the model directly with no middleware stack. with_retry() is the
+# equivalent built into every LangChain Runnable; defaults (3 attempts,
+# exponential backoff with jitter) match ModelRetryMiddleware's.
+_llm_retry = _llm.with_retry()
+_llm_with_tools = _llm.bind_tools(TOOLS).with_retry()
+
+if settings.ANTHROPIC_API_KEY:
+    # Same opt-in safety net as the multi-agent specialists'
+    # model_fallback() (app/agent/middleware.py): with_fallbacks() is the
+    # raw-Runnable equivalent of ModelFallbackMiddleware. Applied outside
+    # with_retry() so OpenAI's own retries are exhausted first, same
+    # retry-then-fallback ordering as the multi-agent middleware stack.
+    from langchain_anthropic import ChatAnthropic
+
+    _fallback_llm = ChatAnthropic(model="claude-sonnet-5-5", temperature=0)
+    _llm_retry = _llm_retry.with_fallbacks([_fallback_llm.with_retry()])
+    _llm_with_tools = _llm_with_tools.with_fallbacks(
+        [_fallback_llm.bind_tools(TOOLS).with_retry()]
+    )
 
 
 def generate_answer(state: AgentState) -> dict:
@@ -23,7 +43,7 @@ def generate_answer(state: AgentState) -> dict:
             logger.warning("GENERATE: Tool error detected — generating explanation")
             return {
                 "messages": [
-                    _llm.invoke([
+                    _llm_retry.invoke([
                         SystemMessage(content=ERROR_RECOVERY_PROMPT),
                         HumanMessage(content=f"Technical error: {last_message.content}"),
                     ])
