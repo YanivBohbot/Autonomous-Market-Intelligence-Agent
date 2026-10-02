@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-02
 **Status:** approved, not yet implemented
-**Scope:** `app/agent/graph.py`, `app/agent/nodes/generate.py`, `app/voice/graph.py`, `app/voice/hitl.py`, `app/api/routers/approve.py`, plus new files
+**Scope:** `app/agent/graph.py`, `app/agent/nodes/generate.py`, `app/voice/graph.py`, `app/voice/hitl.py`, `app/api/routers/approve.py`, `app/api/routers/stream.py`, plus new files
 
 ## Goal
 
@@ -60,6 +60,18 @@ follow-up memory/fallback review found specific to this graph:
    specifically because voice turns don't need it — under this design voice
    has no need for a wrapping `StateGraph` at all; it compiles the shared
    factory directly.
+6. **`app/api/routers/stream.py` is in scope too** (found while planning, not
+   during brainstorming — same category of hidden coupling as voice, just a
+   file not checked earlier). It hardcodes two node-name dependencies on the
+   current graph: `meta.get("langgraph_node") == "generate"` gates which
+   streamed tokens reach the client (event `token`), and
+   `"approval" in snapshot.next` gates the `interrupted` SSE event. Both must
+   be updated to whatever node names the compiled `single_agent` subgraph
+   actually produces, verified empirically against the compiled graph during
+   implementation — not assumed. Silent breakage risk if missed: the final
+   answer would still arrive (via `done`), but word-by-word streaming and the
+   "approval needed" signal to the frontend would both go dark with no error
+   raised anywhere.
 
 ## Architecture
 
@@ -166,10 +178,21 @@ cleared) instead of forwarding the normal request unchanged.
   internally); rewrite the specific assertions, keep the intent (voice graph
   compiles, has no `record_question`).
 - New tests for `approve.py`'s updated `Command(resume=...)` shape (reject
-  still works, approve still works) — likely already covered by existing
-  `/approve` router tests if any exist, otherwise add.
+  still works, approve still works) — no `/approve` router test file exists
+  today (confirmed: `tests/unit/` has no `test_approve.py`), so this is a new
+  file, not an update. `tests/unit/test_stream.py`'s `_FakeAgentApp` pattern
+  (`app.state.agent_app = fake` + `TestClient(app)`) is the house style to
+  follow.
 - New tests for `app/voice/hitl.py`'s updated node-name check and resume
   shape.
+- `tests/unit/test_stream.py`: existing tests hardcode
+  `meta.get("langgraph_node") == "generate"` via their fake token metadata
+  and `next_after=("approval",)` for the interrupted-event test — update
+  both to the new node name(s) once confirmed against the compiled graph.
+- `tests/unit/test_hitl_interrupt.py`: tests `approval_node` directly, which
+  no longer exists — replace with tests against the new
+  `HumanInTheLoopMiddleware` wiring (mirroring
+  `tests/unit/test_multi_agent_hitl.py`'s approve/reject/edit pattern).
 - Full regression: `uv run pytest tests/ -q` must stay green throughout.
 
 ## Out of scope
