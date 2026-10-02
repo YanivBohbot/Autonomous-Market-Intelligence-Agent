@@ -256,6 +256,35 @@ def test_stream_emits_screenshot_event_for_custom_agentcore_server_result():
     assert screenshot_events == [{"url": "/workspace/screenshots/evidence.png"}]
 
 
+def test_stream_emits_pii_guard_warning_as_token():
+    """pii_guard's short-circuit AIMessage is added straight to graph state,
+    never streamed as an AIMessageChunk -- that only happens for generate's
+    LLM call. Without surfacing it, a blocked turn was record_question ->
+    pii_guard -> done with zero token events: the block worked (the LLM
+    never saw the data) but the client never saw the warning either."""
+    from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING
+
+    warning_msg = AIMessage(content=SENSITIVE_DATA_WARNING)
+    updates = [
+        {"pii_guard": {"messages": [warning_msg]}},
+    ]
+    fake = _FakeAgentApp([], updates=updates, next_after=())
+
+    app.state.agent_app = fake
+    client = TestClient(app)
+    response = client.post(
+        "/stream",
+        json={"query": "my card is 4111 1111 1111 1111", "thread_id": "t-pii"},
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+
+    token_events = [d["token"] for e, d in events if e == "token"]
+    assert token_events == [SENSITIVE_DATA_WARNING]
+    assert events[-1][0] == "done"
+
+
 class _ExplodingAgentApp:
     """astream raises mid-iteration to simulate a runtime failure."""
 

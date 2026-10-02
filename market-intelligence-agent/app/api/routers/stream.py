@@ -56,6 +56,19 @@ def _screenshot_filename(content) -> str | None:
     return Path(raw).name
 
 
+def _static_message_content(node_name: str, update) -> str | None:
+    """pii_guard's short-circuit AIMessage is added straight to graph state,
+    not streamed as an AIMessageChunk -- that only happens for generate's LLM
+    call -- so without this, a blocked turn produced zero token events and
+    the client never saw the warning, even though the block itself worked."""
+    if node_name != "pii_guard" or not isinstance(update, dict):
+        return None
+    messages = update.get("messages")
+    if not messages:
+        return None
+    return messages[-1].content or None
+
+
 def _screenshot_urls_from_update(update) -> list[str]:
     """Pull workspace-relative screenshot URLs off any browser_take_screenshot
     ToolMessage in a node's state update, for the /workspace router to serve."""
@@ -97,6 +110,11 @@ async def stream_endpoint(
                         },
                         event="node",
                     )
+                    warning = _static_message_content(node_name, update)
+                    if warning:
+                        yield ServerSentEvent(
+                            data={"token": warning}, event="token"
+                        )
                     for url in _screenshot_urls_from_update(update):
                         yield ServerSentEvent(data={"url": url}, event="screenshot")
             elif mode == "messages":
