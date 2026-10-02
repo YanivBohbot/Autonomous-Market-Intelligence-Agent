@@ -7,13 +7,20 @@ queries, then exits.
 
 import asyncio
 
+from langgraph.types import Command
+
 from app.agent.graph import build_agent_app
 from app.agent.memory.checkpointer import create_checkpointer
+from app.agent.memory.store import create_store
 
 
 async def run_test():
     async with create_checkpointer() as checkpointer:
-        agent_app = build_agent_app(checkpointer)
+        # save_memory/recall_memory/list_memories need an injected store --
+        # without one, any turn that calls them fails with "Cannot inject
+        # store into tools with InjectedStore annotations" (server.py's
+        # lifespan always passes one; this script must too).
+        agent_app = build_agent_app(checkpointer, create_store())
         config = {"configurable": {"thread_id": "test_thread"}}
 
         q1 = "Quel est le revenu net d'Amazon en 2024 ?"
@@ -37,9 +44,16 @@ async def run_test():
                 if node_name == "tools":
                     print(f"   🛠️ Résultat Outil : {node_content['messages'][0].content}")
 
-        final_state = await agent_app.ainvoke(None, config)
-        print("\n🤖 RÉPONSE FINALE :")
-        print(final_state["messages"][-1].content)
+        # send_email is a side-effect tool: the graph paused at approval via
+        # interrupt() and needs the same Command(resume=...) shape /approve
+        # uses (app/api/routers/approve.py) -- plain ainvoke(None, config)
+        # never resolves the interrupt, leaving the pending tool_call
+        # unanswered forever and poisoning this thread's persisted history.
+        snapshot = await agent_app.aget_state(config)
+        if snapshot.next:
+            final_state = await agent_app.ainvoke(Command(resume="approve"), config)
+            print("\n🤖 RÉPONSE FINALE :")
+            print(final_state["messages"][-1].content)
 
 
 if __name__ == "__main__":
