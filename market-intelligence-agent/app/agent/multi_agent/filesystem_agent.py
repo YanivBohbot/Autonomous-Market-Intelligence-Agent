@@ -14,7 +14,7 @@ def build_filesystem_agent():
         tools=_TOOLS,
         system_prompt=FILESYSTEM_SYSTEM_PROMPT,
         middleware=[
-            *base_middleware(),
+            *base_middleware(check_email=False),
             HumanInTheLoopMiddleware(interrupt_on={"write_file": True}),
         ],
         name="filesystem_agent",

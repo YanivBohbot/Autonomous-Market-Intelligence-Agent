@@ -122,9 +122,12 @@ class StripToolImages(AgentMiddleware):
 strip_tool_images = StripToolImages()
 
 
-def base_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
+def base_middleware(*, check_email: bool = True) -> list[AgentMiddleware[Any, Any, Any]]:
+    """`check_email=False` for specialists that need a real address to work
+    (send_email, or anything that saves a report/fact tied to a client) —
+    same exemption `redact_emails()` already makes, see its docstring."""
     return [
-        SensitiveDataGuard(),
+        SensitiveDataGuard(check_email=check_email),
         today_prompt,
         summarization(),
         mask_credit_cards(),

@@ -40,12 +40,19 @@ def test_call_limit_is_10_per_run_and_ends_gracefully():
 def test_base_middleware_order():
     mw = base_middleware()
     assert isinstance(mw[0], SensitiveDataGuard)
+    assert mw[0].check_email is True
     assert mw[1] is today_prompt
     assert isinstance(mw[2], SummarizationMiddleware)
     assert isinstance(mw[3], PIIMiddleware) and mw[3].pii_type == "credit_card"
     assert isinstance(mw[4], ModelCallLimitMiddleware)
     assert mw[5] is tool_errors_to_messages
     assert len(mw) == 6
+
+
+def test_base_middleware_check_email_false_for_specialists_that_need_real_addresses():
+    mw = base_middleware(check_email=False)
+    assert isinstance(mw[0], SensitiveDataGuard)
+    assert mw[0].check_email is False
 
 
 def test_summarization_triggers_at_6000_tokens_and_keeps_last_50_messages():

@@ -5,6 +5,7 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 from app.agent.multi_agent import portfolio_agent as mod
 from app.agent.common import base_middleware
 from app.agent.multi_agent.display import market_desk_display
+from app.agent.pii import SensitiveDataGuard
 
 
 def _kwargs():
@@ -52,6 +53,8 @@ def test_builds_a_real_agent():
 def test_keeps_email_addresses_it_needs_to_work():
     kw = _kwargs()
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
+    guard = next(m for m in kw["middleware"] if isinstance(m, SensitiveDataGuard))
+    assert guard.check_email is False
 
 
 def test_portfolio_recipe_defers_to_report_recipe_for_save_or_export_requests():
