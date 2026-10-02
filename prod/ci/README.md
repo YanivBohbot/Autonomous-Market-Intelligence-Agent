@@ -38,10 +38,10 @@ After the first `cdk deploy` of `MiaSecretsStack`, the entries exist with empty
 values. Fill them in:
 
 ```bash
-aws secretsmanager put-secret-value --secret-id mia/openai-api-key   --secret-string "$OPENAI_API_KEY"
-aws secretsmanager put-secret-value --secret-id mia/pinecone-api-key --secret-string "$PINECONE_API_KEY"
-aws secretsmanager put-secret-value --secret-id mia/tavily-api-key   --secret-string "$TAVILY_API_KEY"
-aws secretsmanager put-secret-value --secret-id mia/email-password   --secret-string "$EMAIL_PASSWORD"
+aws secretsmanager put-secret-value --secret-id mia/openai-api-key-v2   --secret-string "$OPENAI_API_KEY"
+aws secretsmanager put-secret-value --secret-id mia/pinecone-api-key-v2 --secret-string "$PINECONE_API_KEY"
+aws secretsmanager put-secret-value --secret-id mia/tavily-api-key-v2   --secret-string "$TAVILY_API_KEY"
+aws secretsmanager put-secret-value --secret-id mia/email-password-v2   --secret-string "$EMAIL_PASSWORD"
 ```
 
 ### 5. Static data

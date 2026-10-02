@@ -36,6 +36,8 @@ The app reads two env vars at synth/deploy time:
 Secrets are **not** stored in CDK code. After `cdk deploy MiaSecretsStack` creates the empty Secrets Manager entries, populate them via:
 
 ```bash
-aws secretsmanager put-secret-value --secret-id mia/openai-api-key --secret-string "$OPENAI_API_KEY"
-# ...repeat for each secret
+aws secretsmanager put-secret-value --secret-id mia/openai-api-key-v2 --secret-string "$OPENAI_API_KEY"
+# ...repeat for each secret (names carry a -v2 suffix -- MiaSecretsStack.SECRET_KEYS
+# in stacks/secrets_stack.py, forced by a 2026-10-02 CloudFormation replacement
+# after the originals were deleted directly in Secrets Manager outside CDK)
 ```

@@ -42,9 +42,29 @@ class MiaSecretsStack(Stack):
         for key in self.SECRET_KEYS:
             secret = sm.Secret(
                 self, _to_pascal(key),
-                secret_name=f"{project}/{key}",
+                # -v2: on 2026-10-02 the original `{project}/{key}` secrets
+                # were found deleted directly in Secrets Manager outside CDK
+                # (CloudFormation drift: DELETED, confirmed via
+                # detect-stack-drift), while this stack's state still had
+                # them as CREATE_COMPLETE with dead ARNs. `Name` is one of
+                # the few AWS::SecretsManager::Secret properties that forces
+                # a true CloudFormation replacement on update (confirmed via
+                # a real ChangeSet: Replacement=True) -- the only way to get
+                # fresh, working ARNs on `cdk deploy` without destroying this
+                # stack, whose ARNs are cross-stack exports mia-runtime-demo
+                # imports (a stack destroy fails outright while an export is
+                # in use). Verified empirically that merely adding
+                # GenerateSecretString (even with exclude_punctuation) does
+                # NOT force replacement -- CDK already defaults it to {}, so
+                # that alone is a no-op.
+                secret_name=f"{project}/{key}-v2",
                 description=f"{project} {env_name} — {key}; populate via put-secret-value",
                 removal_policy=removal,
+                # Unescaped punctuation in a generated value could break
+                # downstream parsing once injected as a container env var.
+                # Thrown away immediately -- put-secret-value overwrites it
+                # with the real key right after deploy.
+                generate_secret_string=sm.SecretStringGenerator(exclude_punctuation=True),
             )
             self.secrets[key] = secret
             CfnOutput(
