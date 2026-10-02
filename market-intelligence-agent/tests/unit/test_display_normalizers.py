@@ -50,6 +50,14 @@ def test_client_portfolio_shares_the_portfolio_metrics_normalizer():
     assert [d["type"] for d in displays] == ["portfolio_table", "portfolio_chart"]
 
 
+def test_normalize_portfolio_on_a_resolution_error_shows_nothing():
+    # Real shape of load_client_portfolio's no-match / ambiguous-match result
+    # (client_portfolio.py) -- no "positions" key at all. Regression: this
+    # used to raise KeyError("positions") instead of failing open.
+    text = json.dumps({"error": "No client matching 'Nobody Real' found, or they have no holdings."})
+    assert display.DISPLAY_NORMALIZERS["client_portfolio"](text, {"client_name": "Nobody Real"}) == []
+
+
 # Real shape of screen_clients()'s return (concentration.py) — "prices" is
 # dropped by the normalizer, it's not display-relevant.
 CONCENTRATION_JSON = json.dumps({

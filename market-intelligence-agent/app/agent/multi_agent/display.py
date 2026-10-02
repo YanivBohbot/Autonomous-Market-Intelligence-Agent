@@ -110,6 +110,11 @@ market_desk_display = MarketDeskDisplayMiddleware()
 
 def normalize_portfolio(text: str, args: dict) -> list[dict]:
     data = json.loads(text)
+    if "error" in data:
+        # client_portfolio's documented no-match / ambiguous-match shape has
+        # no "positions" key at all (see load_client_portfolio) -- same
+        # fail-open contract as normalize_saved_report below.
+        return []
     positions = data["positions"]
     table = {
         "type": "portfolio_table",

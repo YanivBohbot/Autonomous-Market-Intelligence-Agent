@@ -36,3 +36,17 @@ def test_create_agent_call():
 
 def test_builds_a_real_agent():
     assert "model" in mod.build_browser_agent().get_graph().nodes
+
+
+def test_prompt_says_snapshot_takes_no_arguments():
+    """Regression: live QA showed the model call browser_snapshot with a
+    hallucinated `target` arg (e.g. "h1") the tool doesn't support, get a
+    clean tool-error, then wrongly report the whole source unreachable even
+    though browser_navigate had already succeeded earlier in the turn."""
+    from app.agent.prompts.specialist_agent_prompts import BROWSER_SYSTEM_PROMPT
+    assert "takes no arguments" in BROWSER_SYSTEM_PROMPT.lower()
+
+
+def test_prompt_distinguishes_navigate_failure_from_snapshot_or_screenshot_failure():
+    from app.agent.prompts.specialist_agent_prompts import BROWSER_SYSTEM_PROMPT
+    assert "is not the same thing" in BROWSER_SYSTEM_PROMPT.lower()
