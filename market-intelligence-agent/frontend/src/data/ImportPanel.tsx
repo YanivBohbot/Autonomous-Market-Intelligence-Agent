@@ -5,6 +5,7 @@ import { confirmImport, importPdf, previewImport, type ImportPreviewResult } fro
 export function ImportPanel() {
   const [status, setStatus] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
+  const [rawRows, setRawRows] = useState<Record<string, unknown>[] | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   async function onFileChange(e: ChangeEvent<HTMLInputElement>) {
@@ -12,37 +13,43 @@ export function ImportPanel() {
     if (!file) return;
     setStatus(null);
     setPreview(null);
-
-    if (file.name.toLowerCase().endsWith(".pdf")) {
-      try {
-        const result = await importPdf(file);
-        setStatus(`Ingested ${result.filename}: ${result.chunks_added} chunks added.`);
-      } catch (err) {
-        setStatus(`Error: ${(err as Error).message}`);
-      }
-      return;
-    }
-
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
+    setRawRows(null);
 
     try {
+      if (file.name.toLowerCase().endsWith(".pdf")) {
+        const result = await importPdf(file);
+        setStatus(`Ingested ${result.filename}: ${result.chunks_added} chunks added.`);
+        return;
+      }
+
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { raw: false, dateNF: "yyyy-mm-dd" }) as Record<
+        string,
+        unknown
+      >[];
+
       const result = await previewImport(rows);
       setPreview(result);
+      setRawRows(rows);
     } catch (err) {
       setStatus(`Error: ${(err as Error).message}`);
+    } finally {
+      // Reset so re-selecting the SAME filename (e.g. after fixing a
+      // rejected import) still fires a change event.
+      e.target.value = "";
     }
   }
 
   async function onConfirm() {
-    if (!preview || !preview.valid) return;
+    if (!preview || !preview.valid || !rawRows) return;
     setConfirming(true);
     try {
-      const result = await confirmImport(preview.type, preview.rows);
+      const result = await confirmImport(preview.type, rawRows);
       setStatus(`Imported ${result.written} row(s).`);
       setPreview(null);
+      setRawRows(null);
     } catch (err) {
       setStatus(`Error: ${(err as Error).message}`);
     } finally {

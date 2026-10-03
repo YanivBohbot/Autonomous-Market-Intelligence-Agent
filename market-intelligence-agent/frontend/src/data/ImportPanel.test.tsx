@@ -46,7 +46,12 @@ describe("ImportPanel", () => {
     expect(screen.getByRole("button", { name: /confirmer/i })).toBeDisabled();
   });
 
-  it("clicking Confirm calls confirmImport with the previewed rows and type", async () => {
+  it("clicking Confirm calls confirmImport with the RAW parsed rows, not the backend's cleaned preview rows", async () => {
+    // The backend's /confirm re-runs detect_import_type on whatever rows it
+    // receives. If ImportPanel sent preview.rows (the cleaned
+    // {client_id, ticker, shares, avg_cost} shape for holdings) instead of
+    // the raw parsed rows (which still carry client_email), detection would
+    // fail and /confirm would 409 -- every holdings import would be broken.
     vi.spyOn(api, "previewImport").mockResolvedValue({
       type: "holdings", valid: true,
       rows: [{ client_id: 1, ticker: "AAPL", shares: 10, avg_cost: 150 }], errors: [],
@@ -58,7 +63,52 @@ describe("ImportPanel", () => {
     const confirmButton = await screen.findByRole("button", { name: /confirmer/i });
     await waitFor(() => expect(confirmButton).not.toBeDisabled());
     fireEvent.click(confirmButton);
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("holdings", [{ client_id: 1, ticker: "AAPL", shares: 10, avg_cost: 150 }]));
+    await waitFor(() =>
+      expect(confirmSpy).toHaveBeenCalledWith("holdings", [
+        { client_email: "jane@x.com", ticker: "AAPL", shares: 10, avg_cost: 150 },
+      ]),
+    );
+  });
+
+  it("clicking Confirm for a clients import also sends the raw parsed rows", async () => {
+    vi.mocked(XLSX.utils.sheet_to_json).mockReturnValueOnce([
+      { name: "Jane Doe", email: "jane@x.com", segment: "VIP", risk_profile: "balanced", advisor: "Sam", city: "Paris" },
+    ]);
+    vi.spyOn(api, "previewImport").mockResolvedValue({
+      type: "clients",
+      valid: true,
+      rows: [
+        {
+          name: "Jane Doe", email: "jane@x.com", segment: "VIP", risk_profile: "balanced",
+          advisor: "Sam", city: "Paris", joined_on: "2026-10-04",
+        },
+      ],
+      errors: [],
+    });
+    const confirmSpy = vi.spyOn(api, "confirmImport").mockResolvedValue({ written: 1 });
+    render(<ImportPanel />);
+    const input = screen.getByLabelText(/choose a file/i);
+    selectFile(input, new File(["ignored"], "clients.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    const confirmButton = await screen.findByRole("button", { name: /confirmer/i });
+    await waitFor(() => expect(confirmButton).not.toBeDisabled());
+    fireEvent.click(confirmButton);
+    await waitFor(() =>
+      expect(confirmSpy).toHaveBeenCalledWith("clients", [
+        { name: "Jane Doe", email: "jane@x.com", segment: "VIP", risk_profile: "balanced", advisor: "Sam", city: "Paris" },
+      ]),
+    );
+  });
+
+  it("resets the file input after processing so re-selecting the same filename works", async () => {
+    vi.spyOn(api, "previewImport").mockResolvedValue({
+      type: "holdings", valid: true,
+      rows: [{ client_id: 1, ticker: "AAPL", shares: 10, avg_cost: 150 }], errors: [],
+    });
+    render(<ImportPanel />);
+    const input = screen.getByLabelText(/choose a file/i) as HTMLInputElement;
+    selectFile(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /confirmer/i })).not.toBeDisabled());
+    expect(input.value).toBe("");
   });
 
   it("shows an 'unrecognized file format' status when previewImport rejects", async () => {
