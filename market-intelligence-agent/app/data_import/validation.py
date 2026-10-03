@@ -7,6 +7,7 @@ has nothing to mock."""
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Literal, TypedDict
 
 CLIENT_COLUMNS = {"name", "email", "segment", "risk_profile", "advisor", "city"}
@@ -46,6 +47,7 @@ def validate_clients_rows(rows: list[dict], *, existing_emails: set[str]) -> Val
     errors: list[ValidationError] = []
     out_rows: list[dict] = []
     seen_emails: set[str] = set()
+    normalized_existing_emails = {e.strip().lower() for e in existing_emails}
 
     for i, raw in enumerate(rows):
         row = _normalize_keys(raw)
@@ -60,13 +62,20 @@ def validate_clients_rows(rows: list[dict], *, existing_emails: set[str]) -> Val
         if row["risk_profile"] not in RISK_PROFILES:
             errors.append({"row": i, "field": "risk_profile", "message": f"must be one of {sorted(RISK_PROFILES)}"})
             continue
-        email = row["email"]
-        if email in existing_emails:
+        email = str(row["email"]).strip().lower()
+        if email in normalized_existing_emails:
             errors.append({"row": i, "field": "email", "message": "a client with this email already exists"})
             continue
         if email in seen_emails:
             errors.append({"row": i, "field": "email", "message": "duplicate email in this file"})
             continue
+        joined_on = row.get("joined_on")
+        if joined_on:
+            try:
+                datetime.date.fromisoformat(str(joined_on))
+            except ValueError:
+                errors.append({"row": i, "field": "joined_on", "message": "must be an ISO date (YYYY-MM-DD)"})
+                continue
         seen_emails.add(email)
         out_rows.append({
             "name": row["name"],
@@ -75,7 +84,7 @@ def validate_clients_rows(rows: list[dict], *, existing_emails: set[str]) -> Val
             "risk_profile": row["risk_profile"],
             "advisor": row["advisor"],
             "city": row["city"],
-            "joined_on": row.get("joined_on") or datetime.date.today().isoformat(),
+            "joined_on": str(joined_on) if joined_on else datetime.date.today().isoformat(),
         })
 
     return {"valid": not errors, "rows": out_rows if not errors else [], "errors": errors}
@@ -111,6 +120,12 @@ def validate_holdings_rows(
             avg_cost = float(row["avg_cost"])
         except (TypeError, ValueError):
             errors.append({"row": i, "field": "shares", "message": "shares/avg_cost must be numeric"})
+            continue
+        if not math.isfinite(shares):
+            errors.append({"row": i, "field": "shares", "message": "must be a finite number"})
+            continue
+        if not math.isfinite(avg_cost):
+            errors.append({"row": i, "field": "avg_cost", "message": "must be a finite number"})
             continue
         if shares <= 0:
             errors.append({"row": i, "field": "shares", "message": "must be > 0"})

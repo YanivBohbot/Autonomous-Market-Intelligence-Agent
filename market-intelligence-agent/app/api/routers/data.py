@@ -5,9 +5,11 @@ not an agent capability -- see docs/superpowers/specs/
 2026-10-03-data-import-and-view-design.md Decision 9."""
 
 import json
+import os
 import sqlite3
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from app.agent.tools.knowledge_base import KB_MANIFEST_PATH
@@ -101,16 +103,19 @@ async def import_confirm(payload: ImportConfirmRequest) -> dict:
 @router.post("/import/pdf")
 async def import_pdf(file: UploadFile = File(...)) -> dict:
     body = await file.read()
-    filename = file.filename or "upload.pdf"
-    if not body.startswith(b"%PDF"):
+    filename = os.path.basename(file.filename) if file.filename else "upload.pdf"
+    if not body.startswith(b"%PDF") or not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="invalid PDF")
     # Any failure past this point (a real PDF that OpenAI/Pinecone fails to
     # embed/upsert) is a 500, not a 400 -- it's not the user's input that's
     # wrong. Caught explicitly (rather than left to propagate) because
     # Starlette's TestClient defaults to raise_server_exceptions=True, which
     # would otherwise re-raise instead of yielding a 500 response.
+    # ingest_single_pdf makes real network-bound OpenAI/Pinecone calls that
+    # can take tens of seconds -- run it off the event loop so it doesn't
+    # freeze /stream, the voice worker, or Market Desk for other users.
     try:
-        chunk_count = ingest_single_pdf(body, filename)
+        chunk_count = await run_in_threadpool(ingest_single_pdf, body, filename)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"ingestion failed: {exc}") from exc
     return {"filename": filename, "chunks_added": chunk_count}

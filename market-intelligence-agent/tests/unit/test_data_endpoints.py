@@ -127,6 +127,29 @@ def test_import_pdf_rejects_bytes_without_a_pdf_magic_number(client):
     assert resp.status_code == 400
 
 
+def test_import_pdf_rejects_a_non_pdf_extension_even_with_a_valid_magic_number(client):
+    resp = client.post(
+        "/data/import/pdf",
+        files={"file": ("report.exe", io.BytesIO(b"%PDF-1.4 fake"), "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+
+
+def test_import_pdf_sanitizes_a_path_like_filename(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "app.api.routers.data.ingest_single_pdf",
+        lambda file_bytes, filename: calls.append(filename) or 1,
+    )
+    resp = client.post(
+        "/data/import/pdf",
+        files={"file": ("../../etc/passwd.pdf", io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["filename"] == "passwd.pdf"
+    assert calls == ["passwd.pdf"]
+
+
 def test_import_pdf_returns_500_when_ingestion_itself_fails(client, monkeypatch):
     def _boom(file_bytes, filename):
         raise RuntimeError("Pinecone is down")

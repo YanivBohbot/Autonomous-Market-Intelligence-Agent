@@ -86,6 +86,37 @@ def test_one_bad_clients_row_blocks_the_whole_file():
     assert len(result["errors"]) == 1
 
 
+def test_clients_row_email_is_normalized_to_lowercase_and_trimmed():
+    result = validate_clients_rows([_valid_client_row(email=" Jane@X.COM ")], existing_emails=set())
+    assert result["valid"] is True
+    assert result["rows"][0]["email"] == "jane@x.com"
+
+
+def test_clients_row_email_normalization_catches_case_insensitive_duplicates():
+    result = validate_clients_rows([_valid_client_row(email=" Jane@X.COM ")], existing_emails={"jane@x.com"})
+    assert result["valid"] is False
+    assert result["errors"][0]["field"] == "email"
+
+
+def test_clients_row_with_a_valid_joined_on_is_accepted():
+    result = validate_clients_rows([_valid_client_row(joined_on="2024-03-15")], existing_emails=set())
+    assert result["valid"] is True
+    assert result["rows"][0]["joined_on"] == "2024-03-15"
+
+
+def test_clients_row_with_a_non_iso_joined_on_is_rejected():
+    result = validate_clients_rows([_valid_client_row(joined_on="not-a-date")], existing_emails=set())
+    assert result["valid"] is False
+    assert result["errors"][0]["field"] == "joined_on"
+
+
+def test_clients_row_with_an_excel_serial_number_joined_on_is_rejected():
+    # SheetJS emits a bare integer for a date cell unless cellDates/dateNF is set.
+    result = validate_clients_rows([_valid_client_row(joined_on=45678)], existing_emails=set())
+    assert result["valid"] is False
+    assert result["errors"][0]["field"] == "joined_on"
+
+
 def _valid_holding_row(**overrides):
     row = {"client_email": "jane@x.com", "ticker": "AAPL", "shares": 10, "avg_cost": 150.0}
     row.update(overrides)
@@ -136,6 +167,26 @@ def test_holdings_row_with_non_positive_shares_is_rejected():
 def test_holdings_row_with_non_positive_avg_cost_is_rejected():
     result = validate_holdings_rows(
         [_valid_holding_row(avg_cost=-1)],
+        client_id_by_email={"jane@x.com": 7},
+        known_tickers={"AAPL"},
+    )
+    assert result["valid"] is False
+    assert result["errors"][0]["field"] == "avg_cost"
+
+
+def test_holdings_row_with_infinite_shares_is_rejected():
+    result = validate_holdings_rows(
+        [_valid_holding_row(shares="inf")],
+        client_id_by_email={"jane@x.com": 7},
+        known_tickers={"AAPL"},
+    )
+    assert result["valid"] is False
+    assert result["errors"][0]["field"] == "shares"
+
+
+def test_holdings_row_with_nan_avg_cost_is_rejected():
+    result = validate_holdings_rows(
+        [_valid_holding_row(avg_cost=float("nan"))],
         client_id_by_email={"jane@x.com": 7},
         known_tickers={"AAPL"},
     )
