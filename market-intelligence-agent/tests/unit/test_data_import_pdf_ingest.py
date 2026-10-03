@@ -74,3 +74,29 @@ def test_ingesting_the_same_pdf_twice_does_not_duplicate_the_manifest_entry(tmp_
     ingest_single_pdf(b"%PDF-1.4 fake bytes", "same-report.pdf")
 
     assert json.loads(manifest.read_text()) == ["same-report.pdf"]
+
+
+def test_ingesting_the_same_pdf_twice_upserts_with_identical_chunk_ids(tmp_path, monkeypatch):
+    """Re-uploading the same PDF must overwrite its Pinecone vectors (same
+    chunk IDs both times), not create duplicates. PyPDFLoader stamps
+    metadata["source"] with a randomized tempfile path on every call, and
+    _assign_chunk_ids derives IDs from that field, so this guards against
+    the single-file path losing idempotency if the stable-source fix
+    regresses."""
+    manifest = tmp_path / "kb_documents.json"
+    manifest.write_text(json.dumps([]))
+    monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
+    monkeypatch.setattr("app.data_import.pdf_ingest.PyPDFLoader", _fake_loader)
+    monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
+
+    calls = []
+    monkeypatch.setattr(
+        "app.ingest.PineconeVectorStore.from_documents",
+        staticmethod(lambda **kw: calls.append(kw)),
+    )
+
+    ingest_single_pdf(b"%PDF-1.4 fake bytes", "same-report.pdf")
+    ingest_single_pdf(b"%PDF-1.4 fake bytes", "same-report.pdf")
+
+    assert len(calls) == 2
+    assert calls[0]["ids"] == calls[1]["ids"]
