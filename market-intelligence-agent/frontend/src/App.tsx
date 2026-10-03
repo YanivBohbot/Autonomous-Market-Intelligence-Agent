@@ -8,6 +8,7 @@ import { VoicePanel } from "./components/VoicePanel";
 import { useChatStream } from "./hooks/useChatStream";
 import { newThreadId } from "./lib/api";
 import { DeskView } from "./desk/DeskView";
+import { DataPage } from "./data/DataPage";
 
 function ClassicChat({ threadId }: { threadId: string }) {
   const [input, setInput] = useState("");
@@ -96,7 +97,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
         <Route path="/classic" element={<ClassicChat key={threadId} threadId={threadId} />} />
-        <Route path="/data" element={<div>Data</div>} />
+        <Route path="/data" element={<DataPage />} />
       </Routes>
     </div>
   );
