@@ -1,4 +1,9 @@
+import io
 import json
+import os
+import tempfile
+
+from pypdf import PdfWriter
 
 from app.agent.tools.knowledge_base import KB_MANIFEST_PATH
 from app.data_import.pdf_ingest import ingest_single_pdf
@@ -100,3 +105,61 @@ def test_ingesting_the_same_pdf_twice_upserts_with_identical_chunk_ids(tmp_path,
 
     assert len(calls) == 2
     assert calls[0]["ids"] == calls[1]["ids"]
+
+
+def test_ingest_single_pdf_handles_a_real_temp_file_and_real_pypdf_loader(tmp_path, monkeypatch):
+    """Regression test for a Windows-only bug: ingest_single_pdf wrote to its
+    NamedTemporaryFile and then, while still holding that file open (the
+    `with tempfile.NamedTemporaryFile(...) as tmp:` block), handed the same
+    path to PyPDFLoader to open AGAIN for reading. POSIX allows two open
+    handles to the same inode from one process; Windows does not, so
+    PyPDFLoader().load() raised `PermissionError: [Errno 13] Permission
+    denied` on every real upload on Windows. All the other tests in this
+    file monkeypatch PyPDFLoader entirely, so none of them ever actually
+    wrote bytes to disk and re-opened them -- this test deliberately leaves
+    PyPDFLoader real so that exact file-handle-contention bug is exercised
+    for real, on whatever OS the test runs on (including Windows CI
+    runners), rather than mocked away.
+
+    There's no PDF fixture file in this repo tiny enough to vendor, so a
+    minimal single-page PDF is generated on the fly with pypdf (the same
+    library PyPDFLoader uses under the hood) -- real, parseable %PDF bytes,
+    not a monkeypatched loader and not a hand-typed fake header."""
+    manifest = tmp_path / "kb_documents.json"
+    manifest.write_text(json.dumps([]))
+    monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
+    monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
+    monkeypatch.setattr(
+        "app.ingest.PineconeVectorStore.from_documents",
+        staticmethod(lambda **kw: None),
+    )
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    buf = io.BytesIO()
+    writer.write(buf)
+    real_pdf_bytes = buf.getvalue()
+    assert real_pdf_bytes.startswith(b"%PDF")
+
+    # Spy on the real tempfile.NamedTemporaryFile (not mocked away) so we can
+    # assert the temp file is cleaned up afterwards, proving the fix's
+    # try/finally os.unlink actually ran rather than leaking the file.
+    captured = {}
+    real_named_temporary_file = tempfile.NamedTemporaryFile
+
+    def _spy(*args, **kwargs):
+        handle = real_named_temporary_file(*args, **kwargs)
+        captured["path"] = handle.name
+        return handle
+
+    monkeypatch.setattr("app.data_import.pdf_ingest.tempfile.NamedTemporaryFile", _spy)
+
+    # This call must not raise PermissionError (the bug) -- a blank page
+    # yields zero extracted text / zero chunks, which is fine; the point of
+    # this test is the real open-write-close-reopen sequence succeeding.
+    chunk_count = ingest_single_pdf(real_pdf_bytes, "real-report.pdf")
+
+    assert chunk_count == 0
+    assert "path" in captured, "ingest_single_pdf did not create a temp file via tempfile.NamedTemporaryFile"
+    assert not os.path.exists(captured["path"]), "ingest_single_pdf must delete its temp file after use"
+    assert json.loads(manifest.read_text()) == ["real-report.pdf"]

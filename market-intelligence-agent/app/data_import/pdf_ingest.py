@@ -8,6 +8,7 @@ upload is never "the whole corpus"."""
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -18,10 +19,20 @@ from app.ingest import _write_manifest, embed_and_upsert_pdf_documents
 
 
 def ingest_single_pdf(file_bytes: bytes, filename: str) -> int:
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
+    # delete=False + explicit close before PyPDFLoader opens the path: on
+    # Windows, NamedTemporaryFile's own handle is held exclusively, so a
+    # second open of the same path (PyPDFLoader -> pypdf) from within the
+    # `with` block raises PermissionError. POSIX allows this (multiple opens
+    # of the same inode), which is why this only surfaces on Windows. Close
+    # our handle first, then clean up the file ourselves in `finally` so it's
+    # removed even if PyPDFLoader raises.
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    try:
         tmp.write(file_bytes)
-        tmp.flush()
+        tmp.close()
         documents = PyPDFLoader(tmp.name).load()
+    finally:
+        os.unlink(tmp.name)
 
     # PyPDFLoader stamps metadata["source"] with the randomized tempfile path,
     # which differs on every call. _assign_chunk_ids derives each chunk's
