@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { uploadToWorkspace } from "./api";
+import { uploadToWorkspace, getClients, getDocuments, importPdf, previewImport, confirmImport } from "./api";
 
 describe("uploadToWorkspace", () => {
   beforeEach(() => {
@@ -25,5 +25,55 @@ describe("uploadToWorkspace", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 413, text: async () => "too big" }));
     const file = new File(["x"], "big.bin");
     await expect(uploadToWorkspace(file)).rejects.toThrow("413");
+  });
+});
+
+describe("data section API", () => {
+  it("getClients fetches /data/clients", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [{ email: "jane@x.com" }] });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await getClients();
+    expect(fetchMock).toHaveBeenCalledWith("/data/clients");
+    expect(result).toEqual([{ email: "jane@x.com" }]);
+  });
+
+  it("getDocuments fetches /data/documents", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ["a.pdf"] }));
+    expect(await getDocuments()).toEqual(["a.pdf"]);
+  });
+
+  it("importPdf posts multipart to /data/import/pdf", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ filename: "a.pdf", chunks_added: 2 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["%PDF"], "a.pdf", { type: "application/pdf" });
+    const result = await importPdf(file);
+    expect(fetchMock.mock.calls[0][0]).toBe("/data/import/pdf");
+    expect(result).toEqual({ filename: "a.pdf", chunks_added: 2 });
+  });
+
+  it("previewImport posts rows to /data/import/preview", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ type: "holdings", valid: true, rows: [], errors: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const rows = [{ ticker: "AAPL" }];
+    const result = await previewImport(rows);
+    expect(fetchMock).toHaveBeenCalledWith("/data/import/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows }),
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("confirmImport posts type and rows to /data/import/confirm", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ written: 1 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const rows = [{ ticker: "AAPL" }];
+    const result = await confirmImport("holdings", rows);
+    expect(fetchMock).toHaveBeenCalledWith("/data/import/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "holdings", rows }),
+    });
+    expect(result).toEqual({ written: 1 });
   });
 });
