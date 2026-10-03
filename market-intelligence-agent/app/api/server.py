@@ -9,6 +9,7 @@ from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
 from app.api.routers.agentcore import router as agentcore_router
 from app.api.routers.approve import router as approve_router
+from app.api.routers.data import router as data_router
 from app.api.routers.gptlive_session import router as gptlive_session_router
 from app.api.routers.health import router as health_router
 from app.api.routers.stream import router as stream_router
@@ -70,4 +71,5 @@ app.include_router(stream_router)
 app.include_router(gptlive_session_router)
 app.include_router(agentcore_router)
 app.include_router(workspace_router)
+app.include_router(data_router)
 include_market_desk_routes(app)
