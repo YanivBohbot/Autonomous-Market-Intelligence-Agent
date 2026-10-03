@@ -1,17 +1,16 @@
 import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { getHealth } from "../lib/api";
-import type { ConsoleMode } from "../desk/mode";
 
 interface HeaderProps {
   threadId: string;
   onNewSession: () => void;
-  mode: ConsoleMode;
-  onModeChange: (mode: ConsoleMode) => void;
 }
 
-export function Header({ threadId, onNewSession, mode, onModeChange }: HeaderProps) {
+export function Header({ threadId, onNewSession }: HeaderProps) {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [version, setVersion] = useState<string>("");
+  const location = useLocation();
 
   useEffect(() => {
     let active = true;
@@ -35,61 +34,40 @@ export function Header({ threadId, onNewSession, mode, onModeChange }: HeaderPro
   }, []);
 
   const dotClass =
-    healthy === null
-      ? "bg-terminal-muted"
-      : healthy
-        ? "bg-terminal-accent animate-pulse-dot shadow-glow-green"
-        : "bg-terminal-danger shadow-glow-red";
+    healthy === null ? "bg-terminal-muted" : healthy ? "bg-terminal-accent animate-pulse-dot shadow-glow-green" : "bg-terminal-danger shadow-glow-red";
+
+  const navLink = (to: string, label: string) => (
+    <Link
+      to={to}
+      className={`px-2.5 py-1 font-mono text-xs transition-colors ${
+        location.pathname === to ? "bg-terminal-accent/15 text-terminal-accent" : "bg-terminal-bg text-terminal-muted hover:text-terminal-text"
+      }`}
+    >
+      {label}
+    </Link>
+  );
 
   return (
     <header className="scan-lines flex items-center justify-between border-b border-terminal-border bg-terminal-panel px-4 py-2.5 shadow-inner-glow">
-      {/* Left: brand + status */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <span className={`h-2 w-2 rounded-full ${dotClass}`} />
-          <span className="font-mono text-sm font-semibold text-terminal-muted">
-            MIA · Dev Console
-          </span>
+          <span className="font-mono text-sm font-semibold text-terminal-muted">MIA · Dev Console</span>
         </div>
-        {version && (
-          <span className="rounded border border-terminal-border px-1.5 py-0.5 font-mono text-[10px] text-terminal-muted">
-            v{version}
-          </span>
-        )}
-        {healthy === false && (
-          <span className="rounded bg-terminal-danger/10 px-2 py-0.5 font-mono text-[10px] text-terminal-danger">
-            backend offline
-          </span>
-        )}
+        {version && <span className="rounded border border-terminal-border px-1.5 py-0.5 font-mono text-[10px] text-terminal-muted">v{version}</span>}
+        {healthy === false && <span className="rounded bg-terminal-danger/10 px-2 py-0.5 font-mono text-[10px] text-terminal-danger">backend offline</span>}
       </div>
-
-      {/* Right: session info + controls */}
       <div className="flex items-center gap-3">
         <div className="flex overflow-hidden rounded border border-terminal-border">
-          {(["desk", "classic"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              onClick={() => onModeChange(m)}
-              className={`px-2.5 py-1 font-mono text-xs transition-colors ${
-                mode === m
-                  ? "bg-terminal-accent/15 text-terminal-accent"
-                  : "bg-terminal-bg text-terminal-muted hover:text-terminal-text"
-              }`}
-            >
-              {m === "desk" ? "Market Desk" : "Classic"}
-            </button>
-          ))}
+          {navLink("/", "Market Desk")}
+          {navLink("/classic", "Classic")}
+          {navLink("/data", "Data")}
         </div>
         <div className="flex items-center gap-1.5 rounded border border-terminal-border bg-terminal-bg px-2.5 py-1">
           <span className="font-mono text-[10px] text-terminal-muted">session</span>
           <span className="font-mono text-[10px] text-terminal-accent">{threadId}</span>
         </div>
-        <button
-          onClick={onNewSession}
-          className="rounded border border-terminal-border bg-terminal-bg px-3 py-1 font-mono text-xs text-terminal-muted transition-all hover:border-terminal-accent hover:text-terminal-accent"
-        >
+        <button onClick={onNewSession} className="rounded border border-terminal-border bg-terminal-bg px-3 py-1 font-mono text-xs text-terminal-muted transition-all hover:border-terminal-accent hover:text-terminal-accent">
           + New session
         </button>
       </div>
