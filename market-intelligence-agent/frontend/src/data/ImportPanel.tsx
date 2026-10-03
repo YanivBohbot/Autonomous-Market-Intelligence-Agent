@@ -23,12 +23,9 @@ export function ImportPanel() {
       }
 
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const workbook = XLSX.read(buffer, { type: "array" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { raw: false, dateNF: "yyyy-mm-dd" }) as Record<
-        string,
-        unknown
-      >[];
+      const rows = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
 
       const result = await previewImport(rows);
       setPreview(result);
