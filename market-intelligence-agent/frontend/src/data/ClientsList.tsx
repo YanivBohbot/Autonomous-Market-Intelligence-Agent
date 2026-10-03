@@ -3,13 +3,21 @@ import { getClients, type ClientWithHoldings } from "../lib/api";
 
 export function ClientsList() {
   const [clients, setClients] = useState<ClientWithHoldings[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void getClients().then(setClients);
+    getClients()
+      .then(setClients)
+      .catch(() => setError("Failed to load clients."));
   }, []);
 
   return (
     <div className="space-y-3 font-mono text-sm text-terminal-text">
+      {error && (
+        <div className="rounded border border-terminal-danger/40 bg-terminal-danger/10 px-3 py-2 text-xs text-terminal-danger">
+          {error}
+        </div>
+      )}
       {clients.map((c) => (
         <div key={c.client_id} className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
           <div className="flex items-center justify-between">

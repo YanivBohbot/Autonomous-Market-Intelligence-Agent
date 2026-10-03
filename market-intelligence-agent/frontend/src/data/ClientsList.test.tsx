@@ -28,4 +28,10 @@ describe("ClientsList", () => {
     render(<ClientsList />);
     expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
   });
+
+  it("shows an error message when the fetch fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+    render(<ClientsList />);
+    expect(await screen.findByText(/failed to load clients/i)).toBeInTheDocument();
+  });
 });

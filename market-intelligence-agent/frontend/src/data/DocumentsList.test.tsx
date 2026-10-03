@@ -15,4 +15,10 @@ describe("DocumentsList", () => {
     render(<DocumentsList />);
     expect(await screen.findByText(/no documents/i)).toBeInTheDocument();
   });
+
+  it("shows an error message when the fetch fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
+    render(<DocumentsList />);
+    expect(await screen.findByText(/failed to load documents/i)).toBeInTheDocument();
+  });
 });

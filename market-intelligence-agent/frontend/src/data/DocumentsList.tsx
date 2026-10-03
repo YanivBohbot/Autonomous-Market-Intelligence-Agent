@@ -3,10 +3,21 @@ import { getDocuments } from "../lib/api";
 
 export function DocumentsList() {
   const [documents, setDocuments] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void getDocuments().then(setDocuments);
+    getDocuments()
+      .then(setDocuments)
+      .catch(() => setError("Failed to load documents."));
   }, []);
+
+  if (error) {
+    return (
+      <div className="rounded border border-terminal-danger/40 bg-terminal-danger/10 px-3 py-2 font-mono text-xs text-terminal-danger">
+        {error}
+      </div>
+    );
+  }
 
   if (documents.length === 0) {
     return <div className="font-mono text-sm text-terminal-muted">No documents ingested yet.</div>;
