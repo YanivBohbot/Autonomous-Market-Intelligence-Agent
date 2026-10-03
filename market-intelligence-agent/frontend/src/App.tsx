@@ -95,7 +95,7 @@ export default function App() {
       <Header threadId={threadId} onNewSession={onNewSession} />
       <Routes>
         <Route path="/" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
-        <Route path="/classic" element={<ClassicChat threadId={threadId} />} />
+        <Route path="/classic" element={<ClassicChat key={threadId} threadId={threadId} />} />
         <Route path="/data" element={<div>Data</div>} />
       </Routes>
     </div>

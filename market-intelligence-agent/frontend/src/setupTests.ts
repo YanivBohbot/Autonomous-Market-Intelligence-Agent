@@ -7,6 +7,10 @@ class ResizeObserver {
 }
 window.ResizeObserver = window.ResizeObserver || ResizeObserver;
 
+// jsdom doesn't implement scrollIntoView; ChatPane calls it whenever the
+// message list changes (e.g. after sending a chat message in a test).
+HTMLElement.prototype.scrollIntoView = HTMLElement.prototype.scrollIntoView || (() => {});
+
 Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, value: 400 });
 Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, value: 300 });
 Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, value: 400 });

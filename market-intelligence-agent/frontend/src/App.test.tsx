@@ -52,4 +52,17 @@ describe("App routing", () => {
     renderAt("/");
     expect(screen.getByTestId("desk-view").textContent).not.toBe(classicThread);
   });
+
+  it("New session clears Classic's chat history", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    renderAt("/classic");
+
+    await user.type(screen.getByPlaceholderText(/ask the agent/i), "hello world");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("hello world")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /new session/i }));
+    expect(screen.queryByText("hello world")).not.toBeInTheDocument();
+  });
 });
