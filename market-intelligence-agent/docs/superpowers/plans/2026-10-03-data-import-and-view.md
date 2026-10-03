@@ -641,7 +641,7 @@ def test_ingest_single_pdf_upserts_chunks_and_returns_their_count(tmp_path, monk
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text(json.dumps(["existing-report.pdf"]))
     monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
-    monkeypatch.setattr("app.ingest.PyPDFLoader", _fake_loader)
+    monkeypatch.setattr("app.data_import.pdf_ingest.PyPDFLoader", _fake_loader)
     monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
     monkeypatch.setattr(
         "app.ingest.PineconeVectorStore.from_documents",
@@ -658,7 +658,7 @@ def test_ingest_single_pdf_adds_to_the_manifest_without_removing_existing_entrie
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text(json.dumps(["existing-report.pdf"]))
     monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
-    monkeypatch.setattr("app.ingest.PyPDFLoader", _fake_loader)
+    monkeypatch.setattr("app.data_import.pdf_ingest.PyPDFLoader", _fake_loader)
     monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
     monkeypatch.setattr(
         "app.ingest.PineconeVectorStore.from_documents",
@@ -674,7 +674,7 @@ def test_ingesting_the_same_pdf_twice_does_not_duplicate_the_manifest_entry(tmp_
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text(json.dumps([]))
     monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
-    monkeypatch.setattr("app.ingest.PyPDFLoader", _fake_loader)
+    monkeypatch.setattr("app.data_import.pdf_ingest.PyPDFLoader", _fake_loader)
     monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
     monkeypatch.setattr(
         "app.ingest.PineconeVectorStore.from_documents",
