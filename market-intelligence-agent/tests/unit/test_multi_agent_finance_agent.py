@@ -5,6 +5,7 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 from app.agent.multi_agent import finance_agent as mod
 from app.agent.middleware import base_middleware, client_context_prompt
 from app.agent.multi_agent.display import market_desk_display
+from app.agent.multi_agent.state import ClientContextState
 
 
 def _kwargs():
@@ -24,6 +25,7 @@ def test_create_agent_call():
     assert kw["system_prompt"] == FINANCE_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "finance_agent"
+    assert kw["state_schema"] is ClientContextState
     mw = kw["middleware"]
     base = base_middleware()
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
