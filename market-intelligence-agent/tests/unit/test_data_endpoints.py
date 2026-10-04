@@ -50,6 +50,57 @@ def test_get_clients_lists_the_seeded_client(client):
     assert body[0]["holdings"] == []
 
 
+def test_get_client_summary_computes_totals_from_a_mocked_price(client, monkeypatch):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        assert ticker == "AAPL"
+        return 200.0
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+
+    resp = client.get("/data/clients/1/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "Jane Doe"
+    assert body["totals"]["market_value"] == 2000.0
+    assert body["unpriced_tickers"] == []
+
+
+def test_get_client_summary_with_no_holdings_returns_null_totals(client):
+    resp = client.get("/data/clients/1/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["totals"] is None
+    assert body["positions"] == []
+
+
+def test_get_client_summary_404s_for_an_unknown_client(client):
+    resp = client.get("/data/clients/999/summary")
+    assert resp.status_code == 404
+
+
+def test_get_client_summary_degrades_when_the_price_fetch_raises(client, monkeypatch):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.commit()
+    conn.close()
+
+    async def failing_price(ticker):
+        raise ValueError("yfinance is down")
+
+    monkeypatch.setattr(data_router_module, "_live_price", failing_price)
+
+    resp = client.get("/data/clients/1/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["totals"] is None
+    assert body["unpriced_tickers"] == ["AAPL"]
+
+
 def test_get_documents_reads_the_manifest(tmp_path, monkeypatch, client):
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text('["report-a.pdf", "report-b.pdf"]')

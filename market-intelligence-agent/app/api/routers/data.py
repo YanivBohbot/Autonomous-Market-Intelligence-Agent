@@ -12,11 +12,14 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
+from app.agent.tools.concentration import parse_tool_payload, price_from_quote
 from app.agent.tools.knowledge_base import KB_MANIFEST_PATH
+from app.data_import.client_summary import build_client_summary
 from app.data_import.db import (
     DB_PATH,
     client_id_by_email,
     existing_client_emails,
+    get_client_with_holdings,
     known_tickers,
     list_clients_with_holdings,
     write_clients,
@@ -59,6 +62,28 @@ async def get_clients() -> list[dict]:
         return list_clients_with_holdings(conn)
     finally:
         conn.close()
+
+
+async def _live_price(ticker: str) -> float:
+    # Deferred import: avoids connecting to the yfinance MCP server at
+    # module import time for every test that imports this router, same
+    # convention as client_portfolio_tool / concentration_screen_tool.
+    from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
+
+    symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"
+    return price_from_quote(parse_tool_payload(await yf_quote_tool.ainvoke({symbol_arg: ticker})))
+
+
+@router.get("/clients/{client_id}/summary")
+async def get_client_summary(client_id: int) -> dict:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        client = get_client_with_holdings(conn, client_id)
+    finally:
+        conn.close()
+    if client is None:
+        raise HTTPException(status_code=404, detail="client not found")
+    return await build_client_summary(client=client, get_price=_live_price)
 
 
 @router.get("/documents")
