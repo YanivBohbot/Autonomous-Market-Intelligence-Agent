@@ -90,6 +90,34 @@ def test_router_is_not_given_a_duplicate_question_message():
     assert invoked_messages == [SystemMessage(content=expected_prompt), *history]
 
 
+def test_routing_prompt_includes_the_active_client_when_present():
+    """Regression: a vague client question ("qui est le client") could route
+    to memory_agent/filesystem_agent/browser_agent/email_agent, none of
+    which get client_context_prompt -- the supervisor's own routing prompt
+    had no idea a client was even active, so it couldn't steer away from
+    them. Telling the router too (same client_context field the 3 client-
+    aware specialists already read) fixes that at the source."""
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="portfolio_agent", reasoning="client question")
+        state = _state(messages=[HumanMessage(content="qui est le client")])
+        state["client_context"] = "Client actif: Amanda Brooks, segment VIP, risque conservative, conseiller Sarah Mitchell."
+        supervisor_node(state)
+    invoked_messages = mock.invoke.call_args[0][0]
+    system_text = invoked_messages[0].content
+    assert "Amanda Brooks" in system_text
+
+
+def test_routing_prompt_unchanged_when_no_active_client():
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="general question")
+        supervisor_node(_state(messages=[HumanMessage(content="hi")]))
+    invoked_messages = mock.invoke.call_args[0][0]
+    expected_prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT.replace(
+        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
+    )
+    assert invoked_messages[0].content == expected_prompt
+
+
 def test_routes_to_finance_agent():
     with patch.object(supervisor_mod, "_router") as mock:
         mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="stock question")

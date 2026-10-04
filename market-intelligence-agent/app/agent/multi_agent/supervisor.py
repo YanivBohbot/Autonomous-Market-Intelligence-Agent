@@ -155,6 +155,20 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     routing_prompt = SUPERVISOR_ROUTING_PROMPT.replace(
         INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
     )
+    # Without this, the router had no idea a client was even active (only
+    # portfolio_agent/finance_agent/rag_agent read client_context via their
+    # own client_context_prompt middleware) -- a vague client question like
+    # "qui est le client" could route to memory_agent or another specialist
+    # that has never heard of this client, producing a confused answer.
+    client_context = state.get("client_context")
+    if client_context:
+        routing_prompt = (
+            f"{routing_prompt}\n\n{client_context} When this client is active and the question "
+            "is about them -- even phrased generically (\"who is the client\", \"what's their "
+            "portfolio worth\") -- prefer portfolio_agent, finance_agent, or rag_agent over "
+            "memory_agent/filesystem_agent/browser_agent/email_agent, which don't know who this "
+            "client is."
+        )
     decision = cast(RoutingDecision, _router.invoke(
         [
             SystemMessage(content=routing_prompt),
