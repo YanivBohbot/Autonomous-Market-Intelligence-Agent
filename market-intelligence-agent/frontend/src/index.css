@@ -2,23 +2,106 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Light theme (default) -- modern SaaS: white cards, soft shadows. */
+  --terminal-bg: 248 250 252; /* slate-50 */
+  --terminal-panel: 255 255 255;
+  --terminal-border: 203 213 225; /* slate-300 -- visible but light; slate-200 nearly vanished against white, slate-400 read as too heavy */
+  --terminal-text: 30 41 59; /* slate-800 */
+  --terminal-muted: 100 116 139; /* slate-500 */
+  --terminal-accent: 5 150 105; /* emerald-600 */
+  --terminal-accent-dim: 209 250 229; /* emerald-100 */
+  --terminal-warn: 217 119 6; /* amber-600 */
+  --terminal-warn-dim: 254 243 199; /* amber-100 */
+  --terminal-danger: 220 38 38; /* red-600 */
+  --terminal-danger-dim: 254 226 226; /* red-100 */
+  --terminal-user: 239 246 255; /* blue-50 */
+  --terminal-user-border: 37 99 235; /* blue-600 */
+  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 1px rgb(0 0 0 / 0.06);
+  --scrollbar-thumb: 203 213 225;
+  --scrollbar-thumb-hover: 148 163 184;
+}
+
+/* CopilotKit v2's own stylesheet ships --border/--input at oklch(92.2% 0 0)
+   for light mode -- nearly white, invisible against a white page (the chat
+   composer's frame disappeared). Higher specificity than its bare :root
+   rule wins regardless of CSS load order, without touching their file. */
+html[data-theme="light"] {
+  --border: #cbd5e1; /* slate-300 */
+  --input: #cbd5e1;
+  /* The composer and several cards border with a raw zinc-200/gray-200
+     utility (not the --border var above), at oklch(~92%) -- effectively
+     invisible on a white page. Re-point those two tokens at their own
+     400-weight value (still only touched in light mode; dark mode uses
+     separate zinc-700+ classes and never reads these two). */
+  --cpk-color-zinc-200: oklch(70.5% 0.015 286.067);
+  --cpk-color-gray-200: oklch(70.7% 0.022 261.325);
+}
+
+/* The Market Desk composer (CopilotKit v2's prebuilt chat input) has no
+   visible frame of its own -- its exact wrapper class is internal and
+   unstable, so target the input element directly and give it the same
+   frame as Classic's textarea (App.tsx), using the same tokens so both
+   stay in sync across theme changes. */
+main textarea,
+main [contenteditable="true"] {
+  border: 1px solid rgb(var(--terminal-border)) !important;
+  border-radius: 0.75rem;
+  background-color: rgb(var(--terminal-bg));
+}
+main textarea:focus,
+main [contenteditable="true"]:focus {
+  border-color: rgb(var(--terminal-accent) / 0.6) !important;
+  outline: none;
+}
+
+[data-theme="dark"] {
+  /* Original terminal palette, kept as the opt-in alternate theme. */
+  --terminal-bg: 10 14 20;
+  --terminal-panel: 15 22 32;
+  --terminal-border: 28 39 51;
+  --terminal-text: 201 212 224;
+  --terminal-muted: 107 122 141;
+  --terminal-accent: 52 211 153;
+  --terminal-accent-dim: 26 107 74;
+  --terminal-warn: 251 191 36;
+  --terminal-warn-dim: 107 79 10;
+  --terminal-danger: 248 113 113;
+  --terminal-danger-dim: 107 26 26;
+  --terminal-user: 30 58 95;
+  --terminal-user-border: 37 99 235;
+  --card-shadow: none;
+  --scrollbar-thumb: 28 39 51;
+  --scrollbar-thumb-hover: 45 63 82;
+}
+
 html, body, #root { height: 100%; }
+html { font-size: 17px; }
 body {
   @apply bg-terminal-bg text-terminal-text font-sans antialiased;
   margin: 0;
+  line-height: 1.55;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
+
+/* Card surface shared by list rows, panels and chat bubbles -- a soft
+   shadow in light mode, no-op in dark mode (border/panel contrast already
+   does the job there, and shadows barely read on a dark background). */
+.card-shadow { box-shadow: var(--card-shadow); }
 
 /* Custom scrollbar — narrow, subtle */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #1c2733;
+  background: rgb(var(--scrollbar-thumb));
   border-radius: 2px;
 }
-::-webkit-scrollbar-thumb:hover { background: #2d3f52; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--scrollbar-thumb-hover)); }
 
-/* Scan-line overlay on the header bar */
-.scan-lines {
+/* Scan-line overlay on the header bar -- a CRT texture that only fits the
+   dark terminal aesthetic; a no-op background in light mode. */
+.scan-lines { background-image: none; }
+[data-theme="dark"] .scan-lines {
   background-image: repeating-linear-gradient(
     0deg,
     transparent,

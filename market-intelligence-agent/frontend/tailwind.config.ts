@@ -2,27 +2,31 @@ import type { Config } from "tailwindcss";
 
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
-  darkMode: "class",
   theme: {
     extend: {
       colors: {
+        // Values live in CSS variables (src/index.css): light theme on
+        // :root, dark theme under [data-theme="dark"]. Every component
+        // keeps using bg-terminal-bg etc. unchanged -- the toggle in
+        // Header.tsx just flips which palette those variables resolve to.
         terminal: {
-          bg: "#0a0e14",
-          panel: "#0f1620",
-          border: "#1c2733",
-          text: "#c9d4e0",
-          muted: "#6b7a8d",
-          accent: "#34d399", // signal green
-          "accent-dim": "#1a6b4a",
-          warn: "#fbbf24", // amber: awaiting approval
-          "warn-dim": "#6b4f0a",
-          danger: "#f87171", // red: reject/error
-          "danger-dim": "#6b1a1a",
-          user: "#1e3a5f",
-          "user-border": "#2563eb",
+          bg: "rgb(var(--terminal-bg) / <alpha-value>)",
+          panel: "rgb(var(--terminal-panel) / <alpha-value>)",
+          border: "rgb(var(--terminal-border) / <alpha-value>)",
+          text: "rgb(var(--terminal-text) / <alpha-value>)",
+          muted: "rgb(var(--terminal-muted) / <alpha-value>)",
+          accent: "rgb(var(--terminal-accent) / <alpha-value>)",
+          "accent-dim": "rgb(var(--terminal-accent-dim) / <alpha-value>)",
+          warn: "rgb(var(--terminal-warn) / <alpha-value>)",
+          "warn-dim": "rgb(var(--terminal-warn-dim) / <alpha-value>)",
+          danger: "rgb(var(--terminal-danger) / <alpha-value>)",
+          "danger-dim": "rgb(var(--terminal-danger-dim) / <alpha-value>)",
+          user: "rgb(var(--terminal-user) / <alpha-value>)",
+          "user-border": "rgb(var(--terminal-user-border) / <alpha-value>)",
         },
       },
       fontFamily: {
+        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       boxShadow: {
