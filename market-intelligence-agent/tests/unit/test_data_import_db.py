@@ -5,6 +5,7 @@ import pytest
 from app.data_import.db import (
     client_id_by_email,
     existing_client_emails,
+    get_client_with_holdings,
     known_tickers,
     list_clients_with_holdings,
     write_clients,
@@ -120,3 +121,20 @@ def test_list_clients_with_holdings_nests_holdings_under_each_client(conn):
 def test_list_clients_with_holdings_includes_a_client_with_no_holdings(conn):
     result = list_clients_with_holdings(conn)
     assert result[0]["holdings"] == []
+
+
+def test_get_client_with_holdings_returns_the_client_and_their_holdings(conn):
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10.0, 150.0)")
+    conn.commit()
+
+    result = get_client_with_holdings(conn, 1)
+
+    assert result == {
+        "client_id": 1, "name": "Jane Doe", "email": "jane@x.com", "segment": "VIP",
+        "risk_profile": "balanced", "advisor": "Sam", "city": "Paris",
+        "holdings": [{"ticker": "AAPL", "shares": 10.0, "avg_cost": 150.0}],
+    }
+
+
+def test_get_client_with_holdings_returns_none_for_an_unknown_id(conn):
+    assert get_client_with_holdings(conn, 999) is None

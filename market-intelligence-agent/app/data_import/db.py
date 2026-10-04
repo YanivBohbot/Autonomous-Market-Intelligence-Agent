@@ -39,6 +39,28 @@ def write_holdings(conn: sqlite3.Connection, rows: list[dict]) -> None:
     )
 
 
+def get_client_with_holdings(conn: sqlite3.Connection, client_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT client_id, name, email, segment, risk_profile, advisor, city "
+        "FROM clients WHERE client_id = ?",
+        (client_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    cid, name, email, segment, risk_profile, advisor, city = row
+    holdings = [
+        {"ticker": ticker, "shares": shares, "avg_cost": avg_cost}
+        for ticker, shares, avg_cost in conn.execute(
+            "SELECT ticker, shares, avg_cost FROM holdings WHERE client_id = ?", (cid,)
+        )
+    ]
+    return {
+        "client_id": cid, "name": name, "email": email, "segment": segment,
+        "risk_profile": risk_profile, "advisor": advisor, "city": city,
+        "holdings": holdings,
+    }
+
+
 def list_clients_with_holdings(conn: sqlite3.Connection) -> list[dict]:
     clients = conn.execute(
         "SELECT client_id, name, email, segment, risk_profile, advisor, city FROM clients ORDER BY name"
