@@ -236,6 +236,46 @@ def test_cancel_rejects_the_pending_calls_and_frees_the_thread(email_client):
     assert SENT == []
 
 
+def test_history_returns_prior_user_and_assistant_messages(finance_client):
+    client, _ = finance_client
+    client.post(PATH, json=_run_input("t10", "r1", [{"id": "u1", "role": "user", "content": "AAPL price?"}]))
+
+    resp = client.get(f"{PATH}/history", params={"thread_id": "t10"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert {"role": "user", "content": "AAPL price?"}.items() <= body[0].items()
+    assert any(m["role"] == "assistant" and "AAPL is trading at $200." in m["content"] for m in body)
+
+
+def test_history_is_empty_for_an_unknown_thread(finance_client):
+    client, _ = finance_client
+    resp = client.get(f"{PATH}/history", params={"thread_id": "never-used"})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_history_excludes_the_internal_summarization_message(finance_client):
+    client, app = finance_client
+    graph = app.state.market_desk_agent.graph
+    cfg = {"configurable": {"thread_id": "t11"}}
+    graph.update_state(cfg, {"messages": [
+        HumanMessage(content="Here is a summary of the conversation to date: ...", id="s1",
+                     additional_kwargs={"lc_source": "summarization"}),
+    ]})
+    client.post(PATH, json=_run_input("t11", "r1", [{"id": "u1", "role": "user", "content": "AAPL price?"}]))
+
+    resp = client.get(f"{PATH}/history", params={"thread_id": "t11"})
+    assert resp.status_code == 200
+    assert not any("summary of the conversation" in m["content"] for m in resp.json())
+
+
+def test_history_404s_when_agent_not_ready():
+    app = FastAPI()
+    app.include_router(router)
+    resp = TestClient(app).get(f"{PATH}/history", params={"thread_id": "t0"})
+    assert resp.status_code == 503
+
+
 def test_portfolio_result_is_enveloped_for_the_frontend(portfolio_client):
     events = _events(portfolio_client.post(PATH, json=_run_input(
         "t9", "r1", [{"id": "u1", "role": "user", "content": "BND value?"}])).text)

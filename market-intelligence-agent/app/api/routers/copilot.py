@@ -16,6 +16,7 @@ from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
@@ -111,6 +112,30 @@ async def market_desk(input_data: RunAgentInput, request: Request):
             yield encoder.encode(RunErrorEvent(type=EventType.RUN_ERROR, message=str(exc)))
 
     return StreamingResponse(events(), media_type=encoder.get_content_type())
+
+
+@router.get("/copilot/market-desk/history")
+async def market_desk_history(thread_id: str, request: Request) -> list[dict]:
+    """Plain user/assistant messages for a thread, read straight from the
+    graph's checkpoint -- no run, no model call. Lets the frontend seed a
+    chat panel with prior conversation on mount (agent.setMessages(...)),
+    since CopilotKit itself never fetches history on its own; see
+    docs/superpowers/specs/2026-10-04-clients-workspace-design.md's
+    Known limitation note. Tool messages and summarization HumanMessages
+    (_is_summary) are left out -- this is for display, not model context."""
+    agent: LangGraphAgent | None = getattr(request.app.state, "market_desk_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Market Desk agent is not ready.")
+    snapshot = await agent.graph.aget_state({"configurable": {"thread_id": thread_id}})
+    messages = snapshot.values.get("messages", []) if snapshot.values else []
+    return [
+        {"id": m.id, "role": "user" if isinstance(m, HumanMessage) else "assistant", "content": m.content}
+        for m in messages
+        if isinstance(m, (HumanMessage, AIMessage))
+        and isinstance(m.content, str)
+        and m.content
+        and not _is_summary(m)
+    ]
 
 
 @router.post("/copilot/uploads")
