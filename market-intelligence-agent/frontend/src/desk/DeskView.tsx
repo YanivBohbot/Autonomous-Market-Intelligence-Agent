@@ -31,10 +31,13 @@ export function DeskView({ threadId }: { threadId: string }) {
 function DeskBody({ threadId }: { threadId: string }) {
   useDeskInterrupt();
   useToolDisplay();
-  // Pushed into AppLayout's Intelligence column instead of rendered as a
-  // direct sibling -- DeskActivityRail itself is unchanged, only where it
-  // mounts changes.
-  useIntelligenceSlot(<DeskActivityRail />);
+  // Portaled into AppLayout's Intelligence column instead of rendered as a
+  // direct sibling -- DeskActivityRail itself is unchanged, only where its
+  // DOM lands changes. Must stay inside DeskBody's own CopilotKitProvider
+  // subtree (hence rendering the returned portal right here, not lifting
+  // it through plain state) since DeskActivityRail calls useAgent, which
+  // needs that provider's context.
+  const intelligencePortal = useIntelligenceSlot(<DeskActivityRail />);
   useConfigureSuggestions({
     suggestions: [
       { title: "Portfolio value", message: "What is the total value of a client's portfolio?" },
@@ -43,11 +46,13 @@ function DeskBody({ threadId }: { threadId: string }) {
     ],
   }, []);
   return (
-    <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="pointer-events-none absolute inset-x-4 bottom-20 z-50 flex">
-        <ThinkingIndicator />
-      </div>
-      <CopilotChat
+    <>
+      {intelligencePortal}
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="pointer-events-none absolute inset-x-4 bottom-20 z-50 flex">
+          <ThinkingIndicator />
+        </div>
+        <CopilotChat
           agentId={MARKET_DESK_AGENT_ID}
           threadId={threadId}
           className="h-full"
@@ -75,7 +80,8 @@ function DeskBody({ threadId }: { threadId: string }) {
               };
             },
           }}
-      />
-    </main>
+        />
+      </main>
+    </>
   );
 }

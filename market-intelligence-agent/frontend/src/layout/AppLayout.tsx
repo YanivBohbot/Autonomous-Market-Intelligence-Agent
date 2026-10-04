@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { getHealth } from "../lib/api";
 import { getTheme, toggleTheme, type Theme } from "../theme";
@@ -27,7 +27,8 @@ export function AppLayout({ threadId, onNewSession }: AppLayoutProps) {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [version, setVersion] = useState<string>("");
   const [theme, setThemeState] = useState<Theme>("light");
-  const [intelligenceContent, setIntelligenceContent] = useState<ReactNode | null>(null);
+  const [intelligenceContainer, setIntelligenceContainer] = useState<HTMLDivElement | null>(null);
+  const [intelligenceOccupied, setIntelligenceOccupied] = useState(false);
 
   useEffect(() => {
     setThemeState(getTheme());
@@ -116,12 +117,14 @@ export function AppLayout({ threadId, onNewSession }: AppLayoutProps) {
             </NavLink>
           ))}
         </nav>
-        <IntelligenceSlotProvider onContentChange={setIntelligenceContent}>
+        <IntelligenceSlotProvider container={intelligenceContainer} onOccupiedChange={setIntelligenceOccupied}>
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Outlet />
           </main>
         </IntelligenceSlotProvider>
-        {intelligenceContent ?? emptyIntelligence}
+        <div ref={setIntelligenceContainer} className="h-full w-64 flex-none">
+          {!intelligenceOccupied && emptyIntelligence}
+        </div>
       </div>
     </div>
   );
