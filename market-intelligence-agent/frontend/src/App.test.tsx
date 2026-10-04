@@ -14,14 +14,22 @@ function renderAt(path: string) {
 
 describe("App routing", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: "ok", version: "1.2.3" }),
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: "ok", version: "1.2.3" }),
+      }),
+    );
   });
 
-  it("/ renders Market Desk", () => {
+  it("/ redirects to /recherche", () => {
     renderAt("/");
+    expect(screen.getByTestId("desk-view")).toBeInTheDocument();
+  });
+
+  it("/recherche renders Market Desk", () => {
+    renderAt("/recherche");
     expect(screen.getByTestId("desk-view")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/ask the agent/i)).not.toBeInTheDocument();
   });
@@ -32,24 +40,33 @@ describe("App routing", () => {
     expect(screen.queryByTestId("desk-view")).not.toBeInTheDocument();
   });
 
-  it("the nav link to Classic has the right href", () => {
-    renderAt("/");
-    expect(screen.getByRole("link", { name: "Classic" })).toHaveAttribute("href", "/classic");
+  it("/classic has no AppLayout nav (it's outside the layout)", () => {
+    renderAt("/classic");
+    expect(screen.queryByRole("link", { name: "Recherche" })).not.toBeInTheDocument();
+  });
+
+  it("the three not-yet-built sections render ComingSoonPage without crashing", () => {
+    for (const path of ["/briefing", "/clients", "/rapports"]) {
+      const { unmount } = renderAt(path);
+      expect(screen.getByText(/bientôt disponible/i)).toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("New session gives the desk a new thread id", async () => {
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
-    renderAt("/");
+    renderAt("/recherche");
     const before = screen.getByTestId("desk-view").textContent;
     await user.click(screen.getByRole("button", { name: /new session/i }));
     expect(screen.getByTestId("desk-view").textContent).not.toBe(before);
   });
 
   it("Market Desk runs on its own thread, never Classic's", () => {
-    renderAt("/classic");
+    const classic = renderAt("/classic");
     const classicThread = screen.getByText(/^web_session_/).textContent;
-    renderAt("/");
+    classic.unmount();
+    renderAt("/recherche");
     expect(screen.getByTestId("desk-view").textContent).not.toBe(classicThread);
   });
 

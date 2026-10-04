@@ -1,6 +1,7 @@
 import { useState, useRef, type FormEvent, type KeyboardEvent } from "react";
-import { Routes, Route } from "react-router-dom";
-import { Header } from "./components/Header";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { AppLayout } from "./layout/AppLayout";
+import { ComingSoonPage } from "./layout/ComingSoonPage";
 import { ChatPane } from "./components/ChatPane";
 import { ActivityRail } from "./components/ActivityRail";
 import { ApprovalCard } from "./components/ApprovalCard";
@@ -10,7 +11,7 @@ import { newThreadId } from "./lib/api";
 import { DeskView } from "./desk/DeskView";
 import { DataPage } from "./data/DataPage";
 
-function ClassicChat({ threadId }: { threadId: string }) {
+function ClassicChat({ threadId, onNewSession }: { threadId: string; onNewSession: () => void }) {
   const [input, setInput] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -42,7 +43,24 @@ function ClassicChat({ threadId }: { threadId: string }) {
   const inputDisabled = streaming || !!pending;
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Classic has no AppLayout wrapping it (decision 7: a debug route,
+          out of the main nav) -- but it previously got + New session and
+          its own session id for free from the old shared Header. This
+          minimal bar keeps that working without reintroducing any nav. */}
+      <div className="flex items-center justify-between border-b border-terminal-border bg-terminal-panel px-4 py-2">
+        <div className="flex items-center gap-1.5 rounded border border-terminal-border bg-terminal-bg px-2.5 py-1">
+          <span className="font-mono text-[10px] text-terminal-muted">session</span>
+          <span className="font-mono text-[10px] text-terminal-accent">{threadId}</span>
+        </div>
+        <button
+          onClick={onNewSession}
+          className="rounded border border-terminal-border bg-terminal-bg px-3 py-1 font-mono text-xs text-terminal-muted transition-all hover:border-terminal-accent hover:text-terminal-accent"
+        >
+          + New session
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1">
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-hidden">
           <ChatPane messages={messages} streaming={streaming} />
@@ -80,6 +98,7 @@ function ClassicChat({ threadId }: { threadId: string }) {
         {voiceOpen && <VoicePanel threadId={threadId} />}
       </main>
       <ActivityRail activity={activity} />
+      </div>
     </div>
   );
 }
@@ -93,11 +112,40 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col bg-terminal-bg">
-      <Header threadId={threadId} onNewSession={onNewSession} />
       <Routes>
-        <Route path="/" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
-        <Route path="/classic" element={<ClassicChat key={threadId} threadId={threadId} />} />
-        <Route path="/data" element={<DataPage />} />
+        <Route element={<AppLayout threadId={threadId} onNewSession={onNewSession} />}>
+          <Route path="/" element={<Navigate to="/recherche" replace />} />
+          <Route
+            path="/briefing"
+            element={
+              <ComingSoonPage
+                title="Briefing"
+                description="Résumé quotidien automatique : alertes de concentration, mouvements de marché notables, synthèse de l'agent. Arrive dans un prochain chantier."
+              />
+            }
+          />
+          <Route
+            path="/clients"
+            element={
+              <ComingSoonPage
+                title="Clients"
+                description="Espace de travail par client : résumé, graphique, positions et chat scopé. Arrive dans un prochain chantier."
+              />
+            }
+          />
+          <Route path="/recherche" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
+          <Route
+            path="/rapports"
+            element={
+              <ComingSoonPage
+                title="Rapports"
+                description="Génération et historique des rapports clients (Excel/PDF/Word). Arrive dans un prochain chantier."
+              />
+            }
+          />
+          <Route path="/data" element={<DataPage />} />
+        </Route>
+        <Route path="/classic" element={<ClassicChat key={threadId} threadId={threadId} onNewSession={onNewSession} />} />
       </Routes>
     </div>
   );
