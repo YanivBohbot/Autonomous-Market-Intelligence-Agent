@@ -5,6 +5,9 @@ import { MemoryRouter } from "react-router-dom";
 vi.mock("./desk/DeskView", () => ({
   DeskView: ({ threadId }: { threadId: string }) => <div data-testid="desk-view">{threadId}</div>,
 }));
+vi.mock("./clients/ClientWorkspace", () => ({
+  ClientWorkspace: () => <div data-testid="client-workspace" />,
+}));
 
 import App from "./App";
 
@@ -45,12 +48,31 @@ describe("App routing", () => {
     expect(screen.queryByRole("link", { name: "Recherche" })).not.toBeInTheDocument();
   });
 
-  it("the three not-yet-built sections render ComingSoonPage without crashing", () => {
-    for (const path of ["/briefing", "/clients", "/rapports"]) {
+  it("the two not-yet-built sections render ComingSoonPage without crashing", () => {
+    for (const path of ["/briefing", "/rapports"]) {
       const { unmount } = renderAt(path);
       expect(screen.getByText(/bientôt disponible/i)).toBeInTheDocument();
       unmount();
     }
+  });
+
+  it("/clients renders the client list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/data/clients") {
+          return Promise.resolve({ ok: true, json: async () => [] });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ status: "ok", version: "1.2.3" }) });
+      }),
+    );
+    renderAt("/clients");
+    expect(screen.queryByTestId("client-workspace")).not.toBeInTheDocument();
+  });
+
+  it("/clients/:id renders the client workspace", () => {
+    renderAt("/clients/12");
+    expect(screen.getByTestId("client-workspace")).toBeInTheDocument();
   });
 
   it("New session gives the desk a new thread id", async () => {

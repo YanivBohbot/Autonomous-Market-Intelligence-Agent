@@ -10,6 +10,8 @@ import { useChatStream } from "./hooks/useChatStream";
 import { newThreadId } from "./lib/api";
 import { DeskView } from "./desk/DeskView";
 import { DataPage } from "./data/DataPage";
+import { ClientsPage } from "./clients/ClientsPage";
+import { ClientWorkspace } from "./clients/ClientWorkspace";
 
 function ClassicChat({ threadId, onNewSession }: { threadId: string; onNewSession: () => void }) {
   const [input, setInput] = useState("");
@@ -124,15 +126,8 @@ export default function App() {
               />
             }
           />
-          <Route
-            path="/clients"
-            element={
-              <ComingSoonPage
-                title="Clients"
-                description="Espace de travail par client : résumé, graphique, positions et chat scopé. Arrive dans un prochain chantier."
-              />
-            }
-          />
+          <Route path="/clients" element={<ClientsPage />} />
+          <Route path="/clients/:id" element={<ClientWorkspace />} />
           <Route path="/recherche" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
           <Route
             path="/rapports"
