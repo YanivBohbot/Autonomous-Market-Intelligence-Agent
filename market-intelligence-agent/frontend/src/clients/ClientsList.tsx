@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getClients, type ClientWithHoldings } from "../lib/api";
 
 export function ClientsList() {
+  const navigate = useNavigate();
   const [clients, setClients] = useState<ClientWithHoldings[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +21,13 @@ export function ClientsList() {
         </div>
       )}
       {clients.map((c) => (
-        <div key={c.client_id} className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
+        <button
+          key={c.client_id}
+          type="button"
+          onClick={() => navigate(`/clients/${c.client_id}`)}
+          aria-label={c.name}
+          className="w-full rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3 text-left transition-colors hover:border-terminal-accent/50"
+        >
           <div className="flex items-center justify-between">
             <span className="font-semibold">{c.name}</span>
             <span className="text-xs text-terminal-muted">{c.email} · {c.segment} · {c.risk_profile}</span>
@@ -46,7 +54,7 @@ export function ClientsList() {
           ) : (
             <div className="mt-2 text-xs text-terminal-muted">No holdings.</div>
           )}
-        </div>
+        </button>
       ))}
     </div>
   );
