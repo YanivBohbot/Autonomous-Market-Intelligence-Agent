@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { uploadToWorkspace, getClients, getDocuments, importPdf, previewImport, confirmImport } from "./api";
+import { uploadToWorkspace, getClients, getClientSummary, getDocuments, importPdf, previewImport, confirmImport } from "./api";
 
 describe("uploadToWorkspace", () => {
   beforeEach(() => {
@@ -35,6 +35,23 @@ describe("data section API", () => {
     const result = await getClients();
     expect(fetchMock).toHaveBeenCalledWith("/data/clients");
     expect(result).toEqual([{ email: "jane@x.com" }]);
+  });
+
+  it("getClientSummary fetches /data/clients/:id/summary", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        client_id: 1, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
+        risk_profile: "balanced", advisor: "Sam", city: "Paris",
+        totals: { market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33 },
+        positions: [], unpriced_tickers: [],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await getClientSummary(1);
+    expect(fetchMock).toHaveBeenCalledWith("/data/clients/1/summary");
+    expect(result.name).toBe("Jane Doe");
+    expect(result.totals?.market_value).toBe(2000);
   });
 
   it("getDocuments fetches /data/documents", async () => {

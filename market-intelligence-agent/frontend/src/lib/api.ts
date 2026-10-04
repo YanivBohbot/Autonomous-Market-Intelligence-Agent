@@ -47,6 +47,29 @@ export interface ClientWithHoldings {
   holdings: { ticker: string; shares: number; avg_cost: number }[];
 }
 
+export interface ClientSummary {
+  client_id: number;
+  name: string;
+  email: string;
+  segment: string;
+  risk_profile: string;
+  advisor: string;
+  city: string;
+  totals: { market_value: number; cost_basis: number; unrealized_pnl: number; unrealized_pnl_pct: number } | null;
+  positions: {
+    ticker: string; shares: number; avg_cost: number; price: number;
+    market_value: number; cost_basis: number; unrealized_pnl: number;
+    unrealized_pnl_pct: number; weight_pct: number; sector: string | null;
+  }[];
+  unpriced_tickers: string[];
+}
+
+export async function getClientSummary(clientId: number, base = API_BASE): Promise<ClientSummary> {
+  const res = await fetch(`${base}/data/clients/${clientId}/summary`);
+  if (!res.ok) throw new Error(`client summary ${res.status}`);
+  return res.json();
+}
+
 export interface ImportPreviewResult {
   type: "clients" | "holdings";
   valid: boolean;
