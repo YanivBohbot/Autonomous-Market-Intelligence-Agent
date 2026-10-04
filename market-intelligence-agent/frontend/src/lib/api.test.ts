@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { uploadToWorkspace, getClients, getClientSummary, getDocuments, importPdf, previewImport, confirmImport } from "./api";
+import { uploadToWorkspace, getClients, getClientSummary, getDocuments, getThreadHistory, importPdf, previewImport, confirmImport } from "./api";
 
 describe("uploadToWorkspace", () => {
   beforeEach(() => {
@@ -52,6 +52,17 @@ describe("data section API", () => {
     expect(fetchMock).toHaveBeenCalledWith("/data/clients/1/summary");
     expect(result.name).toBe("Jane Doe");
     expect(result.totals?.market_value).toBe(2000);
+  });
+
+  it("getThreadHistory fetches /copilot/market-desk/history?thread_id=...", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ id: "u1", role: "user", content: "hi" }],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await getThreadHistory("clients_17");
+    expect(fetchMock).toHaveBeenCalledWith("/copilot/market-desk/history?thread_id=clients_17");
+    expect(result).toEqual([{ id: "u1", role: "user", content: "hi" }]);
   });
 
   it("getDocuments fetches /data/documents", async () => {

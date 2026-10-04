@@ -70,6 +70,18 @@ export async function getClientSummary(clientId: number, base = API_BASE): Promi
   return res.json();
 }
 
+export interface ThreadMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function getThreadHistory(threadId: string, base = API_BASE): Promise<ThreadMessage[]> {
+  const res = await fetch(`${base}/copilot/market-desk/history?thread_id=${threadId}`);
+  if (!res.ok) throw new Error(`thread history ${res.status}`);
+  return res.json();
+}
+
 export interface ImportPreviewResult {
   type: "clients" | "holdings";
   valid: boolean;

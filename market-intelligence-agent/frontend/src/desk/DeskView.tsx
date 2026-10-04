@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { CopilotChat, CopilotKitProvider, HttpAgent, useConfigureSuggestions } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
@@ -6,13 +6,36 @@ import { DeskActivityRail } from "./DeskActivityRail";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useDeskInterrupt } from "./useDeskInterrupt";
 import { useToolDisplay } from "./displays/useToolDisplay";
-import { uploadToWorkspace } from "../lib/api";
+import { getThreadHistory, uploadToWorkspace } from "../lib/api";
 import { useIntelligenceSlot } from "../layout/IntelligenceSlot";
 
 // Market Desk: CopilotKit v2 talking AG-UI straight to FastAPI (no runtime).
 // Remounted per thread by App (key={threadId}), so New session starts clean.
 export function DeskView({ threadId }: { threadId: string }) {
   const agent = useMemo(() => new HttpAgent({ url: MARKET_DESK_URL }), []);
+
+  // CopilotChat never fetches a thread's prior messages on its own --
+  // threadId is outgoing-request metadata only (see the Known limitation
+  // note in docs/superpowers/specs/2026-10-04-clients-workspace-design.md).
+  // Seed them here on mount so revisiting a thread (e.g. a client's
+  // deterministic clients_<id> thread) shows the earlier conversation
+  // before the user types anything, instead of only after their next
+  // message triggers a MESSAGES_SNAPSHOT.
+  useEffect(() => {
+    let active = true;
+    getThreadHistory(threadId)
+      .then((history) => {
+        if (active && history.length > 0) agent.setMessages(history);
+      })
+      .catch(() => {
+        // No history yet (new thread) or the fetch failed -- the chat
+        // still works, it just starts empty, same as before this existed.
+      });
+    return () => {
+      active = false;
+    };
+  }, [agent, threadId]);
+
   return (
     <CopilotKitProvider
       agentId={MARKET_DESK_AGENT_ID}
