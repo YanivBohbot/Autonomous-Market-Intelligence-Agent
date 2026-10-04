@@ -27,6 +27,10 @@ from langgraph.types import Command
 from app.agent.nodes.tool_utils import strip_image_content
 from app.agent.guardrails import SensitiveDataGuard
 from app.agent.prompts import with_today
+from app.agent.prompts.specialist_agent_prompts import (
+    INGESTED_DOCUMENTS_PLACEHOLDER,
+    ingested_documents_list,
+)
 from app.core.config import settings
 
 MODEL_CALL_LIMIT = 10
@@ -45,6 +49,18 @@ def today_prompt(request: ModelRequest) -> str:
     """Static system_prompt + today's date, computed per call so a
     long-running process never serves a stale date."""
     return with_today(request.system_prompt or "")
+
+
+@dynamic_prompt
+def fresh_documents_prompt(request: ModelRequest) -> str:
+    """Substitute the RAG manifest's current contents into
+    INGESTED_DOCUMENTS_PLACEHOLDER at call time, not once at prompt-string-
+    definition time -- a PDF uploaded via /data/import/pdf while the server
+    is already running must be visible to rag_agent immediately, not only
+    after a restart."""
+    return (request.system_prompt or "").replace(
+        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
+    )
 
 
 def call_limit() -> ModelCallLimitMiddleware:

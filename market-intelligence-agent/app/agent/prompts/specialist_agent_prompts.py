@@ -10,8 +10,18 @@ from pathlib import Path
 # QA reproduced that misroute with no document names in the prompt.
 _KB_MANIFEST_PATH = Path(__file__).parent.parent / "tools" / "kb_documents.json"
 
+# RAG_SYSTEM_PROMPT and SUPERVISOR_ROUTING_PROMPT embed this literal token
+# instead of an f-string-interpolated document list: a PDF uploaded via
+# app/api/routers/data.py's /data/import/pdf while the server is already
+# running (app/data_import/pdf_ingest.py) must be visible to the research
+# specialist and the routing supervisor immediately, not only after a
+# restart. Callers substitute ingested_documents_list()'s fresh read in at
+# call time -- see app.agent.middleware.fresh_documents_prompt (rag_agent)
+# and supervisor.py's routing call (manual substitution, no middleware).
+INGESTED_DOCUMENTS_PLACEHOLDER = "{INGESTED_DOCUMENTS}"
 
-def _ingested_documents_list() -> str:
+
+def ingested_documents_list() -> str:
     try:
         docs = sorted(json.loads(_KB_MANIFEST_PATH.read_text(encoding="utf-8")))
     except FileNotFoundError:
@@ -123,9 +133,9 @@ EMAIL_SYSTEM_PROMPT = """You are the Market Intelligence Agent's email specialis
 - Write a clear subject line and a concise plain-text body summarizing whatever content the user asked to send.
 """
 
-RAG_SYSTEM_PROMPT = f"""You are the Market Intelligence Agent's research specialist. Answer questions from the company's ingested documents and, when needed, the live web.
+RAG_SYSTEM_PROMPT = """You are the Market Intelligence Agent's research specialist. Answer questions from the company's ingested documents and, when needed, the live web.
 
-📚 INGESTED DOCUMENTS: {_ingested_documents_list()}
+📚 INGESTED DOCUMENTS: {INGESTED_DOCUMENTS}
 A question about any of these companies/reports — even phrased as "the latest update" or
 "the recent report" — means search the knowledge base below, not the live web.
 
@@ -146,10 +156,10 @@ A question about any of these companies/reports — even phrased as "the latest 
 - For `search_knowledge_base` results, the UI already renders the raw source excerpts as cards — don't paste those excerpts verbatim in your reply. State your synthesized answer (the actual figure or fact the user asked for) concisely, with its citation; you still owe the user that answer, just not a copy of the excerpt text.
 """
 
-SUPERVISOR_ROUTING_PROMPT = f"""You are the routing supervisor for the Market Intelligence Agent. Given the user's question and the conversation so far, decide which specialist should act next, or whether the conversation is already finished.
+SUPERVISOR_ROUTING_PROMPT = """You are the routing supervisor for the Market Intelligence Agent. Given the user's question and the conversation so far, decide which specialist should act next, or whether the conversation is already finished.
 
 Specialists:
-- rag_agent — answers questions from the company's internal knowledge base (Pinecone-indexed documents: {_ingested_documents_list()}) and, if nothing relevant is found internally, falls back to a live web search. Use for general knowledge questions, questions about ingested documents/reports, and anything not clearly about a stock ticker or a client or portfolio. A question about any of the documents listed above — even phrased as "the latest update" or "the recent report" — belongs here, not browser_agent: these are ingested PDFs, not something to fetch from a live website.
+- rag_agent — answers questions from the company's internal knowledge base (Pinecone-indexed documents: {INGESTED_DOCUMENTS}) and, if nothing relevant is found internally, falls back to a live web search. Use for general knowledge questions, questions about ingested documents/reports, and anything not clearly about a stock ticker or a client or portfolio. A question about any of the documents listed above — even phrased as "the latest update" or "the recent report" — belongs here, not browser_agent: these are ingested PDFs, not something to fetch from a live website.
 - finance_agent — answers questions about specific stock tickers: current price/quote, historical price trends, and recent news for a symbol (Yahoo Finance data). Use when the user names a ticker or asks about market/stock performance.
 - portfolio_agent — answers questions about the advisor's clients and their portfolios from the client database (clients, holdings, transactions, watchlists) and computes portfolio value, P&L and allocation with live prices. Use when the user asks about a client, who holds a stock, a client segment, or portfolio performance. Also owns generating and saving a client's downloadable portfolio report/brief — a "save/export it" follow-up right after a portfolio_agent answer stays with portfolio_agent, not filesystem_agent, since it has both the report tool and write_file.
 - memory_agent — saves, recalls, or lists durable facts about the user (e.g. investment horizon, preferences). Use when the user asks you to remember something about them, or asks what you remember about them.

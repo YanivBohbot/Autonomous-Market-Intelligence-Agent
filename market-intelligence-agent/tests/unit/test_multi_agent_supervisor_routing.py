@@ -4,6 +4,10 @@ from langgraph.graph import END
 
 from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import supervisor_node, RoutingDecision, MAX_AGENT_HOPS
+from app.agent.prompts.specialist_agent_prompts import (
+    INGESTED_DOCUMENTS_PLACEHOLDER,
+    ingested_documents_list,
+)
 
 
 def _state(agent_hops=0, messages=None, last_agent=None):
@@ -46,6 +50,27 @@ def test_still_asks_llm_on_the_very_first_hop():
     assert result.goto == "finance_agent"
 
 
+def test_routing_prompt_reflects_a_pdf_uploaded_after_process_start(tmp_path, monkeypatch):
+    """Regression: SUPERVISOR_ROUTING_PROMPT used to bake the ingested-document
+    list in at import time via an f-string, so a PDF uploaded through
+    /data/import/pdf while the server was already running stayed invisible
+    to the router until a restart. The prompt sent to the LLM must reflect
+    the manifest's CURRENT contents on every call."""
+    manifest = tmp_path / "kb_documents.json"
+    manifest.write_text('["brand-new-upload.pdf"]', encoding="utf-8")
+    monkeypatch.setattr(
+        "app.agent.prompts.specialist_agent_prompts._KB_MANIFEST_PATH", manifest
+    )
+
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="doc question")
+        supervisor_node(_state())
+
+    sent_messages = mock.invoke.call_args[0][0]
+    system_text = sent_messages[0].content
+    assert "brand-new-upload.pdf" in system_text
+
+
 def test_router_is_not_given_a_duplicate_question_message():
     """Regression: supervisor used to re-inject a fresh HumanMessage("User's
     question: ...") on every hop, on top of the real conversation history
@@ -59,7 +84,10 @@ def test_router_is_not_given_a_duplicate_question_message():
         supervisor_node(_state(messages=history))
 
     invoked_messages = mock.invoke.call_args[0][0]
-    assert invoked_messages == [SystemMessage(content=supervisor_mod.SUPERVISOR_ROUTING_PROMPT), *history]
+    expected_prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT.replace(
+        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
+    )
+    assert invoked_messages == [SystemMessage(content=expected_prompt), *history]
 
 
 def test_routes_to_finance_agent():
@@ -193,9 +221,16 @@ def test_routing_prompt_lists_ingested_documents_so_rag_isnt_skipped_for_them():
     way to recognize "Tesla's Q2 2026 update" as an ingested PDF rather than
     a request to check a live website, so it sent Tesla questions to
     browser_agent instead of rag_agent — live QA reproduced this, and it
-    only worked once the user explicitly said "internal documents"."""
-    assert "Tesla-TSLA-Q2-2026-Update.pdf" in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
-    assert "Amazon-2024-Annual-Report.pdf" in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
+    only worked once the user explicitly said "internal documents".
+
+    SUPERVISOR_ROUTING_PROMPT itself only carries a placeholder now (see
+    test_routing_prompt_reflects_a_pdf_uploaded_after_process_start) — this
+    checks the real manifest's current contents still substitute in."""
+    prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT.replace(
+        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
+    )
+    assert "Tesla-TSLA-Q2-2026-Update.pdf" in prompt
+    assert "Amazon-2024-Annual-Report.pdf" in prompt
 
 
 def test_routing_prompt_keeps_saving_a_portfolio_report_with_portfolio_agent():

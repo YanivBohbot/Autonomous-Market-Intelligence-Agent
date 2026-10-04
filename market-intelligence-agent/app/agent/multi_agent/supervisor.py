@@ -8,7 +8,11 @@ from langgraph.types import Command
 
 from app.core.config import settings
 from app.agent.multi_agent.state import SupervisorState
-from app.agent.prompts.specialist_agent_prompts import SUPERVISOR_ROUTING_PROMPT
+from app.agent.prompts.specialist_agent_prompts import (
+    INGESTED_DOCUMENTS_PLACEHOLDER,
+    SUPERVISOR_ROUTING_PROMPT,
+    ingested_documents_list,
+)
 
 
 SpecialistName = Literal[
@@ -145,9 +149,15 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     # causing it to loop to MAX_AGENT_HOPS instead of picking FINISH.
     # with_structured_output is typed as dict | BaseModel; with a pydantic
     # schema it returns a RoutingDecision instance.
+    # Substituted fresh on every call, not baked in at import time -- a PDF
+    # uploaded via /data/import/pdf while the server is already running
+    # must be recognized immediately, not only after a restart.
+    routing_prompt = SUPERVISOR_ROUTING_PROMPT.replace(
+        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
+    )
     decision = cast(RoutingDecision, _router.invoke(
         [
-            SystemMessage(content=SUPERVISOR_ROUTING_PROMPT),
+            SystemMessage(content=routing_prompt),
             *state.get("messages", []),
         ]
     ))

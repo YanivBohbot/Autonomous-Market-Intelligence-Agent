@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import rag_agent as mod
-from app.agent.middleware import base_middleware
+from app.agent.middleware import base_middleware, fresh_documents_prompt
 from app.agent.multi_agent.display import market_desk_display
 
 
@@ -28,8 +28,12 @@ def test_create_agent_call():
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
     # Queries go to third parties (Tavily / Yahoo): emails are redacted first.
     assert (mw[len(base)].pii_type, mw[len(base)].strategy) == ("email", "redact")
-    assert mw[len(base) + 1] is market_desk_display
-    assert len(mw) == len(base) + 2
+    # Substitutes the live manifest into RAG_SYSTEM_PROMPT's placeholder at
+    # call time -- a PDF uploaded while the server is running must be
+    # visible immediately, not only after a restart.
+    assert mw[len(base) + 1] is fresh_documents_prompt
+    assert mw[len(base) + 2] is market_desk_display
+    assert len(mw) == len(base) + 3
     assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 
