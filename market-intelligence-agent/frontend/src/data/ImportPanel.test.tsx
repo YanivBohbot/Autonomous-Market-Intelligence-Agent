@@ -14,12 +14,17 @@ function selectFile(input: HTMLElement, file: File) {
   fireEvent.change(input);
 }
 
+function selectAndUpload(input: HTMLElement, file: File) {
+  selectFile(input, file);
+  fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+}
+
 describe("ImportPanel", () => {
   it("uploads a .pdf directly and shows success", async () => {
     vi.spyOn(api, "importPdf").mockResolvedValue({ filename: "report.pdf", chunks_added: 5 });
     render(<ImportPanel />);
     const input = screen.getByLabelText(/choose a file/i);
-    selectFile(input, new File(["%PDF"], "report.pdf", { type: "application/pdf" }));
+    selectAndUpload(input, new File(["%PDF"], "report.pdf", { type: "application/pdf" }));
     expect(await screen.findByText(/5 chunks/i)).toBeInTheDocument();
   });
 
@@ -30,7 +35,7 @@ describe("ImportPanel", () => {
     });
     render(<ImportPanel />);
     const input = screen.getByLabelText(/choose a file/i);
-    selectFile(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    selectAndUpload(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     await waitFor(() => expect(screen.getByRole("button", { name: /confirmer/i })).not.toBeDisabled());
   });
 
@@ -41,7 +46,7 @@ describe("ImportPanel", () => {
     });
     render(<ImportPanel />);
     const input = screen.getByLabelText(/choose a file/i);
-    selectFile(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    selectAndUpload(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     expect(await screen.findByText(/no client with this email/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /confirmer/i })).toBeDisabled();
   });
@@ -59,7 +64,7 @@ describe("ImportPanel", () => {
     const confirmSpy = vi.spyOn(api, "confirmImport").mockResolvedValue({ written: 1 });
     render(<ImportPanel />);
     const input = screen.getByLabelText(/choose a file/i);
-    selectFile(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    selectAndUpload(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     const confirmButton = await screen.findByRole("button", { name: /confirmer/i });
     await waitFor(() => expect(confirmButton).not.toBeDisabled());
     fireEvent.click(confirmButton);
@@ -88,7 +93,7 @@ describe("ImportPanel", () => {
     const confirmSpy = vi.spyOn(api, "confirmImport").mockResolvedValue({ written: 1 });
     render(<ImportPanel />);
     const input = screen.getByLabelText(/choose a file/i);
-    selectFile(input, new File(["ignored"], "clients.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    selectAndUpload(input, new File(["ignored"], "clients.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     const confirmButton = await screen.findByRole("button", { name: /confirmer/i });
     await waitFor(() => expect(confirmButton).not.toBeDisabled());
     fireEvent.click(confirmButton);
@@ -106,7 +111,7 @@ describe("ImportPanel", () => {
     });
     render(<ImportPanel />);
     const input = screen.getByLabelText(/choose a file/i) as HTMLInputElement;
-    selectFile(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    selectAndUpload(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     await waitFor(() => expect(screen.getByRole("button", { name: /confirmer/i })).not.toBeDisabled());
     expect(input.value).toBe("");
   });
@@ -115,7 +120,7 @@ describe("ImportPanel", () => {
     vi.spyOn(api, "previewImport").mockRejectedValue(new Error("unrecognized file format"));
     render(<ImportPanel />);
     const input = screen.getByLabelText(/choose a file/i);
-    selectFile(input, new File(["ignored"], "mystery.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    selectAndUpload(input, new File(["ignored"], "mystery.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     expect(await screen.findByText(/unrecognized file format/i)).toBeInTheDocument();
   });
 
@@ -126,7 +131,7 @@ describe("ImportPanel", () => {
     });
     render(<ImportPanel />);
     const input = screen.getByLabelText(/choose a file/i);
-    selectFile(input, new File(["ignored"], "empty.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    selectAndUpload(input, new File(["ignored"], "empty.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     await waitFor(() => expect(previewSpy).toHaveBeenCalledWith([]));
   });
 });
