@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { ClientsList } from "./ClientsList";
 import { DocumentsList } from "./DocumentsList";
 import { ImportPanel } from "./ImportPanel";
 
-type Tab = "clients" | "documents" | "import";
+type Tab = "documents" | "import";
 
 export function DataPage() {
-  const [tab, setTab] = useState<Tab>("clients");
+  const [tab, setTab] = useState<Tab>("documents");
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "clients", label: "Clients" },
     { id: "documents", label: "Documents" },
     { id: "import", label: "Import" },
   ];
@@ -31,7 +29,6 @@ export function DataPage() {
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {tab === "clients" && <ClientsList />}
         {tab === "documents" && <DocumentsList />}
         {tab === "import" && <ImportPanel />}
       </div>
