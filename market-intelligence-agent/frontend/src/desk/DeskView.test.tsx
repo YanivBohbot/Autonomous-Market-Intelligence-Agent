@@ -11,12 +11,13 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   HttpAgent: class {},
   useRenderTool: () => undefined,
   useConfigureSuggestions: () => undefined,
-  // DeskActivityRail (rendered alongside CopilotChat) calls useAgent to
-  // subscribe to the agent's event stream; give it an inert stub.
+  // ThinkingIndicator (still rendered directly in DeskBody, unrelated to
+  // the IntelligenceSlot change) calls useAgent to watch the stream.
   useAgent: () => ({ agent: { subscribe: () => ({ unsubscribe: () => undefined }) } }),
 }));
 vi.mock("./useDeskInterrupt", () => ({ useDeskInterrupt: () => undefined }));
 vi.mock("./displays/useToolDisplay", () => ({ useToolDisplay: () => undefined }));
+vi.mock("../layout/IntelligenceSlot", () => ({ useIntelligenceSlot: () => undefined }));
 
 import { DeskView } from "./DeskView";
 

@@ -7,6 +7,7 @@ import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useDeskInterrupt } from "./useDeskInterrupt";
 import { useToolDisplay } from "./displays/useToolDisplay";
 import { uploadToWorkspace } from "../lib/api";
+import { useIntelligenceSlot } from "../layout/IntelligenceSlot";
 
 // Market Desk: CopilotKit v2 talking AG-UI straight to FastAPI (no runtime).
 // Remounted per thread by App (key={threadId}), so New session starts clean.
@@ -30,6 +31,10 @@ export function DeskView({ threadId }: { threadId: string }) {
 function DeskBody({ threadId }: { threadId: string }) {
   useDeskInterrupt();
   useToolDisplay();
+  // Pushed into AppLayout's Intelligence column instead of rendered as a
+  // direct sibling -- DeskActivityRail itself is unchanged, only where it
+  // mounts changes.
+  useIntelligenceSlot(<DeskActivityRail />);
   useConfigureSuggestions({
     suggestions: [
       { title: "Portfolio value", message: "What is the total value of a client's portfolio?" },
@@ -38,15 +43,26 @@ function DeskBody({ threadId }: { threadId: string }) {
     ],
   }, []);
   return (
-    <div className="flex min-h-0 flex-1">
-      <main className="relative flex min-w-0 flex-1 flex-col">
-        <div className="pointer-events-none absolute inset-x-4 bottom-20 z-50 flex">
-          <ThinkingIndicator />
-        </div>
-        <CopilotChat
+    <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="pointer-events-none absolute inset-x-4 bottom-20 z-50 flex">
+        <ThinkingIndicator />
+      </div>
+      <CopilotChat
           agentId={MARKET_DESK_AGENT_ID}
           threadId={threadId}
           className="h-full"
+          // Same composer bar as Classic (App.tsx): a static bottom bar
+          // with a top border and panel background, not a floating pill --
+          // CopilotKit's own light-mode styling here was unreadable against
+          // a white page, and the two chats should look like one product.
+          input={{
+            positioning: "static",
+            className: "border-t border-terminal-border bg-terminal-panel px-3 py-3",
+            textArea:
+              "rounded-xl border border-terminal-border bg-terminal-bg px-3.5 py-2.5 font-mono text-sm text-terminal-text placeholder-terminal-muted outline-none transition-colors focus:border-terminal-accent/60",
+            sendButton:
+              "rounded-xl bg-terminal-accent px-4 py-2.5 font-mono text-sm font-semibold text-terminal-bg shadow-glow-green transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none",
+          }}
           attachments={{
             enabled: true,
             maxSize: 20 * 1024 * 1024,
@@ -59,9 +75,7 @@ function DeskBody({ threadId }: { threadId: string }) {
               };
             },
           }}
-        />
-      </main>
-      <DeskActivityRail />
-    </div>
+      />
+    </main>
   );
 }
