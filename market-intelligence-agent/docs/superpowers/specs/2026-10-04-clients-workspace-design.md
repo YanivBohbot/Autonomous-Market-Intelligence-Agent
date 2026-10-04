@@ -23,6 +23,10 @@ Closes chantier 1's Clients placeholder with its intended content, absorbing `Da
 7. **Intelligence column reuses `DeskActivityRail` as-is** — it already watches whatever thread/agent `useAgent` is pointed at; no new component needed.
 8. Verified against current LangChain and CopilotKit documentation (context7): `@dynamic_prompt` reading `request.state` and `create_agent(state_schema=...)` extended per specialist are the officially documented pattern (`docs.langchain.com/oss/python/langchain/context-engineering`, multi-agent handoffs doc); meaningful per-entity `threadId`s are the officially documented CopilotKit/AG-UI threading convention. Neither LangGraph's `Runtime`/`context_schema` mechanism nor a frontend AG-UI context hook is needed for this feature.
 
+## Known limitation (discovered during live QA, 2026-10-05)
+
+Decision 6's "resumes the same conversation via the checkpointer, across page reloads" is true at the **backend** level only: the LangGraph checkpoint and the model's context both correctly carry the full prior conversation forward (verified live — a second question on a reloaded client thread was answered with full awareness of the earlier turns). It is **not** true visually: `CopilotChat`/`useAgent` in `@copilotkit/react-core/v2` only set `threadId` as outgoing request metadata (confirmed by reading the installed package source — `agent.threadId = resolvedThreadId` is a bare property assignment, no fetch/connect call is triggered). There is no client-side mechanism that fetches and replays a thread's prior messages on mount, so the chat panel always starts visually empty after a reload, even though the backend remembers everything. This was never noticed on Recherche because its `threadId` is a fresh random id every page load (`useState(newThreadId)` in `App.tsx`), so a "resume" was never actually attempted there. Fixing the visual replay (fetching checkpointed history on mount and seeding it into the chat) is its own follow-up chantier, not attempted here.
+
 ## Architecture
 
 ### Frontend
