@@ -5,7 +5,7 @@ const money = (n: number) =>
 
 export function PortfolioTable({ display }: { display: Extract<DisplayPayload, { type: "portfolio_table" }> }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-terminal-border bg-terminal-panel p-3 font-mono text-xs text-terminal-text">
+    <div className="overflow-x-auto rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3 font-mono text-xs text-terminal-text">
       <table className="w-full">
         <thead>
           <tr className="text-left text-terminal-muted">

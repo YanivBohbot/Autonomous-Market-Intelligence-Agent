@@ -28,7 +28,7 @@ function AssistantBubble({
             agent
           </span>
         </div>
-        <div className="rounded-xl rounded-tl-sm border border-terminal-border bg-terminal-panel px-4 py-2.5 shadow-inner-glow">
+        <div className="rounded-xl rounded-tl-sm border border-terminal-border bg-terminal-panel card-shadow px-4 py-2.5 shadow-inner-glow">
           <div className="chat-prose text-terminal-text">
             <ReactMarkdown>{content}</ReactMarkdown>
             {isStreaming && content.length === 0 && (
@@ -94,7 +94,7 @@ export function ChatPane({
           ].map((example) => (
             <div
               key={example}
-              className="rounded-lg border border-terminal-border bg-terminal-panel px-3 py-2 font-mono text-xs text-terminal-muted"
+              className="rounded-lg border border-terminal-border bg-terminal-panel card-shadow px-3 py-2 font-mono text-xs text-terminal-muted"
             >
               {example}
             </div>

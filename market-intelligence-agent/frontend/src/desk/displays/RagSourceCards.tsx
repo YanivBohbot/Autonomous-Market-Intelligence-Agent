@@ -63,7 +63,7 @@ function SourceCard({ source }: { source: Source }) {
     <button
       type="button"
       onClick={() => setOpen((v) => !v)}
-      className="rounded-xl border border-terminal-border bg-terminal-panel p-2.5 text-left font-mono text-xs text-terminal-text hover:border-terminal-accent/40"
+      className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-2.5 text-left font-mono text-xs text-terminal-text hover:border-terminal-accent/40"
     >
       <div className="text-terminal-muted">
         {source.filename} · page {source.page}

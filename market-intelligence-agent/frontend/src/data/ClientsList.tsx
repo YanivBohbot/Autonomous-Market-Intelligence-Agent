@@ -19,7 +19,7 @@ export function ClientsList() {
         </div>
       )}
       {clients.map((c) => (
-        <div key={c.client_id} className="rounded-xl border border-terminal-border bg-terminal-panel p-3">
+        <div key={c.client_id} className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
           <div className="flex items-center justify-between">
             <span className="font-semibold">{c.name}</span>
             <span className="text-xs text-terminal-muted">{c.email} · {c.segment} · {c.risk_profile}</span>

@@ -28,7 +28,7 @@ export function ApprovalPanel({ approval, onSubmit, onCancel }: Props) {
 
   if (approval.requests.length === 0) {
     return (
-      <div className="rounded-xl border border-terminal-warn/40 bg-terminal-panel p-3 font-mono text-xs text-terminal-text">
+      <div className="rounded-xl border border-terminal-warn/40 bg-terminal-panel card-shadow p-3 font-mono text-xs text-terminal-text">
         <p className="mb-2">The agent paused with a request this console can't display.</p>
         <button
           type="button"
@@ -82,7 +82,7 @@ function RequestCard({
   const locked = decided !== undefined;
 
   return (
-    <div className="rounded-xl border border-terminal-warn/40 bg-terminal-panel p-3 font-mono text-xs text-terminal-text">
+    <div className="rounded-xl border border-terminal-warn/40 bg-terminal-panel card-shadow p-3 font-mono text-xs text-terminal-text">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-semibold text-terminal-warn">{request.name}</span>
         {locked && <span className="text-terminal-muted">{decided.type}</span>}

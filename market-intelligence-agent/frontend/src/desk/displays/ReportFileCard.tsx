@@ -2,7 +2,7 @@ import type { DisplayPayload } from "./types";
 
 export function ReportFileCard({ display }: { display: Extract<DisplayPayload, { type: "report_file" }> }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-terminal-border bg-terminal-panel p-3">
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
       <div className="flex min-w-0 items-center gap-2.5">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 text-terminal-accent">
           <path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.5" />

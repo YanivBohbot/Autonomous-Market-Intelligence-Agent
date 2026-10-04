@@ -3,7 +3,7 @@ import type { DisplayPayload } from "./types";
 
 export function PriceChart({ display }: { display: Extract<DisplayPayload, { type: "price_chart" }> }) {
   return (
-    <div className="w-full rounded-xl border border-terminal-border bg-terminal-panel p-3">
+    <div className="w-full rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
       <div className="mb-2 font-mono text-xs font-semibold text-terminal-text">{display.ticker || "Price history"}</div>
       <div className="h-48 w-full">
         <ResponsiveContainer width="100%" height="100%">
