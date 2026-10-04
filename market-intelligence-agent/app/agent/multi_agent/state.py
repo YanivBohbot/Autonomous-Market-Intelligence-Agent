@@ -14,3 +14,6 @@ class SupervisorState(TypedDict):
     # (set at routing time, not verified to have actually answered), used
     # by the supervisor's deterministic sticky-routing rule.
     last_agent: Optional[str]
+    # Set every turn by load_client_context, from the thread id -- see that
+    # function's docstring. None on every thread except a client workspace's.
+    client_context: Optional[str]

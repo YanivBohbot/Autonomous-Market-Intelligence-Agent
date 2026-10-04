@@ -14,6 +14,7 @@ def test_graph_compiles():
 def test_graph_has_supervisor_and_specialist_nodes():
     nodes = _build().get_graph().nodes
     for name in (
+        "load_client_context",
         "record_question",
         "supervisor",
         "rag_agent",
