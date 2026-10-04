@@ -1,8 +1,9 @@
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
-from app.agent.middleware import base_middleware, specialist_model
+from app.agent.middleware import base_middleware, client_context_prompt, specialist_model
 from app.agent.multi_agent.display import market_desk_display
+from app.agent.multi_agent.state import ClientContextState
 from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
 from app.agent.tools import (
     client_portfolio_tool,
@@ -40,8 +41,10 @@ def build_portfolio_agent():
         model=specialist_model(),
         tools=_TOOLS,
         system_prompt=PORTFOLIO_SYSTEM_PROMPT,
+        state_schema=ClientContextState,
         middleware=[
             *base_middleware(check_email=False),
+            client_context_prompt,
             HumanInTheLoopMiddleware(interrupt_on={"save_portfolio_report": True}),
             market_desk_display,
         ],

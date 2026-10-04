@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import finance_agent as mod
-from app.agent.middleware import base_middleware
+from app.agent.middleware import base_middleware, client_context_prompt
 from app.agent.multi_agent.display import market_desk_display
 
 
@@ -29,8 +29,9 @@ def test_create_agent_call():
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
     # Queries go to third parties (Tavily / Yahoo): emails are redacted first.
     assert (mw[len(base)].pii_type, mw[len(base)].strategy) == ("email", "redact")
-    assert mw[len(base) + 1] is market_desk_display
-    assert len(mw) == len(base) + 2
+    assert mw[len(base) + 1] is client_context_prompt
+    assert mw[len(base) + 2] is market_desk_display
+    assert len(mw) == len(base) + 3
     assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 
