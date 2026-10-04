@@ -44,6 +44,9 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="border-b border-terminal-border bg-terminal-panel px-4 py-3 font-mono text-sm text-terminal-text">
+        <Link to="/clients" className="mb-2 inline-block text-xs text-terminal-muted hover:text-terminal-accent">
+          ← Retour à la liste
+        </Link>
         {summary && (
           <div className="flex items-center justify-between">
             <div>

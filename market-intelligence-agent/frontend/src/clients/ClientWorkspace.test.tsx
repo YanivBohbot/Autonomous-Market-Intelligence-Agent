@@ -35,6 +35,20 @@ function renderAt(id: string) {
 }
 
 describe("ClientWorkspace", () => {
+  it("always shows a link back to /clients, even when the client loaded successfully", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
+        risk_profile: "balanced", advisor: "Sam", city: "Paris",
+        totals: null, positions: [], unpriced_tickers: [],
+      }),
+    }));
+    renderAt("12");
+    expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /retour/i })).toHaveAttribute("href", "/clients");
+  });
+
   it("renders the client's profile and computed P&L in the header", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
