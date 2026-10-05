@@ -189,6 +189,55 @@ async def _fetch_market_news() -> list[dict]:
     return [{"title": r.get("title", ""), "url": r["url"]} for r in response.get("results", [])]
 
 
+async def _generate_market_narrative(market: dict) -> str:
+    from app.agent.tools.market_narrative import generate_market_narrative
+
+    return await generate_market_narrative(market)
+
+
+@router.get("/briefing")
+async def get_briefing() -> dict:
+    index_results = await asyncio.gather(
+        *(_cached_quote_snapshot(ticker, name=name) for name, ticker in _INDEX_TICKERS),
+        return_exceptions=True,
+    )
+    indices = [r for r in index_results if not isinstance(r, BaseException)]
+
+    sector_results = await asyncio.gather(
+        *(_cached_quote_snapshot(ticker, name=name) for name, ticker in _SECTOR_ETFS),
+        return_exceptions=True,
+    )
+    sectors = [r for r in sector_results if not isinstance(r, BaseException)]
+
+    watchlist_results = await asyncio.gather(
+        *(_cached_quote_snapshot(ticker) for ticker in _WATCHLIST_TICKERS),
+        return_exceptions=True,
+    )
+    watchlist_base = [r for r in watchlist_results if not isinstance(r, BaseException)]
+
+    market = {"indices": indices, "sectors": sectors}
+
+    # None of these three depend on each other -- the narrative only needs
+    # indices/sectors, not watchlist history -- so they run concurrently
+    # rather than one after another.
+    history_results, narrative, news = await asyncio.gather(
+        asyncio.gather(*(_price_history(w["symbol"]) for w in watchlist_base), return_exceptions=True),
+        _generate_market_narrative(market),
+        _fetch_market_news(),
+    )
+    watchlist = [
+        {**w, "points": (h if not isinstance(h, BaseException) and h else [])}
+        for w, h in zip(watchlist_base, history_results)
+    ]
+
+    client_alerts = await _cabinet_concentration_scan()
+
+    return {
+        "indices": indices, "sectors": sectors, "watchlist": watchlist,
+        "narrative": narrative, "news": news, "client_alerts": client_alerts,
+    }
+
+
 async def _cabinet_concentration_scan() -> dict:
     unavailable = {"available": False, "threshold_pct": 30.0, "breaches": []}
     try:

@@ -25,6 +25,10 @@ CREATE TABLE holdings (
 """
 
 
+async def _async_const(value):
+    return value
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     db_path = tmp_path / "customers.db"
@@ -781,3 +785,120 @@ def test_cabinet_scan_does_not_crash_on_two_clients_sharing_a_name(client, monke
 
     result = asyncio.run(data_router_module._cabinet_concentration_scan())
     assert result == {"available": False, "threshold_pct": 30.0, "breaches": []}
+
+
+def _fake_quote(symbol, *, name=None):
+    return {"symbol": symbol, "name": name or symbol, "price": 100.0, "change_pct": 1.0}
+
+
+def test_get_briefing_happy_path_returns_all_sections(client, monkeypatch):
+    async def fake_snapshot(symbol, *, name=None):
+        return _fake_quote(symbol, name=name)
+
+    async def fake_history(ticker):
+        return [{"date": "2026-09-21", "close": 338.98}]
+
+    async def fake_narrative(market):
+        return "stub market narrative"
+
+    async def fake_news():
+        return [{"title": "Markets rally", "url": "https://example.com/a"}]
+
+    async def fake_cabinet_scan():
+        return {"available": True, "threshold_pct": 30.0, "breaches": []}
+
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", fake_snapshot)
+    monkeypatch.setattr(data_router_module, "_price_history", fake_history)
+    monkeypatch.setattr(data_router_module, "_generate_market_narrative", fake_narrative)
+    monkeypatch.setattr(data_router_module, "_fetch_market_news", fake_news)
+    monkeypatch.setattr(data_router_module, "_cabinet_concentration_scan", fake_cabinet_scan)
+
+    resp = client.get("/data/briefing")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["indices"]) == 4
+    assert len(body["sectors"]) == 8
+    assert len(body["watchlist"]) == 6
+    assert all(w["points"] == [{"date": "2026-09-21", "close": 338.98}] for w in body["watchlist"])
+    assert body["narrative"] == "stub market narrative"
+    assert body["news"] == [{"title": "Markets rally", "url": "https://example.com/a"}]
+    assert body["client_alerts"] == {"available": True, "threshold_pct": 30.0, "breaches": []}
+
+
+def test_get_briefing_omits_one_failed_index_and_keeps_the_rest(client, monkeypatch):
+    async def flaky_snapshot(symbol, *, name=None):
+        if symbol == "^VIX":
+            raise ValueError("yfinance is down")
+        return _fake_quote(symbol, name=name)
+
+    async def fake_history(ticker):
+        return []
+
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", flaky_snapshot)
+    monkeypatch.setattr(data_router_module, "_price_history", fake_history)
+    monkeypatch.setattr(data_router_module, "_generate_market_narrative", lambda market: _async_const("n"))
+    monkeypatch.setattr(data_router_module, "_fetch_market_news", lambda: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_cabinet_concentration_scan", lambda: _async_const({"available": False, "threshold_pct": 30.0, "breaches": []}))
+
+    resp = client.get("/data/briefing")
+    assert resp.status_code == 200
+    symbols = {i["symbol"] for i in resp.json()["indices"]}
+    assert symbols == {"^GSPC", "^DJI", "^IXIC"}
+
+
+def test_get_briefing_one_watchlist_history_failure_still_shows_its_quote(client, monkeypatch):
+    async def fake_snapshot(symbol, *, name=None):
+        return _fake_quote(symbol, name=name)
+
+    async def flaky_history(ticker):
+        if ticker == "NVDA":
+            raise ValueError("history unavailable")
+        return [{"date": "2026-09-21", "close": 1.0}]
+
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", fake_snapshot)
+    monkeypatch.setattr(data_router_module, "_price_history", flaky_history)
+    monkeypatch.setattr(data_router_module, "_generate_market_narrative", lambda market: _async_const("n"))
+    monkeypatch.setattr(data_router_module, "_fetch_market_news", lambda: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_cabinet_concentration_scan", lambda: _async_const({"available": False, "threshold_pct": 30.0, "breaches": []}))
+
+    resp = client.get("/data/briefing")
+    assert resp.status_code == 200
+    watchlist = {w["symbol"]: w for w in resp.json()["watchlist"]}
+    assert watchlist["NVDA"]["points"] == []
+    assert watchlist["NVDA"]["price"] == 100.0  # quote itself still present
+
+
+def test_get_briefing_all_quotes_failing_returns_empty_lists_not_a_500(client, monkeypatch):
+    async def always_fails(symbol, *, name=None):
+        raise ValueError("yfinance is down")
+
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", always_fails)
+    monkeypatch.setattr(data_router_module, "_generate_market_narrative", lambda market: _async_const("Market data unavailable right now."))
+    monkeypatch.setattr(data_router_module, "_fetch_market_news", lambda: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_cabinet_concentration_scan", lambda: _async_const({"available": False, "threshold_pct": 30.0, "breaches": []}))
+
+    resp = client.get("/data/briefing")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["indices"] == [] and body["sectors"] == [] and body["watchlist"] == []
+    assert body["narrative"] == "Market data unavailable right now."
+
+
+def test_get_briefing_news_failure_does_not_affect_the_rest(client, monkeypatch):
+    async def fake_snapshot(symbol, *, name=None):
+        return _fake_quote(symbol, name=name)
+
+    async def failing_news():
+        return []  # _fetch_market_news already swallows its own errors (Task 3)
+
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", fake_snapshot)
+    monkeypatch.setattr(data_router_module, "_price_history", lambda ticker: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_generate_market_narrative", lambda market: _async_const("n"))
+    monkeypatch.setattr(data_router_module, "_fetch_market_news", failing_news)
+    monkeypatch.setattr(data_router_module, "_cabinet_concentration_scan", lambda: _async_const({"available": False, "threshold_pct": 30.0, "breaches": []}))
+
+    resp = client.get("/data/briefing")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["news"] == []
+    assert len(body["indices"]) == 4  # rest of the page unaffected
