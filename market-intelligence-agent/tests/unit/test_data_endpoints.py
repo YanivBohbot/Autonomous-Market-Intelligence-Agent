@@ -101,6 +101,210 @@ def test_get_client_summary_degrades_when_the_price_fetch_raises(client, monkeyp
     assert body["unpriced_tickers"] == ["AAPL"]
 
 
+PRICE_HISTORY_TEXT = (
+    "| Date                      |   Open |   High |    Low |   Close |      Volume |\n"
+    "|:--------------------------|-------:|-------:|-------:|--------:|------------:|\n"
+    "| 2026-09-21 00:00:00-04:00 | 335.28 | 339.64 | 333.05 |  338.98 | 3.49992e+07 |\n"
+)
+
+
+@pytest.fixture
+def reports_dir(tmp_path, monkeypatch):
+    root = tmp_path / "workspace"
+    monkeypatch.setattr("app.api.routers.data.settings.WORKSPACE_ROOT", root)
+    return root / "reports"
+
+
+def test_get_client_report_computes_totals_sector_and_concentration(client, monkeypatch, reports_dir):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO companies VALUES ('NVDA', 'NVIDIA', 'Technology')")
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'NVDA', 5, 30.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return {"AAPL": 200.0, "NVDA": 2000.0}[ticker]
+
+    async def fake_history(ticker):
+        return [{"date": "2026-09-21", "close": 338.98}]
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+    monkeypatch.setattr(data_router_module, "_price_history", fake_history)
+
+    resp = client.get("/data/clients/1/report")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["totals"]["market_value"] == 12000.0
+    assert body["sector_allocation"] == {"Technology": 100.0}
+    assert body["concentration"]["breaches"][0]["ticker"] == "NVDA"
+    assert set(body["price_history"].keys()) == {"AAPL", "NVDA"}
+    assert body["price_history"]["NVDA"] == [{"date": "2026-09-21", "close": 338.98}]
+    assert body["unpriced_tickers"] == []
+
+
+def test_get_client_report_degrades_when_one_ticker_is_unpriced(client, monkeypatch, reports_dir):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO companies VALUES ('NVDA', 'NVIDIA', 'Technology')")
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'NVDA', 5, 30.0)")
+    conn.commit()
+    conn.close()
+
+    async def flaky_price(ticker):
+        if ticker == "NVDA":
+            raise ValueError("yfinance is down")
+        return 200.0
+
+    async def no_history(ticker):
+        return []
+
+    monkeypatch.setattr(data_router_module, "_live_price", flaky_price)
+    monkeypatch.setattr(data_router_module, "_price_history", no_history)
+
+    resp = client.get("/data/clients/1/report")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["unpriced_tickers"] == ["NVDA"]
+    assert body["totals"]["market_value"] == 2000.0  # AAPL only
+    assert all(b["ticker"] != "NVDA" for b in body["concentration"]["breaches"])
+
+
+def test_get_client_report_degrades_sector_allocation_when_one_holding_has_no_sector(client, monkeypatch, reports_dir):
+    # GHOST has no companies row (sector None) -- compute_portfolio_metrics's
+    # existing all-sectors-present rule must take sector_allocation to None
+    # for the whole portfolio, not crash and not silently drop GHOST.
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'GHOST', 5, 10.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return 200.0
+
+    async def no_history(ticker):
+        return []
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+    monkeypatch.setattr(data_router_module, "_price_history", no_history)
+
+    resp = client.get("/data/clients/1/report")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sector_allocation"] is None
+    assert {p["ticker"] for p in body["positions"]} == {"AAPL", "GHOST"}
+    assert body["unpriced_tickers"] == []
+
+
+def test_get_client_report_with_no_holdings_returns_empty_payload_not_an_error(client, reports_dir):
+    resp = client.get("/data/clients/1/report")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["totals"] is None
+    assert body["positions"] == []
+    assert body["sector_allocation"] is None
+    assert body["concentration"] is None
+    assert body["price_history"] == {}
+    assert body["generated_reports"] == []
+
+
+def test_get_client_report_404s_for_an_unknown_client(client, reports_dir):
+    resp = client.get("/data/clients/999/report")
+    assert resp.status_code == 404
+
+
+def test_get_client_report_lists_this_clients_files_only(client, reports_dir):
+    reports_dir.mkdir(parents=True)
+    (reports_dir / "jane-doe-portfolio-brief-2026-01-01.xlsx").write_bytes(b"PK fake")
+    # Decoy: a different client whose slug ("jane-doering") shares the bare
+    # prefix "jane-doe" with ours, but not the full "jane-doe-portfolio-brief-"
+    # prefix -- proves the listing matches the full prefix, not the bare slug.
+    (reports_dir / "jane-doering-portfolio-brief-2026-01-01.xlsx").write_bytes(b"PK fake")
+
+    resp = client.get("/data/clients/1/report")  # client 1 is "Jane Doe"
+    assert resp.status_code == 200
+    filenames = [r["filename"] for r in resp.json()["generated_reports"]]
+    assert filenames == ["jane-doe-portfolio-brief-2026-01-01.xlsx"]
+
+
+def test_generate_client_report_writes_a_file_and_returns_its_name(client, monkeypatch, reports_dir):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return 200.0
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+
+    resp = client.post("/data/clients/1/report/generate")
+    assert resp.status_code == 200
+    filename = resp.json()["filename"]
+    assert filename.startswith("jane-doe-portfolio-brief-")
+    assert (reports_dir / filename).is_file()
+
+
+def test_generate_client_report_fails_closed_on_an_unpriced_ticker(client, monkeypatch, reports_dir):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.commit()
+    conn.close()
+
+    async def failing_price(ticker):
+        raise ValueError("yfinance is down")
+
+    monkeypatch.setattr(data_router_module, "_live_price", failing_price)
+
+    resp = client.post("/data/clients/1/report/generate")
+    assert resp.status_code == 502
+    assert "AAPL" in resp.json()["detail"]
+    assert not reports_dir.exists() or list(reports_dir.iterdir()) == []
+
+
+def test_generate_client_report_400s_on_zero_holdings(client, reports_dir):
+    resp = client.post("/data/clients/1/report/generate")
+    assert resp.status_code == 400
+
+
+def test_generate_client_report_404s_for_an_unknown_client(client, reports_dir):
+    resp = client.post("/data/clients/999/report/generate")
+    assert resp.status_code == 404
+
+
+def test_generate_client_report_503s_in_gateway_mode(client, monkeypatch, reports_dir):
+    monkeypatch.setattr("app.api.routers.data.settings.MCP_TRANSPORT", "gateway")
+    resp = client.post("/data/clients/1/report/generate")
+    assert resp.status_code == 503
+    assert not reports_dir.exists()
+
+
+def test_generate_client_report_resolves_by_id_not_name_even_with_overlapping_names(client, monkeypatch, reports_dir):
+    # The chat tool (save_portfolio_report_tool) resolves by LIKE '%name%' and
+    # would return an ambiguous-match error for two clients sharing a
+    # substring. This endpoint must not go anywhere near that path.
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute(
+        "INSERT INTO clients VALUES (2, 'Jane Doering', 'jane2@x.com', 'VIP', 'balanced', 'Sam', 'Paris', '2024-01-01')"
+    )
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.execute("INSERT INTO holdings VALUES (2, 'AAPL', 5, 100.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return 200.0
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+
+    resp1 = client.post("/data/clients/1/report/generate")
+    resp2 = client.post("/data/clients/2/report/generate")
+    assert resp1.status_code == 200 and resp2.status_code == 200
+    assert resp1.json()["filename"].startswith("jane-doe-portfolio-brief-")
+    assert resp2.json()["filename"].startswith("jane-doering-portfolio-brief-")
+
+
 def test_get_documents_reads_the_manifest(tmp_path, monkeypatch, client):
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text('["report-a.pdf", "report-b.pdf"]')

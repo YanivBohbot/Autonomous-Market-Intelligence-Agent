@@ -4,16 +4,26 @@ NOT wired into the agent graph: this is deterministic CRUD and ingestion,
 not an agent capability -- see docs/superpowers/specs/
 2026-10-03-data-import-and-view-design.md Decision 9."""
 
+import asyncio
 import json
 import os
 import sqlite3
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from app.agent.tools.concentration import parse_tool_payload, price_from_quote
+from app.agent.tools.finance_calc import (
+    LabeledPortfolio,
+    Position,
+    compute_concentration_screen,
+    compute_portfolio_metrics,
+)
 from app.agent.tools.knowledge_base import KB_MANIFEST_PATH
+from app.agent.tools.portfolio_report import build_portfolio_report_xlsx, slugify
+from app.core.config import settings
 from app.data_import.client_summary import build_client_summary
 from app.data_import.db import (
     DB_PATH,
@@ -84,6 +94,145 @@ async def get_client_summary(client_id: int) -> dict:
     if client is None:
         raise HTTPException(status_code=404, detail="client not found")
     return await build_client_summary(client=client, get_price=_live_price)
+
+
+def _tool_content_text(result) -> str:
+    # Same content-block-joining step parse_tool_payload does, stopped
+    # before its JSON/literal_eval attempt -- yfinance_get_price_history's
+    # raw text is a markdown table, not JSON, and would fail both.
+    if isinstance(result, list) and result and all(isinstance(b, dict) and "type" in b for b in result):
+        return "".join(b.get("text", "") for b in result if b.get("type") == "text")
+    return str(result)
+
+
+async def _price_history(ticker: str) -> list[dict]:
+    from app.agent.multi_agent.display import normalize_price_history
+    from app.agent.tools.mcp_clients.yfinance_client import yf_history_tool
+
+    symbol_arg = "symbol" if "symbol" in yf_history_tool.args else "ticker"
+    raw = await yf_history_tool.ainvoke({symbol_arg: ticker, "period": "3mo"})
+    text = _tool_content_text(raw)
+    displays = normalize_price_history(text, {symbol_arg: ticker})
+    return displays[0]["points"] if displays else []
+
+
+@router.get("/clients/{client_id}/report")
+async def get_client_report(client_id: int) -> dict:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        client = get_client_with_holdings(conn, client_id)
+    finally:
+        conn.close()
+    if client is None:
+        raise HTTPException(status_code=404, detail="client not found")
+
+    holdings = client["holdings"]
+    tickers = [h["ticker"] for h in holdings]
+    price_results = await asyncio.gather(*(_live_price(t) for t in tickers), return_exceptions=True)
+
+    priced_positions: list[Position] = []
+    unpriced_tickers: list[str] = []
+    for holding, result in zip(holdings, price_results):
+        if isinstance(result, BaseException):
+            unpriced_tickers.append(holding["ticker"])
+            continue
+        priced_positions.append(Position(
+            ticker=holding["ticker"], shares=holding["shares"], avg_cost=holding["avg_cost"],
+            price=float(result), sector=holding.get("sector"),
+        ))
+
+    totals: dict | None = None
+    positions: list[dict] = []
+    sector_allocation: dict | None = None
+    concentration: dict | None = None
+    price_history: dict[str, list[dict]] = {}
+
+    if priced_positions:
+        metrics = compute_portfolio_metrics(priced_positions)
+        totals = metrics["totals"]
+        positions = metrics["positions"]
+        sector_allocation = metrics["sector_allocation"]
+        concentration = compute_concentration_screen(
+            [LabeledPortfolio(label=client["name"], positions=priced_positions)],
+            threshold_pct=30.0,
+        )
+        top = sorted(positions, key=lambda p: -p["weight_pct"])[:3]
+        history_results = await asyncio.gather(
+            *(_price_history(p["ticker"]) for p in top), return_exceptions=True,
+        )
+        for p, result in zip(top, history_results):
+            if not isinstance(result, BaseException) and result:
+                price_history[p["ticker"]] = result
+
+    reports_dir = settings.WORKSPACE_ROOT.resolve() / "reports"
+    prefix = f"{slugify(client['name'])}-portfolio-brief-"
+    files = sorted(
+        (f for f in reports_dir.glob(f"{prefix}*.xlsx") if f.is_file()),
+        key=lambda f: f.stat().st_mtime, reverse=True,
+    ) if reports_dir.is_dir() else []
+    generated_reports = [
+        {
+            "filename": f.name,
+            "generated_at": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
+            "download_url": f"/workspace/files/{f.name}",
+        }
+        for f in files
+    ]
+
+    return {
+        "client_id": client["client_id"], "name": client["name"], "email": client["email"],
+        "segment": client["segment"], "risk_profile": client["risk_profile"],
+        "advisor": client["advisor"], "city": client["city"],
+        "totals": totals, "positions": positions, "sector_allocation": sector_allocation,
+        "concentration": concentration, "price_history": price_history,
+        "unpriced_tickers": unpriced_tickers, "generated_reports": generated_reports,
+    }
+
+
+@router.post("/clients/{client_id}/report/generate")
+async def generate_client_report(client_id: int) -> dict:
+    if settings.MCP_TRANSPORT.lower() == "gateway":
+        raise HTTPException(
+            status_code=503,
+            detail="save_portfolio_report is not available in this deployment "
+            "(MCP_TRANSPORT=gateway has no S3 write path for this tool yet).",
+        )
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        client = get_client_with_holdings(conn, client_id)
+    finally:
+        conn.close()
+    if client is None:
+        raise HTTPException(status_code=404, detail="client not found")
+
+    holdings = client["holdings"]
+    if not holdings:
+        raise HTTPException(status_code=400, detail="build_portfolio_report_xlsx needs at least one position")
+
+    tickers = [h["ticker"] for h in holdings]
+    price_results = await asyncio.gather(*(_live_price(t) for t in tickers), return_exceptions=True)
+    failed = [t for t, r in zip(tickers, price_results) if isinstance(r, BaseException)]
+    if failed:
+        raise HTTPException(status_code=502, detail=f"could not price: {', '.join(failed)}")
+
+    positions = [
+        Position(ticker=h["ticker"], shares=h["shares"], avg_cost=h["avg_cost"], price=float(r))
+        for h, r in zip(holdings, price_results)
+    ]
+    portfolio = compute_portfolio_metrics(positions)
+    portfolio["client_name"] = client["name"]
+
+    xlsx_bytes = await asyncio.to_thread(build_portfolio_report_xlsx, portfolio)
+    today = datetime.now(timezone.utc).date().isoformat()
+    filename = f"{slugify(client['name'])}-portfolio-brief-{today}.xlsx"
+    reports_dir = settings.WORKSPACE_ROOT.resolve() / "reports"
+
+    def _write() -> None:
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        (reports_dir / filename).write_bytes(xlsx_bytes)
+
+    await asyncio.to_thread(_write)
+    return {"filename": filename}
 
 
 @router.get("/documents")
