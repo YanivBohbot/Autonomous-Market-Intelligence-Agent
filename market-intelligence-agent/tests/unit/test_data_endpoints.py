@@ -38,6 +38,15 @@ def client(tmp_path, monkeypatch):
     conn.close()
     monkeypatch.setattr(data_router_module, "DB_PATH", str(db_path))
 
+    # Every report test gets a fast, deterministic narrative by default --
+    # tests that care about the real wiring (test_price_history_... style)
+    # override this themselves. Without this, every GET .../report test
+    # would attempt a real OpenAI call.
+    async def fake_narrative(report):
+        return "stub narrative"
+
+    monkeypatch.setattr(data_router_module, "_generate_narrative", fake_narrative)
+
     app = FastAPI()
     app.include_router(router)
     return TestClient(app)
@@ -164,6 +173,50 @@ def test_get_client_report_computes_totals_sector_and_concentration(client, monk
     assert set(body["price_history"].keys()) == {"AAPL", "NVDA"}
     assert body["price_history"]["NVDA"] == [{"date": "2026-09-21", "close": 338.98}]
     assert body["unpriced_tickers"] == []
+    assert body["narrative"] == "stub narrative"
+
+
+def test_get_client_report_calls_the_real_narrative_generator_with_the_full_response(client, monkeypatch, reports_dir):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return 200.0
+
+    captured = {}
+
+    async def fake_generate(report):
+        captured["report"] = report
+        return "a real analysis paragraph"
+
+    async def no_history(ticker):
+        return []
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+    monkeypatch.setattr(data_router_module, "_price_history", no_history)
+    monkeypatch.setattr(data_router_module, "_generate_narrative", fake_generate)
+
+    resp = client.get("/data/clients/1/report")
+    assert resp.status_code == 200
+    assert resp.json()["narrative"] == "a real analysis paragraph"
+    assert captured["report"]["totals"]["market_value"] == 2000.0
+    assert captured["report"]["name"] == "Jane Doe"
+
+
+def test_get_client_report_with_no_holdings_skips_the_llm_call_via_the_real_narrative_function(client, monkeypatch, reports_dir):
+    # Uses the REAL _generate_narrative (not the fixture's stub) to prove
+    # the zero-holdings path never reaches the LLM end to end -- the skip
+    # happens inside generate_portfolio_narrative itself (unit-tested in
+    # test_portfolio_narrative.py), this just confirms data.py wires the
+    # real function through rather than always using a canned string.
+    from app.agent.tools.portfolio_narrative import generate_portfolio_narrative
+
+    monkeypatch.setattr(data_router_module, "_generate_narrative", generate_portfolio_narrative)
+    resp = client.get("/data/clients/1/report")
+    assert resp.status_code == 200
+    assert resp.json()["narrative"] == "No priced positions to analyze."
 
 
 def test_get_client_report_degrades_when_one_ticker_is_unpriced(client, monkeypatch, reports_dir):

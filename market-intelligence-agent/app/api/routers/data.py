@@ -96,6 +96,15 @@ async def get_client_summary(client_id: int) -> dict:
     return await build_client_summary(client=client, get_price=_live_price)
 
 
+async def _generate_narrative(report: dict) -> str:
+    # Deferred import: avoids constructing a ChatOpenAI client (and
+    # requiring OPENAI_API_KEY) at module import time for every test that
+    # imports this router, same convention as _live_price's yfinance import.
+    from app.agent.tools.portfolio_narrative import generate_portfolio_narrative
+
+    return await generate_portfolio_narrative(report)
+
+
 def _tool_content_text(result) -> str:
     # Same content-block-joining step parse_tool_payload does, stopped
     # before its JSON/literal_eval attempt -- yfinance_get_price_history's
@@ -179,7 +188,7 @@ async def get_client_report(client_id: int) -> dict:
         for f in files
     ]
 
-    return {
+    result = {
         "client_id": client["client_id"], "name": client["name"], "email": client["email"],
         "segment": client["segment"], "risk_profile": client["risk_profile"],
         "advisor": client["advisor"], "city": client["city"],
@@ -187,6 +196,8 @@ async def get_client_report(client_id: int) -> dict:
         "concentration": concentration, "price_history": price_history,
         "unpriced_tickers": unpriced_tickers, "generated_reports": generated_reports,
     }
+    result["narrative"] = await _generate_narrative(result)
+    return result
 
 
 @router.post("/clients/{client_id}/report/generate")
