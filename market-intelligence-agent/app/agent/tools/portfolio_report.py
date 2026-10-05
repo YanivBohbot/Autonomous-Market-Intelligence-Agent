@@ -119,7 +119,7 @@ def build_portfolio_report_xlsx(portfolio: dict, *, threshold_pct: float = 30.0)
     return output.getvalue()
 
 
-def _slugify(name: str) -> str:
+def slugify(name: str) -> str:
     # Lowercase, spaces to hyphens, drop anything that isn't alnum/hyphen --
     # a client name can contain an apostrophe (O'Brien) that must never
     # reach a filesystem path unescaped.
@@ -144,7 +144,7 @@ async def save_portfolio_report(
     xlsx_bytes = await asyncio.to_thread(build_portfolio_report_xlsx, portfolio)
 
     today = datetime.now(timezone.utc).date().isoformat()
-    filename = f"{_slugify(portfolio['client_name'])}-portfolio-brief-{today}.xlsx"
+    filename = f"{slugify(portfolio['client_name'])}-portfolio-brief-{today}.xlsx"
 
     def _write() -> None:
         reports_dir.mkdir(parents=True, exist_ok=True)
