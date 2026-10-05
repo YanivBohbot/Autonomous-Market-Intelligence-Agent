@@ -74,9 +74,14 @@ describe("ReportWorkspace", () => {
     expect(await screen.findByText(FULL_REPORT.narrative)).toBeInTheDocument();
     expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
     expect(screen.getByText("Technology")).toBeInTheDocument(); // SectorAllocationChart
-    expect(screen.getByText(/Concentration/)).toBeInTheDocument(); // ConcentrationAlert
+    expect(screen.getAllByText(/Concentration/).length).toBeGreaterThan(0); // section heading + ConcentrationAlert
     expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
     expect(screen.getByText("jane-doe-portfolio-brief-2026-01-01.xlsx")).toBeInTheDocument();
+    // Each chart section has its own caption -- live QA feedback was "a
+    // wall of text, then a wall of unlabeled graphs."
+    expect(screen.getByText("Portfolio allocation")).toBeInTheDocument();
+    expect(screen.getByText("Sector exposure")).toBeInTheDocument();
+    expect(screen.getByText("Positions")).toBeInTheDocument();
   });
 
   it("shows an inline error and keeps the summary visible when the full report fetch fails", async () => {

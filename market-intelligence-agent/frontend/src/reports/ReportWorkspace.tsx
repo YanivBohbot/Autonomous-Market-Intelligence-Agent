@@ -127,35 +127,57 @@ function ReportWorkspaceBody({ clientId }: { clientId: number }) {
 
       {full && (
         <>
-          <div className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3 text-xs leading-relaxed text-terminal-text">
-            {full.narrative}
-          </div>
+          <section className="flex flex-col gap-1.5">
+            <h3 className="text-xs font-semibold text-terminal-muted">Analysis</h3>
+            <div className="whitespace-pre-line rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3 text-xs leading-relaxed text-terminal-text">
+              {full.narrative}
+            </div>
+          </section>
 
           {full.positions.length > 0 && (
-            <PortfolioPieChart
-              display={{ type: "portfolio_chart", slices: full.positions.map((p) => ({ ticker: p.ticker, weight_pct: p.weight_pct })) }}
-            />
+            <section className="flex flex-col gap-1.5">
+              <h3 className="text-xs font-semibold text-terminal-muted">Portfolio allocation</h3>
+              <PortfolioPieChart
+                display={{ type: "portfolio_chart", slices: full.positions.map((p) => ({ ticker: p.ticker, weight_pct: p.weight_pct })) }}
+              />
+            </section>
           )}
 
-          <SectorAllocationChart sectorAllocation={full.sector_allocation} />
+          {full.sector_allocation && (
+            <section className="flex flex-col gap-1.5">
+              <h3 className="text-xs font-semibold text-terminal-muted">Sector exposure</h3>
+              <SectorAllocationChart sectorAllocation={full.sector_allocation} />
+            </section>
+          )}
 
-          {Object.entries(full.price_history).map(([ticker, points]) => (
-            <PriceChart key={ticker} display={{ type: "price_chart", ticker, points }} />
-          ))}
+          {Object.keys(full.price_history).length > 0 && (
+            <section className="flex flex-col gap-1.5">
+              <h3 className="text-xs font-semibold text-terminal-muted">Price trend (largest positions)</h3>
+              {Object.entries(full.price_history).map(([ticker, points]) => (
+                <PriceChart key={ticker} display={{ type: "price_chart", ticker, points }} />
+              ))}
+            </section>
+          )}
 
           {full.concentration && full.concentration.breaches.length > 0 && (
-            <ConcentrationAlert
-              display={{ type: "concentration_alert", threshold_pct: full.concentration.threshold_pct, breaches: full.concentration.breaches }}
-            />
+            <section className="flex flex-col gap-1.5">
+              <h3 className="text-xs font-semibold text-terminal-muted">Concentration risk</h3>
+              <ConcentrationAlert
+                display={{ type: "concentration_alert", threshold_pct: full.concentration.threshold_pct, breaches: full.concentration.breaches }}
+              />
+            </section>
           )}
 
-          {full.totals ? (
-            <PortfolioTable display={{ type: "portfolio_table", positions: full.positions, totals: full.totals }} />
-          ) : full.unpriced_tickers.length > 0 ? (
-            <div className="text-xs text-terminal-danger">Prices unavailable ({full.unpriced_tickers.join(", ")})</div>
-          ) : (
-            <div className="text-xs text-terminal-muted">No position.</div>
-          )}
+          <section className="flex flex-col gap-1.5">
+            <h3 className="text-xs font-semibold text-terminal-muted">Positions</h3>
+            {full.totals ? (
+              <PortfolioTable display={{ type: "portfolio_table", positions: full.positions, totals: full.totals }} />
+            ) : full.unpriced_tickers.length > 0 ? (
+              <div className="text-xs text-terminal-danger">Prices unavailable ({full.unpriced_tickers.join(", ")})</div>
+            ) : (
+              <div className="text-xs text-terminal-muted">No position.</div>
+            )}
+          </section>
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
