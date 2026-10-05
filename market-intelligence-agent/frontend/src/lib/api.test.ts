@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { uploadToWorkspace, getClients, getClientSummary, getDocuments, getThreadHistory, importPdf, previewImport, confirmImport, getClientReport, generateClientReport } from "./api";
+import { uploadToWorkspace, getClients, getClientSummary, getDocuments, getThreadHistory, importPdf, previewImport, confirmImport, getClientReport, generateClientReport, getMarketTicker } from "./api";
 
 describe("uploadToWorkspace", () => {
   beforeEach(() => {
@@ -29,6 +29,20 @@ describe("uploadToWorkspace", () => {
 });
 
 describe("data section API", () => {
+  it("getMarketTicker fetches the independent shell feed", async () => {
+    const payload = { items: [{ symbol: "^GSPC", name: "S&P 500", price: 6810.2, change_pct: 1.25 }] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getMarketTicker()).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/data/market-ticker");
+  });
+
+  it("getMarketTicker rejects a failed feed response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503 }));
+    await expect(getMarketTicker()).rejects.toThrow("market ticker 503");
+  });
+
   it("getClients fetches /data/clients", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [{ email: "jane@x.com" }] });
     vi.stubGlobal("fetch", fetchMock);

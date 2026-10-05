@@ -130,11 +130,34 @@ body {
   @apply font-semibold text-terminal-text mt-3 mb-1;
 }
 
+@keyframes market-ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.market-ticker-track {
+  width: max-content;
+  animation: market-ticker-scroll 42s linear infinite;
+}
+
+.market-ticker:hover .market-ticker-track {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .market-ticker-track {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .market-ticker-copy {
+    display: none;
   }
 }

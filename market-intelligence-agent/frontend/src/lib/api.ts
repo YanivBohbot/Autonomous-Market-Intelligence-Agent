@@ -3,6 +3,19 @@ import type { ApproveResponse, HealthResponse } from "./types";
 // In dev, Vite proxies these paths to the backend, so "" (same origin) works.
 export const API_BASE = "";
 
+export interface MarketTickerItem {
+  symbol: string;
+  name: string;
+  price: number;
+  change_pct: number;
+}
+
+export async function getMarketTicker(base = API_BASE): Promise<{ items: MarketTickerItem[] }> {
+  const res = await fetch(`${base}/data/market-ticker`);
+  if (!res.ok) throw new Error(`market ticker ${res.status}`);
+  return res.json();
+}
+
 export async function getHealth(base = API_BASE): Promise<HealthResponse> {
   const res = await fetch(`${base}/health`);
   if (!res.ok) throw new Error(`health ${res.status}`);
