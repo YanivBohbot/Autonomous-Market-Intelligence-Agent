@@ -67,20 +67,46 @@ every client's report.
    data this endpoint already computed. Same lightweight direct-`ChatOpenAI`
    pattern as `portfolio_narrative.py` (chantier 3) and the supervisor's own
    `_router` — no tool-calling loop, no agent graph.
-8. **News via the existing `web_search` (Tavily) tool**, called directly
-   (same deferred-import, direct-call pattern as every other yfinance call
-   in `data.py`) with a fixed market-wide query, not a per-ticker query —
-   this is a market page, not a single-stock page.
-9. **Client alerts degrade, they don't fail closed.** `app/agent/tools/
-   concentration.py`'s `screen_clients` (already built, already scans every
-   client when `client_names=None`) raises `ValueError` if *any* ticker
-   across *any* client fails to price — correct for the chat tool (an
-   agent answer must never silently drop a client), wrong for a dashboard
-   section (one bad ticker must not blank the whole Briefing page). The
-   endpoint catches that `ValueError` and reports the alerts section as
-   unavailable instead of 500ing the whole response — same "a view degrades,
-   a tool fails closed" split the Reports spec already established between
-   its GET and POST endpoints.
+8. **News via Tavily directly, not the `web_search` agent tool.**
+   `web_search_tool` (`app/agent/tools/knowledge_base.py`) collapses its
+   results into one joined string (`"[SOURCE WEB: {url}] {content}\n\n..."`)
+   built for an LLM to read, not structured `{title, url}` entries a
+   frontend can render as a list — reusing it would mean re-parsing that
+   string back apart. Call the same underlying `TavilyClient.search(query=
+   ..., max_results=3, search_depth="advanced")` directly (deferred import,
+   same convention as every yfinance call in `data.py`) and read `results[
+   ].{title, url}` straight from Tavily's own response, with a fixed
+   market-wide query (not a per-ticker one — this is a market page).
+9. **Client alerts degrade per-ticker, not via a try/except around a
+   fail-closed call.** `app/agent/tools/concentration.py`'s `screen_clients`
+   is the wrong thing to call here even though it already does "scan every
+   client" — its `run_sql` is wired to the MCP CRM tool
+   (`app.agent.tools.mcp_clients.mcp_client.crm_tool`, a stdio subprocess
+   call), and `data.py`'s own module docstring is explicit that this router
+   deliberately bypasses that MCP indirection everywhere else in favor of a
+   direct `sqlite3.connect(DB_PATH)` connection (same one `get_client_with_
+   holdings` and every other `data.py` query already uses). Introducing an
+   MCP CRM call into `data.py` for this one endpoint would be a new
+   dependency type nothing else in the file has, for no benefit — the data
+   is already reachable locally. It also fails closed (raises if *any*
+   ticker across *any* client is unpriced), which is correct for the chat
+   tool but wrong for a dashboard section.
+
+   Instead: query every client's holdings-with-sector directly over the
+   local `sqlite3` connection, reusing `build_holdings_query(risk_profile=
+   None, client_names=None)` from `concentration.py` for the SQL text only
+   (it's a pure string builder, no MCP involved) executed via `conn.execute
+   (...)`. Fetch a live price per *distinct* ticker across the whole
+   cabinet (`asyncio.gather(..., return_exceptions=True)`, same tolerate-
+   failures pattern Reports' `GET .../report` already uses) — a ticker that
+   fails to price is excluded from that one holding's position, not from
+   the whole scan, same per-item degrade philosophy as everywhere else in
+   this router. Build one `LabeledPortfolio` per client from whatever
+   priced, then call `compute_concentration_screen` (the pure function,
+   already imported in `data.py` since chantier 3) directly. `client_alerts.
+   available` is `true` unless the DB query itself fails or zero clients
+   have any priced holding at all — not flipped by one bad ticker among
+   however many the whole cabinet holds.
 10. **A fixed 6-ticker watchlist** (AAPL, NVDA, MSFT, GOOGL, AMZN, META) —
     same `yf_quote_tool` call as the index cards, added after the user
     asked to also see individual big-name stocks, not just indices and
@@ -149,20 +175,22 @@ every client's report.
      individual-stock moves).
   4. Concurrently (same `asyncio.gather`-two-things pattern chantier 3 used
      for price-history + narrative): call `generate_market_narrative
-     (market)` and fetch news via `web_search` directly.
-  5. Separately, call `screen_clients(run_sql=..., get_price=_live_price,
-     client_names=None, threshold_pct=30.0)` (the 10-minute-TTL price
-     cache applies here too, so this mostly reuses prices the market
-     section's own calls — or a prior Reports/Clients visit — already
-     warmed) inside a `try/except ValueError`; on failure, the alerts
-     section reports `{"available": False}` instead of raising.
+     (market)` and fetch news via a direct `TavilyClient.search(...)` call
+     (deferred import, same convention as every yfinance call here).
+  5. Separately: query every client's holdings-with-sector via `conn.execute
+     (build_holdings_query(risk_profile=None, client_names=None))` over the
+     router's own local `sqlite3` connection (not the MCP CRM tool — see
+     Decision 9), fetch a live price per distinct ticker across the whole
+     cabinet tolerating individual failures, build one `LabeledPortfolio`
+     per client from whatever priced, call `compute_concentration_screen`
+     directly. `client_alerts.available` is `false` only if the query
+     itself fails or zero clients have any priced holding.
   6. Response: `{"indices": [...], "sectors": [...], "watchlist": [...],
-     "narrative": str, "news": [{"title", "url", "source"}...],
-     "client_alerts": {"available": bool, "threshold_pct": 30.0,
-     "breaches": [...]}}` — `indices`/`sectors` share `{"symbol", "name",
-     "price", "change_pct"}`; each `watchlist` entry adds a `points:
-     {date, close}[]` field (its sparkline data, `[]` when the history
-     fetch failed for that ticker).
+     "narrative": str, "news": [{"title", "url"}...], "client_alerts":
+     {"available": bool, "threshold_pct": 30.0, "breaches": [...]}}` —
+     `indices`/`sectors` share `{"symbol", "name", "price", "change_pct"}`;
+     each `watchlist` entry adds a `points: {date, close}[]` field (its
+     sparkline data, `[]` when the history fetch failed for that ticker).
 
 ### Frontend
 
@@ -215,11 +243,14 @@ every client's report.
   skip the LLM call and return a fixed "Market data unavailable right now."
   string (same no-call-on-empty-input rule `portfolio_narrative.py`
   already follows).
-- `web_search` failing → `news: []`, frontend shows "No news available."
-  rather than erroring the page.
-- `screen_clients` raising (any client's ticker unpriced) → `client_alerts:
-  {"available": false, ...}`, frontend shows an inline note, not an error
-  banner — the rest of the page still renders.
+- The Tavily search call raising → `news: []`, frontend shows "No news
+  available." rather than erroring the page.
+- A ticker failing to price in the cabinet-wide scan → that one holding is
+  excluded from its client's position list, same as every other per-ticker
+  degrade in this router — never flips `client_alerts.available`. Only the
+  holdings query itself failing, or zero clients having any priced
+  holding, sets `client_alerts: {"available": false, ...}`; frontend shows
+  an inline note, not an error banner — the rest of the page still renders.
 - Frontend `/briefing` itself has no error-prone params (no `:id`), so
   there is no 404/invalid-id case to handle, unlike Clients/Reports.
 
@@ -237,10 +268,11 @@ every client's report.
   that index omitted, rest present; one watchlist ticker's history fetch
   failing → that ticker's `points: []`, the rest of its quote data still
   present; all quotes failing → empty lists, narrative is the fixed
-  unavailable string, no 500; `screen_clients`
-  raising (monkeypatch it to raise `ValueError`) → `client_alerts.available
-  == False`, rest of the response still present; `web_search` raising →
-  `news == []`, rest of the response still present.
+  unavailable string, no 500; one client's ticker failing to price in the
+  cabinet scan → that holding excluded, rest of `client_alerts` still
+  computed from the others (`available` stays `true`); the holdings query
+  itself raising → `client_alerts.available == False`; the Tavily call
+  raising → `news == []`, rest of the response still present.
 - The 10-minute TTL: a test proving Briefing's price lookups use the longer
   TTL constant, not Reports/Clients' 30s one (whatever mechanism the plan
   picks — sibling function or a parameter — must be directly testable, not
