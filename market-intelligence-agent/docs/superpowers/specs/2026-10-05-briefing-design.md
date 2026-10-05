@@ -82,14 +82,28 @@ every client's report.
    a tool fails closed" split the Reports spec already established between
    its GET and POST endpoints.
 10. **A fixed 6-ticker watchlist** (AAPL, NVDA, MSFT, GOOGL, AMZN, META) —
-    same card shape as the index cards (price + % change, no sparkline, same
-    `yf_quote_tool` call), added after the user asked to also see individual
-    big-name stocks, not just indices and sectors. Fixed list, not derived
-    from client holdings (a dynamic "most-held tickers across all clients"
-    version was considered and explicitly deferred — more logic for a v1
-    that's already managing its call count). Brings the page's total
-    yfinance calls from 12 to 18; extending or swapping the list later is a
-    one-line change.
+    same `yf_quote_tool` call as the index cards, added after the user
+    asked to also see individual big-name stocks, not just indices and
+    sectors. Fixed list, not derived from client holdings (a dynamic
+    "most-held tickers across all clients" version was considered and
+    explicitly deferred — more logic for a v1 that's already managing its
+    call count). Brings the page's total yfinance quote calls from 12 to
+    18; extending or swapping the list later is a one-line change.
+    **Unlike the index/sector cards, each watchlist card also gets a
+    sparkline** (90-day price history, same `yfinance_get_price_history`
+    call and `_price_history`/markdown-table-parsing path chantier 3 built
+    for Reports) — the one exception to Decision 5's no-sparkline rule,
+    scoped to the watchlist specifically because the user asked for it
+    there. Adds 6 more yfinance calls (24 total for the page). Rendered via
+    a new compact variant: `PriceChart`'s existing chart (chantier 3,
+    `frontend/src/desk/displays/PriceChart.tsx`) is sized for a full-width
+    card with an axis and tooltip; the watchlist needs a small inline
+    sparkline with no axis/labels inside a price card. Rather than
+    overloading `PriceChart` with a size-variant prop, this is a new
+    `frontend/src/briefing/Sparkline.tsx` (just a `Line` inside a
+    `ResponsiveContainer`, no `XAxis`/`YAxis`/`Tooltip`) — small, focused,
+    reuses the same `points: {date, close}[]` shape the backend already
+    produces for price history, no new backend logic.
 11. **No earnings-calendar section in v1.** Investigated: no market-wide
     earnings calendar tool exists in the yfinance MCP server's 9 tools.
     Per-stock earnings dates do exist (`yfinance_get_ticker_info`'s
@@ -124,24 +138,31 @@ every client's report.
      (`asyncio.gather`, tolerate individual failures the same way Reports'
      `GET .../report` already tolerates an unpriced ticker — a failed
      index/sector/watchlist entry is omitted from its list, not a 500).
-  2. Build `market = {"indices": [...], "sectors": [...]}` from whatever
+  2. For whichever watchlist tickers priced successfully, concurrently
+     fetch each one's 90-day price history (`_price_history`, same
+     function chantier 3 built — reused as-is, not duplicated), tolerating
+     individual failures the same way Reports already does: a ticker with
+     no history just renders without a sparkline, not an error.
+  3. Build `market = {"indices": [...], "sectors": [...]}` from whatever
      resolved (`watchlist` is separate — see the response shape below —
      since the narrative is grounded only in indices/sectors, not
      individual-stock moves).
-  3. Concurrently (same `asyncio.gather`-two-things pattern chantier 3 used
+  4. Concurrently (same `asyncio.gather`-two-things pattern chantier 3 used
      for price-history + narrative): call `generate_market_narrative
      (market)` and fetch news via `web_search` directly.
-  4. Separately, call `screen_clients(run_sql=..., get_price=_live_price,
+  5. Separately, call `screen_clients(run_sql=..., get_price=_live_price,
      client_names=None, threshold_pct=30.0)` (the 10-minute-TTL price
      cache applies here too, so this mostly reuses prices the market
      section's own calls — or a prior Reports/Clients visit — already
      warmed) inside a `try/except ValueError`; on failure, the alerts
      section reports `{"available": False}` instead of raising.
-  5. Response: `{"indices": [...], "sectors": [...], "watchlist": [...],
+  6. Response: `{"indices": [...], "sectors": [...], "watchlist": [...],
      "narrative": str, "news": [{"title", "url", "source"}...],
      "client_alerts": {"available": bool, "threshold_pct": 30.0,
-     "breaches": [...]}}` — `indices`/`sectors`/`watchlist` entries all
-     share the same shape: `{"symbol", "name", "price", "change_pct"}`.
+     "breaches": [...]}}` — `indices`/`sectors` share `{"symbol", "name",
+     "price", "change_pct"}`; each `watchlist` entry adds a `points:
+     {date, close}[]` field (its sparkline data, `[]` when the history
+     fetch failed for that ticker).
 
 ### Frontend
 
@@ -149,8 +170,9 @@ every client's report.
   `ComingSoonPage` route): fetches `GET /data/briefing` on mount. Renders,
   top to bottom: index cards row (name, price, %, colored same as existing
   P&L conventions — green/red via `text-terminal-accent`/`text-terminal-
-  danger`), a watchlist cards row (same card shape as the index row, for
-  the 6 fixed megacap tickers), sector performance list (same shape as `SectorAllocationChart`'s
+  danger`), a watchlist cards row (same price+% card as the index row, for
+  the 6 fixed megacap tickers, plus a `Sparkline` under each card's price
+  when that ticker's `points` is non-empty), sector performance list (same shape as `SectorAllocationChart`'s
   own HTML-legend pattern from chantier 3 — plain rows with a colored dot,
   name, %, not a new chart type, since this is a flat ranked list rather
   than a portfolio-weight breakdown), the "Résumé du marché macro-économique
@@ -168,7 +190,9 @@ every client's report.
 1. Advisor opens `/briefing`.
 2. `BriefingPage` fetches `GET /data/briefing`.
 3. Backend fetches 18 quotes (4 indices + 8 sector ETFs + 6 watchlist
-   tickers) in parallel,
+   tickers) in parallel, then 6 more price-history calls for the watchlist
+   tickers that priced successfully (24 yfinance calls total on a cold
+   load),
    tolerating individual failures; concurrently generates the narrative
    (grounded on whatever quotes resolved) and fetches news; separately
    screens every client for concentration breaches, degrading to
@@ -207,11 +231,13 @@ every client's report.
   chantier 3's `test_generate_portfolio_narrative_grounds_the_prompt_in_
   computed_numbers` uses); skips the LLM call and returns the fixed string
   when both `indices` and `sectors` are empty.
-- `GET /data/briefing`: happy path with all 18 quotes mocked → correct
-  `indices`/`sectors`/`watchlist`/`narrative`/`news`/`client_alerts`; one
-  index quote failing → that index omitted, rest present; all quotes
-  failing → empty lists, narrative is the fixed unavailable string, no
-  500; `screen_clients`
+- `GET /data/briefing`: happy path with all 18 quotes + 6 history fetches
+  mocked → correct `indices`/`sectors`/`watchlist` (each with non-empty
+  `points`)/`narrative`/`news`/`client_alerts`; one index quote failing →
+  that index omitted, rest present; one watchlist ticker's history fetch
+  failing → that ticker's `points: []`, the rest of its quote data still
+  present; all quotes failing → empty lists, narrative is the fixed
+  unavailable string, no 500; `screen_clients`
   raising (monkeypatch it to raise `ValueError`) → `client_alerts.available
   == False`, rest of the response still present; `web_search` raising →
   `news == []`, rest of the response still present.
@@ -224,6 +250,10 @@ every client's report.
 - `BriefingPage.test.tsx`: renders all sections from a mocked `getBriefing`;
   omits/shows-fallback for each section when its field is empty/unavailable;
   `ConcentrationAlert` receives the cabinet-wide breaches correctly shaped.
+- `Sparkline.test.tsx`: renders a line for a non-empty `points` array;
+  renders nothing (or an empty-state, decided at plan time) for an empty
+  one — same pattern `SectorAllocationChart.test.tsx` (chantier 3) already
+  uses for its own null-input case.
 - `App.test.tsx`: routing assertion for `/briefing` now renders
   `BriefingPage`, not `ComingSoonPage` (the Briefing-specific case in the
   existing "one not-yet-built section" test moves out, since after this
