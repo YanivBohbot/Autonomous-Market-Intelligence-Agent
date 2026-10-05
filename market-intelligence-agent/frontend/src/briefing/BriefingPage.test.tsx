@@ -40,13 +40,20 @@ describe("BriefingPage", () => {
     expect(await screen.findByText(/failed to load/i)).toBeInTheDocument();
   });
 
-  it("omits the indices/sectors/watchlist sections when they are empty", async () => {
+  it("shows an empty-state note (not a vanished section) when indices/sectors/watchlist are empty", async () => {
+    // Regression: the spec requires "the frontend shows an empty-state
+    // note for that section, not a crash" when every quote in a category
+    // fails -- the section used to disappear entirely instead, which
+    // looks indistinguishable from the page being broken.
     stubFetch({ ...DATA, indices: [], sectors: [], watchlist: [] });
     render(<BriefingPage />);
     await screen.findByText(DATA.narrative);
     expect(screen.queryByText("S&P 500")).not.toBeInTheDocument();
     expect(screen.queryByText("Technology")).not.toBeInTheDocument();
     expect(screen.queryByText("Apple Inc.")).not.toBeInTheDocument();
+    expect(screen.getByText(/indices unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText(/sector data unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText(/watchlist unavailable/i)).toBeInTheDocument();
   });
 
   it("shows a 'No news available' fallback when news is empty", async () => {

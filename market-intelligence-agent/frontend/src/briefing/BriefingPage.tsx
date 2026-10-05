@@ -46,18 +46,20 @@ export function BriefingPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 font-mono text-sm text-terminal-text">
-      {data.indices.length > 0 && (
-        <section className="flex flex-col gap-1.5">
-          <h3 className="text-xs font-semibold text-terminal-muted">Indices</h3>
+      <section className="flex flex-col gap-1.5">
+        <h3 className="text-xs font-semibold text-terminal-muted">Indices</h3>
+        {data.indices.length > 0 ? (
           <div className="grid grid-cols-4 gap-2">
             {data.indices.map((q) => <QuoteCard key={q.symbol} {...q} />)}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="text-xs text-terminal-muted">Indices unavailable.</div>
+        )}
+      </section>
 
-      {data.watchlist.length > 0 && (
-        <section className="flex flex-col gap-1.5">
-          <h3 className="text-xs font-semibold text-terminal-muted">Watchlist</h3>
+      <section className="flex flex-col gap-1.5">
+        <h3 className="text-xs font-semibold text-terminal-muted">Watchlist</h3>
+        {data.watchlist.length > 0 ? (
           <div className="grid grid-cols-3 gap-2">
             {data.watchlist.map((q) => (
               <div key={q.symbol} className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
@@ -70,12 +72,14 @@ export function BriefingPage() {
               </div>
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="text-xs text-terminal-muted">Watchlist unavailable.</div>
+        )}
+      </section>
 
-      {data.sectors.length > 0 && (
-        <section className="flex flex-col gap-1.5">
-          <h3 className="text-xs font-semibold text-terminal-muted">Sector performance</h3>
+      <section className="flex flex-col gap-1.5">
+        <h3 className="text-xs font-semibold text-terminal-muted">Sector performance</h3>
+        {data.sectors.length > 0 ? (
           <div className="flex flex-col gap-1 rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
             {data.sectors.map((s) => (
               <div key={s.symbol} className="flex items-center justify-between">
@@ -86,8 +90,10 @@ export function BriefingPage() {
               </div>
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="text-xs text-terminal-muted">Sector data unavailable.</div>
+        )}
+      </section>
 
       <section className="flex flex-col gap-1.5">
         <h3 className="text-xs font-semibold text-terminal-muted">
