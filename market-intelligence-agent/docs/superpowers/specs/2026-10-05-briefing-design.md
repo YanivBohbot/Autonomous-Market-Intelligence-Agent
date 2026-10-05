@@ -81,7 +81,16 @@ every client's report.
    unavailable instead of 500ing the whole response — same "a view degrades,
    a tool fails closed" split the Reports spec already established between
    its GET and POST endpoints.
-10. **No earnings-calendar section in v1.** Investigated: no market-wide
+10. **A fixed 6-ticker watchlist** (AAPL, NVDA, MSFT, GOOGL, AMZN, META) —
+    same card shape as the index cards (price + % change, no sparkline, same
+    `yf_quote_tool` call), added after the user asked to also see individual
+    big-name stocks, not just indices and sectors. Fixed list, not derived
+    from client holdings (a dynamic "most-held tickers across all clients"
+    version was considered and explicitly deferred — more logic for a v1
+    that's already managing its call count). Brings the page's total
+    yfinance calls from 12 to 18; extending or swapping the list later is a
+    one-line change.
+11. **No earnings-calendar section in v1.** Investigated: no market-wide
     earnings calendar tool exists in the yfinance MCP server's 9 tools.
     Per-stock earnings dates do exist (`yfinance_get_ticker_info`'s
     `earningsTimestampStart` field, confirmed present and populated on a
@@ -110,12 +119,15 @@ every client's report.
   `_live_price_long_ttl`, decided at plan time by whichever keeps the
   single-responsibility of the existing cache clean) so Briefing's calls
   use a 600s TTL instead of the existing 30s. New `GET /data/briefing`:
-  1. Fetch all 4 index quotes + 8 sector-ETF quotes in parallel
+  1. Fetch all 4 index quotes + 8 sector-ETF quotes + 6 watchlist-ticker
+     quotes (`AAPL`, `NVDA`, `MSFT`, `GOOGL`, `AMZN`, `META`) in parallel
      (`asyncio.gather`, tolerate individual failures the same way Reports'
      `GET .../report` already tolerates an unpriced ticker — a failed
-     index/sector is omitted from its list, not a 500).
+     index/sector/watchlist entry is omitted from its list, not a 500).
   2. Build `market = {"indices": [...], "sectors": [...]}` from whatever
-     resolved.
+     resolved (`watchlist` is separate — see the response shape below —
+     since the narrative is grounded only in indices/sectors, not
+     individual-stock moves).
   3. Concurrently (same `asyncio.gather`-two-things pattern chantier 3 used
      for price-history + narrative): call `generate_market_narrative
      (market)` and fetch news via `web_search` directly.
@@ -125,9 +137,11 @@ every client's report.
      section's own calls — or a prior Reports/Clients visit — already
      warmed) inside a `try/except ValueError`; on failure, the alerts
      section reports `{"available": False}` instead of raising.
-  5. Response: `{"indices": [...], "sectors": [...], "narrative": str,
-     "news": [{"title", "url", "source"}...], "client_alerts":
-     {"available": bool, "threshold_pct": 30.0, "breaches": [...]}}`.
+  5. Response: `{"indices": [...], "sectors": [...], "watchlist": [...],
+     "narrative": str, "news": [{"title", "url", "source"}...],
+     "client_alerts": {"available": bool, "threshold_pct": 30.0,
+     "breaches": [...]}}` — `indices`/`sectors`/`watchlist` entries all
+     share the same shape: `{"symbol", "name", "price", "change_pct"}`.
 
 ### Frontend
 
@@ -135,7 +149,8 @@ every client's report.
   `ComingSoonPage` route): fetches `GET /data/briefing` on mount. Renders,
   top to bottom: index cards row (name, price, %, colored same as existing
   P&L conventions — green/red via `text-terminal-accent`/`text-terminal-
-  danger`), sector performance list (same shape as `SectorAllocationChart`'s
+  danger`), a watchlist cards row (same card shape as the index row, for
+  the 6 fixed megacap tickers), sector performance list (same shape as `SectorAllocationChart`'s
   own HTML-legend pattern from chantier 3 — plain rows with a colored dot,
   name, %, not a new chart type, since this is a flat ranked list rather
   than a portfolio-weight breakdown), the "Résumé du marché macro-économique
@@ -152,7 +167,8 @@ every client's report.
 
 1. Advisor opens `/briefing`.
 2. `BriefingPage` fetches `GET /data/briefing`.
-3. Backend fetches 12 quotes (4 indices + 8 sector ETFs) in parallel,
+3. Backend fetches 18 quotes (4 indices + 8 sector ETFs + 6 watchlist
+   tickers) in parallel,
    tolerating individual failures; concurrently generates the narrative
    (grounded on whatever quotes resolved) and fetches news; separately
    screens every client for concentration breaches, degrading to
@@ -166,10 +182,11 @@ every client's report.
 
 ## Error handling
 
-- Any of the 12 index/sector quote fetches failing → that one entry is
-  omitted from its list (`indices`/`sectors`), never a 500 for the whole
-  page. If *every* index fails, `indices: []`; same for sectors — the
-  frontend shows an empty-state note for that section, not a crash.
+- Any of the 18 index/sector/watchlist quote fetches failing → that one
+  entry is omitted from its list (`indices`/`sectors`/`watchlist`), never a
+  500 for the whole page. If *every* index fails, `indices: []`; same for
+  sectors and the watchlist — the frontend shows an empty-state note for
+  that section, not a crash.
 - `generate_market_narrative`: if `indices` and `sectors` are both empty,
   skip the LLM call and return a fixed "Market data unavailable right now."
   string (same no-call-on-empty-input rule `portfolio_narrative.py`
@@ -190,10 +207,11 @@ every client's report.
   chantier 3's `test_generate_portfolio_narrative_grounds_the_prompt_in_
   computed_numbers` uses); skips the LLM call and returns the fixed string
   when both `indices` and `sectors` are empty.
-- `GET /data/briefing`: happy path with all 12 quotes mocked → correct
-  `indices`/`sectors`/`narrative`/`news`/`client_alerts`; one index quote
-  failing → that index omitted, rest present; all quotes failing → empty
-  lists, narrative is the fixed unavailable string, no 500; `screen_clients`
+- `GET /data/briefing`: happy path with all 18 quotes mocked → correct
+  `indices`/`sectors`/`watchlist`/`narrative`/`news`/`client_alerts`; one
+  index quote failing → that index omitted, rest present; all quotes
+  failing → empty lists, narrative is the fixed unavailable string, no
+  500; `screen_clients`
   raising (monkeypatch it to raise `ValueError`) → `client_alerts.available
   == False`, rest of the response still present; `web_search` raising →
   `news == []`, rest of the response still present.
@@ -223,7 +241,7 @@ not re-proving the math.
 
 ## Out of scope (explicitly, for this chantier)
 
-- Earnings calendar (no reliable data source found — see Decision 10).
+- Earnings calendar (no reliable data source found — see Decision 11).
 - Index/sector sparklines (Decision 5 — revisit after real load-time data).
 - Auto-refresh/polling while the page is open (manual reload only for v1).
 - An embedded chat panel on this page (Google Finance's own screenshot has
