@@ -273,6 +273,40 @@ def test_get_client_report_degrades_sector_allocation_when_one_holding_has_no_se
     assert body["unpriced_tickers"] == []
 
 
+def test_get_client_report_runs_price_history_and_narrative_concurrently(client, monkeypatch, reports_dir):
+    # Perf fix (live QA): both used to run sequentially after each other.
+    # If they're genuinely concurrent, two 0.2s-sleeping fakes together
+    # take ~0.2s, not ~0.4s.
+    import time
+
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return 200.0
+
+    async def slow_history(ticker):
+        await asyncio.sleep(0.2)
+        return []
+
+    async def slow_narrative(report):
+        await asyncio.sleep(0.2)
+        return "narrative"
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+    monkeypatch.setattr(data_router_module, "_price_history", slow_history)
+    monkeypatch.setattr(data_router_module, "_generate_narrative", slow_narrative)
+
+    start = time.monotonic()
+    resp = client.get("/data/clients/1/report")
+    elapsed = time.monotonic() - start
+
+    assert resp.status_code == 200
+    assert elapsed < 0.35
+
+
 def test_get_client_report_with_no_holdings_returns_empty_payload_not_an_error(client, reports_dir):
     resp = client.get("/data/clients/1/report")
     assert resp.status_code == 200

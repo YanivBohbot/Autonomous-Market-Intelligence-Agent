@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -74,7 +75,7 @@ async def get_clients() -> list[dict]:
         conn.close()
 
 
-async def _live_price(ticker: str) -> float:
+async def _fetch_live_price(ticker: str) -> float:
     # Deferred import: avoids connecting to the yfinance MCP server at
     # module import time for every test that imports this router, same
     # convention as client_portfolio_tool / concentration_screen_tool.
@@ -82,6 +83,27 @@ async def _live_price(ticker: str) -> float:
 
     symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"
     return price_from_quote(parse_tool_payload(await yf_quote_tool.ainvoke({symbol_arg: ticker})))
+
+
+# A single yfinance MCP quote call measured ~5-6s locally (yfinance's own
+# Yahoo Finance round trip, not something this app controls), and the
+# /summary and /report endpoints each fetch the same client's tickers
+# independently -- clicking a client then "View full report" moments later
+# re-fetched every price from scratch. This short TTL cache means the
+# second fetch for a ticker already seen recently is instant; it does
+# nothing for the first (cold) fetch of a ticker.
+_price_cache: dict[str, tuple[float, float]] = {}
+_PRICE_CACHE_TTL_S = 30.0
+
+
+async def _live_price(ticker: str) -> float:
+    now = time.monotonic()
+    cached = _price_cache.get(ticker)
+    if cached is not None and now - cached[1] < _PRICE_CACHE_TTL_S:
+        return cached[0]
+    price = await _fetch_live_price(ticker)
+    _price_cache[ticker] = (price, now)
+    return price
 
 
 @router.get("/clients/{client_id}/summary")
@@ -155,6 +177,15 @@ async def get_client_report(client_id: int) -> dict:
     sector_allocation: dict | None = None
     concentration: dict | None = None
     price_history: dict[str, list[dict]] = {}
+    # Narrative generation needs only these fields, all computed before any
+    # yfinance history call -- running it concurrently with the price
+    # history fetch (instead of after) means the endpoint pays for
+    # whichever is slower, not both in sequence.
+    narrative_input = {
+        "name": client["name"], "risk_profile": client["risk_profile"],
+        "totals": None, "positions": [], "sector_allocation": None,
+        "concentration": None, "unpriced_tickers": unpriced_tickers,
+    }
 
     if priced_positions:
         metrics = compute_portfolio_metrics(priced_positions)
@@ -165,13 +196,20 @@ async def get_client_report(client_id: int) -> dict:
             [LabeledPortfolio(label=client["name"], positions=priced_positions)],
             threshold_pct=30.0,
         )
+        narrative_input.update(
+            totals=totals, positions=positions,
+            sector_allocation=sector_allocation, concentration=concentration,
+        )
         top = sorted(positions, key=lambda p: -p["weight_pct"])[:3]
-        history_results = await asyncio.gather(
-            *(_price_history(p["ticker"]) for p in top), return_exceptions=True,
+        history_results, narrative = await asyncio.gather(
+            asyncio.gather(*(_price_history(p["ticker"]) for p in top), return_exceptions=True),
+            _generate_narrative(narrative_input),
         )
         for p, result in zip(top, history_results):
             if not isinstance(result, BaseException) and result:
                 price_history[p["ticker"]] = result
+    else:
+        narrative = await _generate_narrative(narrative_input)
 
     reports_dir = settings.WORKSPACE_ROOT.resolve() / "reports"
     prefix = f"{slugify(client['name'])}-portfolio-brief-"
@@ -188,16 +226,15 @@ async def get_client_report(client_id: int) -> dict:
         for f in files
     ]
 
-    result = {
+    return {
         "client_id": client["client_id"], "name": client["name"], "email": client["email"],
         "segment": client["segment"], "risk_profile": client["risk_profile"],
         "advisor": client["advisor"], "city": client["city"],
         "totals": totals, "positions": positions, "sector_allocation": sector_allocation,
         "concentration": concentration, "price_history": price_history,
         "unpriced_tickers": unpriced_tickers, "generated_reports": generated_reports,
+        "narrative": narrative,
     }
-    result["narrative"] = await _generate_narrative(result)
-    return result
 
 
 @router.post("/clients/{client_id}/report/generate")
