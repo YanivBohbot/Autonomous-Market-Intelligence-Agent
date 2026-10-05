@@ -216,7 +216,7 @@ async def generate_client_report(client_id: int) -> dict:
         raise HTTPException(status_code=502, detail=f"could not price: {', '.join(failed)}")
 
     positions = [
-        Position(ticker=h["ticker"], shares=h["shares"], avg_cost=h["avg_cost"], price=float(r))
+        Position(ticker=h["ticker"], shares=h["shares"], avg_cost=h["avg_cost"], price=float(r), sector=h.get("sector"))
         for h, r in zip(holdings, price_results)
     ]
     portfolio = compute_portfolio_metrics(positions)

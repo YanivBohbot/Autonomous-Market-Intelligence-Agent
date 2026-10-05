@@ -75,13 +75,17 @@ function ReportWorkspaceBody({ clientId }: { clientId: number }) {
               {report.segment} · {report.risk_profile} · {report.advisor}
             </span>
           </div>
-          {report.totals && (
+          {report.totals ? (
             <span className="text-xs text-terminal-accent">
               ${report.totals.market_value.toFixed(2)} ({report.totals.unrealized_pnl_pct.toFixed(1)}%)
               {report.unpriced_tickers.length > 0 && (
                 <span className="ml-1 text-terminal-muted">(excl. {report.unpriced_tickers.join(", ")})</span>
               )}
             </span>
+          ) : report.unpriced_tickers.length > 0 ? (
+            <span className="text-xs text-terminal-danger">Prices unavailable</span>
+          ) : (
+            <span className="text-xs text-terminal-muted">No position.</span>
           )}
         </div>
       </div>
@@ -98,7 +102,7 @@ function ReportWorkspaceBody({ clientId }: { clientId: number }) {
         <PriceChart key={ticker} display={{ type: "price_chart", ticker, points }} />
       ))}
 
-      {report.concentration && (
+      {report.concentration && report.concentration.breaches.length > 0 && (
         <ConcentrationAlert
           display={{ type: "concentration_alert", threshold_pct: report.concentration.threshold_pct, breaches: report.concentration.breaches }}
         />
@@ -106,6 +110,8 @@ function ReportWorkspaceBody({ clientId }: { clientId: number }) {
 
       {report.totals ? (
         <PortfolioTable display={{ type: "portfolio_table", positions: report.positions, totals: report.totals }} />
+      ) : report.unpriced_tickers.length > 0 ? (
+        <div className="text-xs text-terminal-danger">Prices unavailable ({report.unpriced_tickers.join(", ")})</div>
       ) : (
         <div className="text-xs text-terminal-muted">No position.</div>
       )}

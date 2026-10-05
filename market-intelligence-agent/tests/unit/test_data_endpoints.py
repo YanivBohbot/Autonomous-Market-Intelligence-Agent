@@ -1,3 +1,4 @@
+import asyncio
 import io
 import sqlite3
 
@@ -106,6 +107,28 @@ PRICE_HISTORY_TEXT = (
     "|:--------------------------|-------:|-------:|-------:|--------:|------------:|\n"
     "| 2026-09-21 00:00:00-04:00 | 335.28 | 339.64 | 333.05 |  338.98 | 3.49992e+07 |\n"
 )
+
+
+def test_price_history_parses_the_real_mcp_content_block_shape(monkeypatch):
+    # Regression (final review finding 4): every report test replaces
+    # _price_history with a fake, so this function's own body --
+    # _tool_content_text's block-joining, the symbol/ticker arg detection,
+    # and the hand-off to normalize_price_history -- never actually ran.
+    # yfinance_get_price_history's raw output is a markdown table (unlike
+    # the quote tool's JSON), wrapped in local-stdio content blocks.
+    import app.agent.tools.mcp_clients.yfinance_client as yf_client_module
+
+    class FakeHistoryTool:
+        args = {"symbol": {}, "period": {}}
+
+        async def ainvoke(self, call_args):
+            assert call_args == {"symbol": "AAPL", "period": "3mo"}
+            return [{"type": "text", "text": PRICE_HISTORY_TEXT}]
+
+    monkeypatch.setattr(yf_client_module, "yf_history_tool", FakeHistoryTool())
+
+    result = asyncio.run(data_router_module._price_history("AAPL"))
+    assert result == [{"date": "2026-09-21", "close": 338.98}]
 
 
 @pytest.fixture
@@ -244,6 +267,35 @@ def test_generate_client_report_writes_a_file_and_returns_its_name(client, monke
     filename = resp.json()["filename"]
     assert filename.startswith("jane-doe-portfolio-brief-")
     assert (reports_dir / filename).is_file()
+
+
+def test_generate_client_report_passes_sector_so_etfs_are_not_flagged(client, monkeypatch, reports_dir):
+    # Regression (final review finding 1): the Position built here had no
+    # sector, so build_portfolio_report_xlsx's own ETF exclusion
+    # (sector != "ETF") never matched, and a >30% ETF position got written
+    # into the file's "Concentration note" -- disagreeing with the
+    # dashboard's own (sector-aware) ConcentrationAlert for the same client.
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO companies VALUES ('BND', 'Vanguard Bond ETF', 'ETF')")
+    conn.execute("INSERT INTO holdings VALUES (1, 'BND', 100, 70.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return 70.0
+
+    captured = {}
+
+    def fake_build(portfolio, **kwargs):
+        captured["portfolio"] = portfolio
+        return b"PK fake"
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+    monkeypatch.setattr(data_router_module, "build_portfolio_report_xlsx", fake_build)
+
+    resp = client.post("/data/clients/1/report/generate")
+    assert resp.status_code == 200
+    assert captured["portfolio"]["positions"][0]["sector"] == "ETF"
 
 
 def test_generate_client_report_fails_closed_on_an_unpriced_ticker(client, monkeypatch, reports_dir):

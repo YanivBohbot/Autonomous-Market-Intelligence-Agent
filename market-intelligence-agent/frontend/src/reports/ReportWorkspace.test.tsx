@@ -39,6 +39,20 @@ describe("ReportWorkspace", () => {
     expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/reports");
   });
 
+  it("omits the concentration alert when there are zero breaches (not just when null)", async () => {
+    // Regression (final review finding 2): ConcentrationAlert has no empty
+    // state -- rendering it whenever `concentration` is non-null (even with
+    // breaches: []) drew an amber "Concentration > 30%" box for every
+    // normal, well-diversified client.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ...FULL_REPORT, concentration: { threshold_pct: 30, breach_count: 0, breaches: [] } }),
+    }));
+    renderAt("12");
+    await screen.findByText("Jane Doe");
+    expect(screen.queryByText(/Concentration/)).not.toBeInTheDocument();
+  });
+
   it("omits the sector chart and concentration alert when both are null", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
@@ -50,6 +64,24 @@ describe("ReportWorkspace", () => {
     expect(screen.queryByText(/Concentration/)).not.toBeInTheDocument();
   });
 
+  it("shows 'Prices unavailable' instead of 'No position.' when every ticker failed to price", async () => {
+    // Regression (final review finding 3): ReportWorkspace merged
+    // chantier 2's three header branches (totals / Prices unavailable /
+    // No position.) into two, so a full yfinance outage told the advisor
+    // the client holds nothing instead of flagging the outage.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...FULL_REPORT, totals: null, positions: [], sector_allocation: null,
+        concentration: null, price_history: {}, unpriced_tickers: ["AAPL"],
+      }),
+    }));
+    renderAt("12");
+    await screen.findByText("Jane Doe");
+    expect(screen.getAllByText(/prices unavailable/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/no position/i)).not.toBeInTheDocument();
+  });
+
   it("shows 'No position.' when totals is null", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
@@ -59,24 +91,33 @@ describe("ReportWorkspace", () => {
       }),
     }));
     renderAt("12");
-    expect(await screen.findByText(/no position/i)).toBeInTheDocument();
+    await screen.findByText("Jane Doe");
+    expect(screen.getAllByText(/no position/i).length).toBeGreaterThan(0);
   });
 
   it("clicking Generate report calls generateClientReport and re-fetches on success", async () => {
+    // Regression (final review finding 5): the original version of this
+    // test only checked that a POST happened -- it still passed with
+    // load() removed from onGenerate. This asserts the GET actually ran
+    // again (2 GETs, not 1) and that the newly generated file shows up.
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
-    let generateCalled = false;
+    let getCount = 0;
     vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
       if (init?.method === "POST") {
-        generateCalled = true;
         return Promise.resolve({ ok: true, json: async () => ({ filename: "new-file.xlsx" }) });
       }
-      return Promise.resolve({ ok: true, json: async () => FULL_REPORT });
+      getCount += 1;
+      const generated_reports = getCount >= 2
+        ? [...FULL_REPORT.generated_reports, { filename: "new-file.xlsx", generated_at: "2026-01-02T00:00:00+00:00", download_url: "/workspace/files/new-file.xlsx" }]
+        : FULL_REPORT.generated_reports;
+      return Promise.resolve({ ok: true, json: async () => ({ ...FULL_REPORT, generated_reports }) });
     }));
     renderAt("12");
     await screen.findByText("Jane Doe");
     await user.click(screen.getByRole("button", { name: /generate report/i }));
-    await waitFor(() => expect(generateCalled).toBe(true));
+    expect(await screen.findByText("new-file.xlsx")).toBeInTheDocument();
+    expect(getCount).toBe(2);
   });
 
   it("shows the thrown error message inline when Generate report fails", async () => {
