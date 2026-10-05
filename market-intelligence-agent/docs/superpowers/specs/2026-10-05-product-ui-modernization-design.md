@@ -1,6 +1,6 @@
 # Multi-Agent Finance Desk UI Modernization — Design
 
-**Status:** Design approved by the user on 2026-10-05. Awaiting written-spec review before implementation planning.
+**Status:** Design and written specification approved by the user on 2026-10-05. Implementation planning complete pending execution choice.
 
 ## Goal
 
