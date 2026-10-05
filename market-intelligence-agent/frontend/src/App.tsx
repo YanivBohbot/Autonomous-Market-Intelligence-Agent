@@ -12,6 +12,8 @@ import { DeskView } from "./desk/DeskView";
 import { DataPage } from "./data/DataPage";
 import { ClientsPage } from "./clients/ClientsPage";
 import { ClientWorkspace } from "./clients/ClientWorkspace";
+import { ReportsPage } from "./reports/ReportsPage";
+import { ReportWorkspace } from "./reports/ReportWorkspace";
 
 function ClassicChat({ threadId, onNewSession }: { threadId: string; onNewSession: () => void }) {
   const [input, setInput] = useState("");
@@ -129,15 +131,8 @@ export default function App() {
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/clients/:id" element={<ClientWorkspace />} />
           <Route path="/research" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
-          <Route
-            path="/reports"
-            element={
-              <ComingSoonPage
-                title="Reports"
-                description="Report generation and history for clients (Excel/PDF/Word). Coming in a future chantier."
-              />
-            }
-          />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/reports/:id" element={<ReportWorkspace />} />
           <Route path="/data" element={<DataPage />} />
         </Route>
         <Route path="/classic" element={<ClassicChat key={threadId} threadId={threadId} onNewSession={onNewSession} />} />

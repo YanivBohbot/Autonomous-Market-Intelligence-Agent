@@ -8,6 +8,9 @@ vi.mock("./desk/DeskView", () => ({
 vi.mock("./clients/ClientWorkspace", () => ({
   ClientWorkspace: () => <div data-testid="client-workspace" />,
 }));
+vi.mock("./reports/ReportWorkspace", () => ({
+  ReportWorkspace: () => <div data-testid="report-workspace" />,
+}));
 
 import App from "./App";
 
@@ -48,12 +51,28 @@ describe("App routing", () => {
     expect(screen.queryByRole("link", { name: "Research" })).not.toBeInTheDocument();
   });
 
-  it("the two not-yet-built sections render ComingSoonPage without crashing", () => {
-    for (const path of ["/briefing", "/reports"]) {
-      const { unmount } = renderAt(path);
-      expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
-      unmount();
-    }
+  it("the one not-yet-built section renders ComingSoonPage without crashing", () => {
+    renderAt("/briefing");
+    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+  });
+
+  it("/reports renders the report client list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/data/clients") {
+          return Promise.resolve({ ok: true, json: async () => [] });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ status: "ok", version: "1.2.3" }) });
+      }),
+    );
+    renderAt("/reports");
+    expect(screen.queryByTestId("report-workspace")).not.toBeInTheDocument();
+  });
+
+  it("/reports/:id renders the report workspace", () => {
+    renderAt("/reports/12");
+    expect(screen.getByTestId("report-workspace")).toBeInTheDocument();
   });
 
   it("/clients renders the client list", async () => {
