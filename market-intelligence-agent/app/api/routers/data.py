@@ -6,6 +6,7 @@ not an agent capability -- see docs/superpowers/specs/
 
 import asyncio
 import json
+import math
 import os
 import sqlite3
 import time
@@ -130,6 +131,17 @@ _MARKET_MOVER_TICKERS = {
     "currencies": [symbol for _, symbol in _MARKETS["currencies"][1]],
     "crypto": [symbol for _, symbol in _MARKETS["crypto"][1]],
 }
+_MARKET_TICKER_SPECS = [
+    ("S&P 500", "^GSPC"),
+    ("Nasdaq", "^IXIC"),
+    ("Dow Jones", "^DJI"),
+    ("DAX", "^GDAXI"),
+    ("Nikkei 225", "^N225"),
+    ("Bitcoin", "BTC-USD"),
+    ("EUR/USD", "EURUSD=X"),
+    ("Gold", "GC=F"),
+    ("Crude Oil", "CL=F"),
+]
 
 
 def _change_pct_from_quote(info: dict) -> float:
@@ -534,6 +546,70 @@ async def _cached_briefing_batch(specs: list[tuple[str | None, str]]) -> list[di
             continue
         resolved.append({**quote[0], "name": name or quote[0]["name"], "points": history[0]})
     return resolved
+
+
+_MARKET_TICKER_CACHE_TTL_S = 60.0
+_market_ticker_cache: tuple[list[dict], float] | None = None
+_market_ticker_inflight: asyncio.Task | None = None
+
+
+async def _cached_market_ticker() -> list[dict]:
+    global _market_ticker_cache, _market_ticker_inflight
+
+    now = time.monotonic()
+    if _market_ticker_cache is not None and now - _market_ticker_cache[1] < _MARKET_TICKER_CACHE_TTL_S:
+        return _market_ticker_cache[0]
+
+    task = _market_ticker_inflight
+    if task is None:
+        task = asyncio.create_task(asyncio.to_thread(_download_briefing_batch, _MARKET_TICKER_SPECS))
+        _market_ticker_inflight = task
+
+    try:
+        try:
+            downloaded = await task
+        except Exception:
+            downloaded = []
+
+        configured_names = {symbol: name for name, symbol in _MARKET_TICKER_SPECS}
+        valid_by_symbol: dict[str, dict] = {}
+        if isinstance(downloaded, list):
+            for row in downloaded:
+                if not isinstance(row, dict):
+                    continue
+                symbol = row.get("symbol")
+                price = row.get("price")
+                change_pct = row.get("change_pct")
+                if symbol not in configured_names:
+                    continue
+                if isinstance(price, bool) or not isinstance(price, (int, float)):
+                    continue
+                if isinstance(change_pct, bool) or not isinstance(change_pct, (int, float)):
+                    continue
+                if not math.isfinite(float(price)) or not math.isfinite(float(change_pct)):
+                    continue
+                valid_by_symbol[symbol] = {
+                    "symbol": symbol,
+                    "name": configured_names[symbol],
+                    "price": float(price),
+                    "change_pct": float(change_pct),
+                }
+
+        items = [
+            valid_by_symbol[symbol]
+            for _, symbol in _MARKET_TICKER_SPECS
+            if symbol in valid_by_symbol
+        ]
+        _market_ticker_cache = (items, time.monotonic())
+        return items
+    finally:
+        if _market_ticker_inflight is task:
+            _market_ticker_inflight = None
+
+
+@router.get("/market-ticker")
+async def get_market_ticker() -> dict:
+    return {"items": await _cached_market_ticker()}
 
 
 def _instrument_name(symbol: str) -> str | None:

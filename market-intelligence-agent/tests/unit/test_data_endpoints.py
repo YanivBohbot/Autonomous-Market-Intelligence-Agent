@@ -829,6 +829,126 @@ def _fake_quote(symbol, *, name=None):
     return {"symbol": symbol, "name": name or symbol, "price": 100.0, "change_pct": 1.0}
 
 
+def _reset_market_ticker_cache():
+    data_router_module._market_ticker_cache = None
+    data_router_module._market_ticker_inflight = None
+
+
+def test_market_ticker_returns_the_world_instrument_set_in_configured_order(client, monkeypatch):
+    async def fake_ticker():
+        return [
+            _fake_quote(symbol, name=name)
+            for name, symbol in data_router_module._MARKET_TICKER_SPECS
+        ]
+
+    monkeypatch.setattr(data_router_module, "_cached_market_ticker", fake_ticker)
+    response = client.get("/data/market-ticker")
+
+    assert response.status_code == 200
+    assert [item["symbol"] for item in response.json()["items"]] == [
+        "^GSPC", "^IXIC", "^DJI", "^GDAXI", "^N225",
+        "BTC-USD", "EURUSD=X", "GC=F", "CL=F",
+    ]
+
+
+def test_cached_market_ticker_reuses_one_download_within_60_seconds(monkeypatch):
+    _reset_market_ticker_cache()
+    calls = []
+
+    def fake_download(specs):
+        calls.append(specs)
+        return [
+            {**_fake_quote(symbol, name=name), "points": []}
+            for name, symbol in specs
+        ]
+
+    monkeypatch.setattr(data_router_module, "_download_briefing_batch", fake_download)
+    first = asyncio.run(data_router_module._cached_market_ticker())
+    second = asyncio.run(data_router_module._cached_market_ticker())
+
+    assert calls == [data_router_module._MARKET_TICKER_SPECS]
+    assert first == second
+
+
+def test_cached_market_ticker_coalesces_concurrent_cold_callers(monkeypatch):
+    _reset_market_ticker_cache()
+    calls = 0
+
+    def fake_download(specs):
+        nonlocal calls
+        calls += 1
+        return [{**_fake_quote(symbol, name=name), "points": []} for name, symbol in specs]
+
+    async def call_twice():
+        return await asyncio.gather(
+            data_router_module._cached_market_ticker(),
+            data_router_module._cached_market_ticker(),
+        )
+
+    monkeypatch.setattr(data_router_module, "_download_briefing_batch", fake_download)
+    first, second = asyncio.run(call_twice())
+
+    assert calls == 1
+    assert first == second
+
+
+def test_cached_market_ticker_filters_malformed_rows_strips_chart_fields_and_restores_order(monkeypatch):
+    _reset_market_ticker_cache()
+
+    def fake_download(specs):
+        return [
+            {**_fake_quote("^IXIC", name="wrong provider name"), "points": [1], "volume": 50},
+            {"symbol": "^DJI", "name": "Dow Jones", "price": "bad", "change_pct": 1.0},
+            {**_fake_quote("^GSPC", name="also wrong"), "points": [2], "volume": 80},
+            {"symbol": "^GDAXI", "name": "DAX", "price": float("nan"), "change_pct": 0.1},
+        ]
+
+    monkeypatch.setattr(data_router_module, "_download_briefing_batch", fake_download)
+    result = asyncio.run(data_router_module._cached_market_ticker())
+
+    assert result == [
+        {"symbol": "^GSPC", "name": "S&P 500", "price": 100.0, "change_pct": 1.0},
+        {"symbol": "^IXIC", "name": "Nasdaq", "price": 100.0, "change_pct": 1.0},
+    ]
+
+
+def test_market_ticker_keeps_eight_valid_symbols_when_one_provider_symbol_is_missing(client, monkeypatch):
+    _reset_market_ticker_cache()
+
+    def fake_download(specs):
+        return [
+            {**_fake_quote(symbol, name=name), "points": []}
+            for name, symbol in specs
+            if symbol != "GC=F"
+        ]
+
+    monkeypatch.setattr(data_router_module, "_download_briefing_batch", fake_download)
+    response = client.get("/data/market-ticker")
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 8
+    assert "GC=F" not in {item["symbol"] for item in response.json()["items"]}
+
+
+def test_market_ticker_provider_failure_returns_and_caches_an_empty_feed(client, monkeypatch):
+    _reset_market_ticker_cache()
+    calls = 0
+
+    def failing_download(specs):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("Yahoo unavailable")
+
+    monkeypatch.setattr(data_router_module, "_download_briefing_batch", failing_download)
+    first = client.get("/data/market-ticker")
+    second = client.get("/data/market-ticker")
+
+    assert first.status_code == 200
+    assert first.json() == {"items": []}
+    assert second.json() == {"items": []}
+    assert calls == 1
+
+
 def test_briefing_indices_endpoint_fetches_the_market_as_one_batch(client, monkeypatch):
     calls = []
 
