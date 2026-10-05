@@ -97,6 +97,7 @@ describe("App routing", () => {
     );
     renderAt("/clients");
     expect(screen.queryByTestId("client-workspace")).not.toBeInTheDocument();
+    expect(await screen.findByText("No clients yet")).toBeInTheDocument();
   });
 
   it("/clients/:id renders the client workspace", () => {
