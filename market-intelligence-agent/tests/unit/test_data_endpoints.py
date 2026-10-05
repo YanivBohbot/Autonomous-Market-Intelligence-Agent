@@ -554,3 +554,89 @@ def test_import_pdf_returns_500_when_ingestion_itself_fails(client, monkeypatch)
         files={"file": ("report.pdf", io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")},
     )
     assert resp.status_code == 500
+
+
+def test_quote_snapshot_builds_symbol_name_price_change_pct(monkeypatch):
+    async def fake_tool(args):
+        assert args == {"symbol": "AAPL"}
+        return [{"type": "text", "text": '{"currentPrice": 258.0, "shortName": "Apple Inc.", "regularMarketChangePercent": 0.73}'}]
+
+    class FakeQuoteTool:
+        args = {"symbol": {}}
+        ainvoke = staticmethod(fake_tool)
+
+    import app.agent.tools.mcp_clients.yfinance_client as yf_client_module
+    monkeypatch.setattr(yf_client_module, "yf_quote_tool", FakeQuoteTool())
+
+    result = asyncio.run(data_router_module._quote_snapshot("AAPL"))
+    assert result == {"symbol": "AAPL", "name": "Apple Inc.", "price": 258.0, "change_pct": 0.73}
+
+
+def test_quote_snapshot_uses_the_given_name_override(monkeypatch):
+    async def fake_tool(args):
+        return [{"type": "text", "text": '{"currentPrice": 5800.0, "shortName": "ignored", "regularMarketChangePercent": 0.1}'}]
+
+    class FakeQuoteTool:
+        args = {"symbol": {}}
+        ainvoke = staticmethod(fake_tool)
+
+    import app.agent.tools.mcp_clients.yfinance_client as yf_client_module
+    monkeypatch.setattr(yf_client_module, "yf_quote_tool", FakeQuoteTool())
+
+    result = asyncio.run(data_router_module._quote_snapshot("^GSPC", name="S&P 500"))
+    assert result["name"] == "S&P 500"
+
+
+def test_quote_snapshot_falls_back_to_fulldaychangepercent(monkeypatch):
+    async def fake_tool(args):
+        return [{"type": "text", "text": '{"currentPrice": 100.0, "shortName": "X", "fulldayChangePercent": -1.5}'}]
+
+    class FakeQuoteTool:
+        args = {"symbol": {}}
+        ainvoke = staticmethod(fake_tool)
+
+    import app.agent.tools.mcp_clients.yfinance_client as yf_client_module
+    monkeypatch.setattr(yf_client_module, "yf_quote_tool", FakeQuoteTool())
+
+    result = asyncio.run(data_router_module._quote_snapshot("X"))
+    assert result["change_pct"] == -1.5
+
+
+def test_cached_quote_snapshot_reuses_the_cached_value_within_the_600s_ttl(monkeypatch):
+    data_router_module._quote_cache.clear()
+    calls = []
+
+    async def fake_snapshot(symbol, *, name=None):
+        calls.append(symbol)
+        return {"symbol": symbol, "name": name or symbol, "price": 1.0, "change_pct": 0.0}
+
+    monkeypatch.setattr(data_router_module, "_quote_snapshot", fake_snapshot)
+
+    asyncio.run(data_router_module._cached_quote_snapshot("AAPL"))
+    asyncio.run(data_router_module._cached_quote_snapshot("AAPL"))
+
+    assert calls == ["AAPL"]
+    data_router_module._quote_cache.clear()
+
+
+def test_cached_quote_snapshot_expires_after_its_own_longer_ttl(monkeypatch):
+    # Regression: Briefing's quote cache must use its own 600s constant,
+    # not accidentally share Reports/Clients' 30s _PRICE_CACHE_TTL_S.
+    import time
+
+    data_router_module._quote_cache.clear()
+    calls = []
+
+    async def fake_snapshot(symbol, *, name=None):
+        calls.append(symbol)
+        return {"symbol": symbol, "name": name or symbol, "price": 1.0, "change_pct": 0.0}
+
+    monkeypatch.setattr(data_router_module, "_quote_snapshot", fake_snapshot)
+    monkeypatch.setattr(data_router_module, "_BRIEFING_CACHE_TTL_S", 0.05)
+
+    asyncio.run(data_router_module._cached_quote_snapshot("AAPL"))
+    time.sleep(0.1)
+    asyncio.run(data_router_module._cached_quote_snapshot("AAPL"))
+
+    assert calls == ["AAPL", "AAPL"]
+    data_router_module._quote_cache.clear()

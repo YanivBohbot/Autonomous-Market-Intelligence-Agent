@@ -15,7 +15,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from app.agent.tools.concentration import parse_tool_payload, price_from_quote
+from app.agent.tools.concentration import build_holdings_query, parse_tool_payload, price_from_quote
 from app.agent.tools.finance_calc import (
     LabeledPortfolio,
     Position,
@@ -104,6 +104,53 @@ async def _live_price(ticker: str) -> float:
     price = await _fetch_live_price(ticker)
     _price_cache[ticker] = (price, now)
     return price
+
+
+_INDEX_TICKERS = [("S&P 500", "^GSPC"), ("Dow Jones", "^DJI"), ("Nasdaq", "^IXIC"), ("VIX", "^VIX")]
+_SECTOR_ETFS = [
+    ("Technology", "XLK"), ("Financial Services", "XLF"), ("Healthcare", "XLV"),
+    ("Energy", "XLE"), ("Consumer Cyclical", "XLY"), ("Consumer Defensive", "XLP"),
+    ("Industrials", "XLI"), ("Communication Services", "XLC"),
+]
+_WATCHLIST_TICKERS = ["AAPL", "NVDA", "MSFT", "GOOGL", "AMZN", "META"]
+
+
+def _change_pct_from_quote(info: dict) -> float:
+    for key in ("regularMarketChangePercent", "fulldayChangePercent"):
+        value = info.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    raise ValueError("no change percent in quote")
+
+
+async def _quote_snapshot(symbol: str, *, name: str | None = None) -> dict:
+    from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
+
+    symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"
+    info = parse_tool_payload(await yf_quote_tool.ainvoke({symbol_arg: symbol}))
+    return {
+        "symbol": symbol,
+        "name": name or info.get("shortName") or info.get("longName") or symbol,
+        "price": price_from_quote(info),
+        "change_pct": _change_pct_from_quote(info),
+    }
+
+
+# Briefing is a "daily summary", not a live ticker -- 600s, not the 30s
+# Reports/Clients use. Separate cache from _price_cache: this stores a
+# full snapshot dict (symbol/name/price/change_pct), not a bare float.
+_quote_cache: dict[str, tuple[dict, float]] = {}
+_BRIEFING_CACHE_TTL_S = 600.0
+
+
+async def _cached_quote_snapshot(symbol: str, *, name: str | None = None) -> dict:
+    now = time.monotonic()
+    cached = _quote_cache.get(symbol)
+    if cached is not None and now - cached[1] < _BRIEFING_CACHE_TTL_S:
+        return cached[0]
+    snapshot = await _quote_snapshot(symbol, name=name)
+    _quote_cache[symbol] = (snapshot, now)
+    return snapshot
 
 
 @router.get("/clients/{client_id}/summary")
