@@ -184,53 +184,65 @@ async def _fetch_market_news() -> list[dict]:
         response = await asyncio.to_thread(
             client.search, query="US stock market today", max_results=5, search_depth="advanced",
         )
+        return [
+            {"title": r.get("title", ""), "url": r["url"]}
+            for r in response.get("results", [])
+            if r.get("url")
+        ]
     except Exception:
         return []
-    return [{"title": r.get("title", ""), "url": r["url"]} for r in response.get("results", [])]
 
 
 async def _generate_market_narrative(market: dict) -> str:
     from app.agent.tools.market_narrative import generate_market_narrative
 
-    return await generate_market_narrative(market)
+    try:
+        return await generate_market_narrative(market)
+    except Exception:
+        # An OpenAI timeout/rate-limit/auth error must not throw away the
+        # indices/sectors/watchlist/news/client_alerts this same request
+        # already fetched successfully -- same fallback string the
+        # no-data case already uses.
+        return "Market data unavailable right now."
 
 
 @router.get("/briefing")
 async def get_briefing() -> dict:
-    index_results = await asyncio.gather(
-        *(_cached_quote_snapshot(ticker, name=name) for name, ticker in _INDEX_TICKERS),
+    # All 18 index/sector/watchlist quotes in ONE batch -- not 3 separate
+    # awaited gathers run one after another, which used to pay yfinance's
+    # latency 3 times over on a cold load (measured ~73s against the real
+    # endpoint before this fix).
+    n_idx, n_sec = len(_INDEX_TICKERS), len(_SECTOR_ETFS)
+    quote_specs = (
+        list(_INDEX_TICKERS) + list(_SECTOR_ETFS) + [(None, ticker) for ticker in _WATCHLIST_TICKERS]
+    )
+    quote_results = await asyncio.gather(
+        *(_cached_quote_snapshot(ticker, name=name) for name, ticker in quote_specs),
         return_exceptions=True,
     )
+    index_results = quote_results[:n_idx]
+    sector_results = quote_results[n_idx:n_idx + n_sec]
+    watchlist_results = quote_results[n_idx + n_sec:]
+
     indices = [r for r in index_results if not isinstance(r, BaseException)]
-
-    sector_results = await asyncio.gather(
-        *(_cached_quote_snapshot(ticker, name=name) for name, ticker in _SECTOR_ETFS),
-        return_exceptions=True,
-    )
     sectors = [r for r in sector_results if not isinstance(r, BaseException)]
-
-    watchlist_results = await asyncio.gather(
-        *(_cached_quote_snapshot(ticker) for ticker in _WATCHLIST_TICKERS),
-        return_exceptions=True,
-    )
     watchlist_base = [r for r in watchlist_results if not isinstance(r, BaseException)]
 
     market = {"indices": indices, "sectors": sectors}
 
-    # None of these three depend on each other -- the narrative only needs
-    # indices/sectors, not watchlist history -- so they run concurrently
-    # rather than one after another.
-    history_results, narrative, news = await asyncio.gather(
+    # None of these four depend on each other -- the narrative only needs
+    # indices/sectors, the cabinet scan only needs the DB + live prices --
+    # so they all run concurrently rather than one after another.
+    history_results, narrative, news, client_alerts = await asyncio.gather(
         asyncio.gather(*(_price_history(w["symbol"]) for w in watchlist_base), return_exceptions=True),
         _generate_market_narrative(market),
         _fetch_market_news(),
+        _cabinet_concentration_scan(),
     )
     watchlist = [
         {**w, "points": (h if not isinstance(h, BaseException) and h else [])}
         for w, h in zip(watchlist_base, history_results)
     ]
-
-    client_alerts = await _cabinet_concentration_scan()
 
     return {
         "indices": indices, "sectors": sectors, "watchlist": watchlist,
@@ -251,28 +263,47 @@ async def _cabinet_concentration_scan() -> dict:
     if not rows:
         return unavailable
 
-    tickers = sorted({r[1] for r in rows})
+    tickers = sorted({r[2] for r in rows})
     price_results = await asyncio.gather(*(_live_price(t) for t in tickers), return_exceptions=True)
     prices = {t: p for t, p in zip(tickers, price_results) if not isinstance(p, BaseException)}
 
-    by_client: dict[str, list[Position]] = {}
-    for name, ticker, shares, avg_cost, sector in rows:
+    # Grouped by client_id, not by name -- two different clients sharing
+    # the exact same name must never be merged into one portfolio (that
+    # would hide one client's real concentration inside the other's, or
+    # fabricate a breach neither has alone).
+    by_client: dict[int, tuple[str, list[Position]]] = {}
+    for client_id, name, ticker, shares, avg_cost, sector in rows:
         if ticker not in prices:
             continue
-        by_client.setdefault(name, []).append(Position(
+        by_client.setdefault(client_id, (name, []))[1].append(Position(
             ticker=ticker, shares=shares, avg_cost=avg_cost, price=prices[ticker], sector=sector,
         ))
 
-    portfolios = [LabeledPortfolio(label=name, positions=pos) for name, pos in by_client.items() if pos]
+    name_counts: dict[str, int] = {}
+    for name, positions in by_client.values():
+        if positions:
+            name_counts[name] = name_counts.get(name, 0) + 1
+
+    seen: dict[str, int] = {}
+    portfolios: list[LabeledPortfolio] = []
+    for name, positions in by_client.values():
+        if not positions:
+            continue
+        if name_counts[name] > 1:
+            seen[name] = seen.get(name, 0) + 1
+            label = f"{name} (#{seen[name]})"
+        else:
+            label = name
+        portfolios.append(LabeledPortfolio(label=label, positions=positions))
     if not portfolios:
         return unavailable
 
     try:
         screen = compute_concentration_screen(portfolios, threshold_pct=30.0)
     except ValueError:
-        # Duplicate client name, or another portfolio-shape issue
-        # compute_concentration_screen rejects outright -- degrade rather
-        # than 500 the whole Briefing page over it.
+        # Defensive: compute_concentration_screen rejects a few other
+        # portfolio shapes outright (e.g. the same ticker twice for one
+        # client) -- degrade rather than 500 the whole Briefing page.
         return unavailable
     return {"available": True, "threshold_pct": screen["threshold_pct"], "breaches": screen["breaches"]}
 

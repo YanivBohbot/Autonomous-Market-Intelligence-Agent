@@ -668,6 +668,27 @@ def test_fetch_market_news_returns_title_and_url(monkeypatch):
     ]
 
 
+def test_fetch_market_news_skips_a_result_missing_a_url_instead_of_raising(monkeypatch):
+    # Regression: the list comprehension that built {"title", "url"} sat
+    # OUTSIDE the try block, so a malformed Tavily result (no "url" key)
+    # raised a KeyError that propagated past this function entirely --
+    # which, inside the endpoint's non-return_exceptions gather, would
+    # 500 the whole Briefing page over a single bad news result.
+    class FakeTavilyClient:
+        def __init__(self, api_key):
+            pass
+
+        def search(self, query, max_results, search_depth):
+            return {"results": [
+                {"title": "No URL here"},  # malformed -- missing "url"
+                {"title": "Markets rally", "url": "https://example.com/a"},
+            ]}
+
+    monkeypatch.setattr("tavily.TavilyClient", FakeTavilyClient)
+    result = asyncio.run(data_router_module._fetch_market_news())
+    assert result == [{"title": "Markets rally", "url": "https://example.com/a"}]
+
+
 def test_fetch_market_news_returns_empty_list_when_tavily_raises(monkeypatch):
     class FailingTavilyClient:
         def __init__(self, api_key):
@@ -765,26 +786,41 @@ def test_cabinet_scan_does_not_flag_a_client_whose_only_holding_is_an_etf(client
     assert result["breaches"] == []
 
 
-def test_cabinet_scan_does_not_crash_on_two_clients_sharing_a_name(client, monkeypatch):
-    # compute_concentration_screen raises ValueError on a duplicate label --
-    # a reasonable advisor expects the alerts section to degrade, not 500
-    # the whole Briefing page, over two same-named clients.
+def test_cabinet_scan_screens_two_same_named_clients_separately(client, monkeypatch):
+    # Regression: grouping by name alone used to merge two different
+    # clients named "Jane Doe" into one portfolio, hiding one client's
+    # real concentration (or fabricating a breach neither has alone).
+    # client_id 1 ("Jane Doe", from the fixture) gets 4 equal-weight
+    # holdings -- genuinely diversified, no breach. A second, unrelated
+    # "Jane Doe" (client_id 2) holds 100% NVDA -- a real breach that must
+    # still surface, separately, under its own label.
     conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO companies VALUES ('NVDA', 'NVIDIA', 'Technology')")
+    conn.execute("INSERT INTO companies VALUES ('MSFT', 'Microsoft', 'Technology')")
+    conn.execute("INSERT INTO companies VALUES ('GOOGL', 'Alphabet', 'Technology')")
+    conn.execute("INSERT INTO companies VALUES ('AMZN', 'Amazon', 'Consumer Cyclical')")
     conn.execute(
         "INSERT INTO clients VALUES (2, 'Jane Doe', 'jane2@x.com', 'VIP', 'balanced', 'Sam', 'Paris', '2024-01-01')"
     )
     conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
-    conn.execute("INSERT INTO holdings VALUES (2, 'AAPL', 5, 100.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'MSFT', 5, 400.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'GOOGL', 10, 200.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'AMZN', 10, 200.0)")
+    conn.execute("INSERT INTO holdings VALUES (2, 'NVDA', 100, 30.0)")
     conn.commit()
     conn.close()
 
     async def fake_price(ticker):
-        return 200.0
+        return {"AAPL": 200.0, "MSFT": 400.0, "GOOGL": 200.0, "AMZN": 200.0, "NVDA": 2000.0}[ticker]
 
     monkeypatch.setattr(data_router_module, "_live_price", fake_price)
 
     result = asyncio.run(data_router_module._cabinet_concentration_scan())
-    assert result == {"available": False, "threshold_pct": 30.0, "breaches": []}
+    assert result["available"] is True
+    labels = {b["label"] for b in result["breaches"]}
+    assert len(labels) == 1  # only client_id 2's NVDA breach, not client_id 1's
+    nvda_breach = next(b for b in result["breaches"] if b["ticker"] == "NVDA")
+    assert nvda_breach["weight_pct"] == 100.0
 
 
 def _fake_quote(symbol, *, name=None):
@@ -882,6 +918,103 @@ def test_get_briefing_all_quotes_failing_returns_empty_lists_not_a_500(client, m
     body = resp.json()
     assert body["indices"] == [] and body["sectors"] == [] and body["watchlist"] == []
     assert body["narrative"] == "Market data unavailable right now."
+
+
+def test_generate_market_narrative_wrapper_falls_back_when_the_llm_raises(monkeypatch):
+    # Regression: _generate_market_narrative had no try/except, so an
+    # OpenAI timeout/rate-limit/auth error propagated straight into the
+    # endpoint's non-return_exceptions gather and 500'd the whole
+    # Briefing page -- throwing away indices/watchlist/news/client_alerts
+    # that had already been fetched successfully.
+    async def failing_narrative(market):
+        raise RuntimeError("OpenAI is down")
+
+    import app.agent.tools.market_narrative as market_narrative_module
+    monkeypatch.setattr(market_narrative_module, "generate_market_narrative", failing_narrative)
+
+    result = asyncio.run(data_router_module._generate_market_narrative({"indices": [], "sectors": []}))
+    assert result == "Market data unavailable right now."
+
+
+def test_get_briefing_narrative_failure_does_not_affect_the_rest(client, monkeypatch):
+    # Uses the REAL _generate_market_narrative wrapper (not stubbed) to
+    # prove the try/except inside it actually protects the endpoint,
+    # end to end -- only the underlying LLM call is faked to raise.
+    async def fake_snapshot(symbol, *, name=None):
+        return _fake_quote(symbol, name=name)
+
+    async def failing_generate(market):
+        raise RuntimeError("OpenAI is down")
+
+    import app.agent.tools.market_narrative as market_narrative_module
+    monkeypatch.setattr(market_narrative_module, "generate_market_narrative", failing_generate)
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", fake_snapshot)
+    monkeypatch.setattr(data_router_module, "_price_history", lambda ticker: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_fetch_market_news", lambda: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_cabinet_concentration_scan", lambda: _async_const({"available": False, "threshold_pct": 30.0, "breaches": []}))
+
+    resp = client.get("/data/briefing")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["narrative"] == "Market data unavailable right now."
+    assert len(body["indices"]) == 4  # rest of the page unaffected
+
+
+def test_get_briefing_fetches_all_18_quotes_in_one_parallel_batch(client, monkeypatch):
+    # Regression: indices/sectors/watchlist used to be 3 SEPARATE awaited
+    # gathers run one after another, so a cold load paid yfinance's
+    # latency 3 times over instead of once -- confirmed against the real
+    # endpoint at ~73s for one load. Spec step 3 requires "18 quotes ...
+    # in parallel", i.e. one batch.
+    import time
+
+    async def slow_snapshot(symbol, *, name=None):
+        await asyncio.sleep(0.1)
+        return _fake_quote(symbol, name=name)
+
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", slow_snapshot)
+    monkeypatch.setattr(data_router_module, "_price_history", lambda ticker: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_generate_market_narrative", lambda market: _async_const("n"))
+    monkeypatch.setattr(data_router_module, "_fetch_market_news", lambda: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_cabinet_concentration_scan", lambda: _async_const({"available": False, "threshold_pct": 30.0, "breaches": []}))
+
+    start = time.monotonic()
+    resp = client.get("/data/briefing")
+    elapsed = time.monotonic() - start
+
+    assert resp.status_code == 200
+    assert elapsed < 0.2  # ~0.1s if one batch; ~0.3s+ if 3 sequential rounds
+
+
+def test_get_briefing_runs_cabinet_scan_concurrently_with_history_narrative_and_news(client, monkeypatch):
+    # Regression: _cabinet_concentration_scan used to run AFTER the
+    # history/narrative/news gather completed, even though it depends on
+    # none of them (it only needs the DB + _live_price).
+    import time
+
+    async def fake_snapshot(symbol, *, name=None):
+        return _fake_quote(symbol, name=name)
+
+    async def slow_cabinet_scan():
+        await asyncio.sleep(0.2)
+        return {"available": False, "threshold_pct": 30.0, "breaches": []}
+
+    async def slow_narrative(market):
+        await asyncio.sleep(0.2)
+        return "n"
+
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", fake_snapshot)
+    monkeypatch.setattr(data_router_module, "_price_history", lambda ticker: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_generate_market_narrative", slow_narrative)
+    monkeypatch.setattr(data_router_module, "_fetch_market_news", lambda: _async_const([]))
+    monkeypatch.setattr(data_router_module, "_cabinet_concentration_scan", slow_cabinet_scan)
+
+    start = time.monotonic()
+    resp = client.get("/data/briefing")
+    elapsed = time.monotonic() - start
+
+    assert resp.status_code == 200
+    assert elapsed < 0.35  # ~0.2s if concurrent; ~0.4s+ if cabinet scan runs after
 
 
 def test_get_briefing_news_failure_does_not_affect_the_rest(client, monkeypatch):

@@ -40,7 +40,7 @@ def build_holdings_query(risk_profile: str | None, client_names: list[str] | Non
         likes = " OR ".join("c.name LIKE '%" + n.replace("'", "''") + "%'" for n in client_names)
         where.append(f"({likes})")
     sql = (
-        "SELECT c.name, h.ticker, h.shares, h.avg_cost, co.sector "
+        "SELECT h.client_id, c.name, h.ticker, h.shares, h.avg_cost, co.sector "
         "FROM holdings h JOIN clients c ON c.client_id = h.client_id "
         "JOIN companies co ON co.ticker = h.ticker"
     )
