@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { reduceActivity, type AgUiEvent, type DeskActivity } from "./activity";
+import { groupActivityRuns, humanizeToolName, reduceActivity, type AgUiEvent, type DeskActivity } from "./activity";
 
 function run(events: AgUiEvent[], start = 1000, step = 100): DeskActivity[] {
   return events.reduce<DeskActivity[]>((acc, e, i) => reduceActivity(acc, e, start + i * step), []);
 }
 
 describe("reduceActivity", () => {
-  it("maps each specialist node to its badge", () => {
+  it("maps supervisor and each specialist node to its badge", () => {
     const names: Array<[string, string]> = [
+      ["supervisor", "SUPERVISOR"], ["supervisor_agent", "SUPERVISOR"],
       ["rag_agent", "RAG"], ["finance_agent", "FINANCE"], ["portfolio_agent", "PORTFOLIO"],
       ["browser_agent", "BROWSER"], ["email_agent", "EMAIL"], ["filesystem_agent", "FILES"],
       ["memory_agent", "MEMORY"],
@@ -18,10 +19,9 @@ describe("reduceActivity", () => {
     }
   });
 
-  it("ignores supervisor, middleware and internal steps", () => {
+  it("ignores middleware and internal steps", () => {
     const rows = run([
       { type: "STEP_STARTED", stepName: "record_question" },
-      { type: "STEP_STARTED", stepName: "supervisor" },
       { type: "STEP_STARTED", stepName: "model" },
       { type: "STEP_STARTED", stepName: "tools" },
       { type: "STEP_STARTED", stepName: "SummarizationMiddleware.before_model" },
@@ -99,5 +99,41 @@ describe("reduceActivity", () => {
     const before: DeskActivity[] = [];
     reduceActivity(before, { type: "STEP_STARTED", stepName: "rag_agent" }, 1);
     expect(before).toEqual([]);
+  });
+});
+
+describe("groupActivityRuns", () => {
+  it("starts a new run after done, error, or awaiting and returns newest first", () => {
+    const rows = run([
+      { type: "STEP_STARTED", stepName: "supervisor" },
+      { type: "RUN_FINISHED", usage: { totalTokens: 9 } },
+      { type: "STEP_STARTED", stepName: "rag_agent" },
+      { type: "RUN_ERROR", message: "source failed" },
+      { type: "STEP_STARTED", stepName: "finance_agent" },
+      { type: "RUN_FINISHED", outcome: { type: "interrupt" } },
+      { type: "STEP_STARTED", stepName: "browser_agent" },
+    ]);
+
+    const groups = groupActivityRuns(rows);
+
+    expect(groups).toHaveLength(4);
+    expect(groups.map((group) => group.status)).toEqual(["running", "awaiting", "error", "done"]);
+    expect(groups.map((group) => group.items[0]?.kind)).toEqual(["specialist", "specialist", "specialist", "specialist"]);
+    expect(groups[0].startedAt).toBeGreaterThan(groups[1].startedAt);
+  });
+
+  it("uses the terminal item as the run status", () => {
+    expect(groupActivityRuns(run([{ type: "RUN_FINISHED", outcome: { type: "interrupt" } }]))[0].status).toBe("awaiting");
+    expect(groupActivityRuns(run([{ type: "RUN_FINISHED" }]))[0].status).toBe("done");
+    expect(groupActivityRuns(run([{ type: "RUN_ERROR" }]))[0].status).toBe("error");
+    expect(groupActivityRuns(run([{ type: "STEP_STARTED", stepName: "rag_agent" }]))[0].status).toBe("running");
+  });
+});
+
+describe("humanizeToolName", () => {
+  it("removes provider prefixes and turns machine names into readable labels", () => {
+    expect(humanizeToolName("yfinance_ticker_info")).toBe("Ticker info");
+    expect(humanizeToolName("portfolio_metrics")).toBe("Portfolio metrics");
+    expect(humanizeToolName("sendEmail")).toBe("Send email");
   });
 });

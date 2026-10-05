@@ -1,59 +1,142 @@
 import { useEffect, useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
+import { Icon } from "../ui/Icon";
 import { MARKET_DESK_AGENT_ID } from "./constants";
-import { reduceActivity, type AgUiEvent, type DeskActivity } from "./activity";
+import {
+  groupActivityRuns,
+  humanizeToolName,
+  reduceActivity,
+  type ActivityRun,
+  type AgUiEvent,
+  type DeskActivity,
+  type SpecialistLabel,
+} from "./activity";
 
-const LABEL_COLOR: Record<string, string> = {
-  RAG: "text-sky-400",
-  FINANCE: "text-amber-400",
-  PORTFOLIO: "text-terminal-accent",
-  BROWSER: "text-violet-400",
-  EMAIL: "text-pink-400",
-  FILES: "text-teal-400",
-  MEMORY: "text-indigo-400",
+const SPECIALIST_NAME: Record<SpecialistLabel, string> = {
+  SUPERVISOR: "Supervisor",
+  RAG: "RAG",
+  FINANCE: "Finance",
+  PORTFOLIO: "Portfolio",
+  BROWSER: "Browser",
+  EMAIL: "Email",
+  FILES: "Files",
+  MEMORY: "Memory",
 };
 
-function time(ts: number) {
-  return new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+const SPECIALIST_TONE: Record<SpecialistLabel, string> = {
+  SUPERVISOR: "border-blue-500 bg-blue-500",
+  RAG: "border-sky-500 bg-sky-500",
+  FINANCE: "border-amber-500 bg-amber-500",
+  PORTFOLIO: "border-emerald-500 bg-emerald-500",
+  BROWSER: "border-violet-500 bg-violet-500",
+  EMAIL: "border-pink-500 bg-pink-500",
+  FILES: "border-teal-500 bg-teal-500",
+  MEMORY: "border-indigo-500 bg-indigo-500",
+};
+
+const RUN_STATUS: Record<ActivityRun["status"], { label: string; className: string }> = {
+  running: { label: "Running", className: "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300" },
+  awaiting: { label: "Waiting", className: "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" },
+  done: { label: "Complete", className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" },
+  error: { label: "Failed", className: "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300" },
+};
+
+function formatTime(timestamp: number) {
+  return new Date(timestamp).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
-function Row({ item }: { item: DeskActivity }) {
-  let body;
+function formatDuration(durationMs: number) {
+  return durationMs < 1_000 ? `${durationMs} ms` : `${(durationMs / 1_000).toFixed(1)} s`;
+}
+
+function TimelineItem({ item }: { item: DeskActivity }) {
+  let nodeClass = "border-terminal-border bg-surface-elevated";
+  let content;
+
   switch (item.kind) {
     case "specialist":
-      body = (
-        <span className={`rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wider ${LABEL_COLOR[item.label]}`}>
-          {item.label}
-        </span>
+      nodeClass = SPECIALIST_TONE[item.label];
+      content = (
+        <div>
+          <p className="text-sm font-semibold text-terminal-text">{SPECIALIST_NAME[item.label]}</p>
+          <p className="text-[11px] text-terminal-muted">Agent step started</p>
+        </div>
       );
       break;
     case "tool":
-      body = (
-        <span className="rounded border border-terminal-border bg-terminal-bg px-1 py-0.5 font-mono text-[9px] text-terminal-muted">
-          {item.name.replace(/^yfinance_/, "yf:")}
-          {item.status === "running" ? " …" : item.durationMs !== undefined ? ` · ${item.durationMs} ms` : ""}
-        </span>
+      nodeClass = item.status === "running" ? "border-blue-500 bg-blue-500" : "border-emerald-500 bg-emerald-500";
+      content = (
+        <div>
+          <p className="text-sm font-medium text-terminal-text">{humanizeToolName(item.name)}</p>
+          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-terminal-muted">
+            <span>{item.status === "running" ? "Running tool" : "Tool completed"}</span>
+            {item.durationMs !== undefined && <span className="font-mono tabular-nums">{formatDuration(item.durationMs)}</span>}
+          </div>
+        </div>
       );
       break;
     case "awaiting":
-      body = <span className="font-mono text-[10px] text-terminal-warn">awaiting approval</span>;
+      nodeClass = "border-amber-500 bg-amber-500";
+      content = (
+        <div>
+          <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Awaiting approval</p>
+          <p className="text-[11px] text-terminal-muted">Human decision required</p>
+        </div>
+      );
       break;
     case "done":
-      body = (
-        <span className="font-mono text-[10px] text-terminal-accent">
-          done{item.totalTokens !== null ? ` · ${item.totalTokens} tokens` : ""}
-        </span>
+      nodeClass = "border-emerald-500 bg-emerald-500";
+      content = (
+        <div>
+          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Completed</p>
+          {item.totalTokens !== null && <p className="font-mono text-[11px] tabular-nums text-terminal-muted">{item.totalTokens.toLocaleString("en-US")} tokens</p>}
+        </div>
       );
       break;
     case "error":
-      body = <span className="font-mono text-[10px] text-terminal-danger">error · {item.message}</span>;
+      nodeClass = "border-red-500 bg-red-500";
+      content = (
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-red-700 dark:text-red-300">Run failed</p>
+          <p className="break-words text-[11px] leading-relaxed text-terminal-muted">{item.message}</p>
+        </div>
+      );
       break;
   }
+
   return (
-    <div className="animate-slide-in-right mb-2.5 flex items-center justify-between gap-2 border-l-2 border-terminal-border/50 pl-2.5">
-      {body}
-      <span className="font-mono text-[9px] tabular-nums text-terminal-muted">{time(item.ts)}</span>
-    </div>
+    <li className="relative pb-4 pl-5 last:pb-0">
+      <span className={`absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-surface-elevated ${nodeClass}`} aria-hidden="true" />
+      <div className="flex items-start justify-between gap-3">
+        {content}
+        <time className="shrink-0 pt-0.5 font-mono text-[9px] tabular-nums text-terminal-muted">{formatTime(item.ts)}</time>
+      </div>
+    </li>
+  );
+}
+
+function RunCard({ run, index, count }: { run: ActivityRun; index: number; count: number }) {
+  const current = index === 0 && (run.status === "running" || run.status === "awaiting");
+  const status = RUN_STATUS[run.status];
+
+  return (
+    <article data-testid="activity-run" className="rounded-2xl border border-terminal-border bg-surface-elevated p-4 shadow-sm">
+      <header className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold text-terminal-text">{current ? "Current run" : `Run ${count - index}`}</p>
+          <time className="font-mono text-[10px] tabular-nums text-terminal-muted">Started {formatTime(run.startedAt)}</time>
+        </div>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${status.className}`}>{status.label}</span>
+      </header>
+      <ol className="ml-1 border-l border-terminal-border" aria-label={`${current ? "Current" : "Previous"} run timeline`}>
+        {run.items.map((item) => <TimelineItem key={item.id} item={item} />)}
+      </ol>
+    </article>
   );
 }
 
@@ -63,34 +146,46 @@ function Row({ item }: { item: DeskActivity }) {
 export function DeskActivityRail() {
   const { agent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
   const [items, setItems] = useState<DeskActivity[]>([]);
+  const runs = groupActivityRuns(items);
 
   useEffect(() => {
-    const sub = agent.subscribe({
+    const subscription = agent.subscribe({
       onEvent: ({ event }) => {
-        setItems((prev) => reduceActivity(prev, event as unknown as AgUiEvent, Date.now()));
+        setItems((previous) => reduceActivity(previous, event as unknown as AgUiEvent, Date.now()));
       },
-      // HTTP errors (404 flag off, 503 starting) and dropped streams never
-      // arrive as a RUN_ERROR event.
+      // HTTP errors and dropped streams do not arrive as RUN_ERROR events.
       onRunFailed: ({ error }) => {
         const failure: AgUiEvent = { type: "RUN_ERROR", message: error?.message ?? String(error) };
-        setItems((prev) => reduceActivity(prev, failure, Date.now()));
+        setItems((previous) => reduceActivity(previous, failure, Date.now()));
       },
     });
-    return () => sub.unsubscribe();
+    return () => subscription.unsubscribe();
   }, [agent]);
 
   return (
-    <aside className="flex h-full w-64 flex-none flex-col border-l border-terminal-border bg-terminal-panel">
-      <div className="flex items-center justify-between border-b border-terminal-border px-3 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-terminal-muted">Agent activity</span>
-      </div>
-      <div className="flex-1 overflow-y-auto p-3">
-        {items.length === 0 ? (
-          <div className="pt-6 text-center font-mono text-[10px] text-terminal-muted">idle</div>
+    <section aria-label="Agent activity timeline" className="flex h-full min-h-0 flex-col bg-surface-soft">
+      <header className="border-b border-terminal-border bg-surface-elevated px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Icon name="activity" className="h-4 w-4 text-brand-blue" />
+          <h2 className="text-sm font-semibold text-terminal-text">Activity timeline</h2>
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-terminal-muted">Supervisor, specialist, and tool progress for this session.</p>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3" aria-live="polite">
+        {runs.length === 0 ? (
+          <div className="flex h-full min-h-48 flex-col items-center justify-center px-3 text-center">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-brand-blue dark:bg-blue-950/50" aria-hidden="true">
+              <Icon name="activity" className="h-5 w-5" />
+            </span>
+            <p className="mt-3 text-sm font-semibold text-terminal-text">System ready</p>
+            <p className="mt-1 text-xs leading-relaxed text-terminal-muted">Activity will appear when a Research or client workspace run begins.</p>
+          </div>
         ) : (
-          items.map((it) => <Row key={it.id} item={it} />)
+          <div className="space-y-3">
+            {runs.map((run, index) => <RunCard key={run.id} run={run} index={index} count={runs.length} />)}
+          </div>
         )}
       </div>
-    </aside>
+    </section>
   );
 }

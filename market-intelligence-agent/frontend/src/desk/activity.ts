@@ -1,6 +1,6 @@
 // Pure AG-UI event → activity-row reducer for the Market Desk rail.
 
-export type SpecialistLabel = "RAG" | "FINANCE" | "PORTFOLIO" | "BROWSER" | "EMAIL" | "FILES" | "MEMORY";
+export type SpecialistLabel = "SUPERVISOR" | "RAG" | "FINANCE" | "PORTFOLIO" | "BROWSER" | "EMAIL" | "FILES" | "MEMORY";
 
 export type DeskActivity =
   | { kind: "specialist"; id: string; ts: number; label: SpecialistLabel }
@@ -14,7 +14,16 @@ export interface AgUiEvent {
   [key: string]: unknown;
 }
 
+export interface ActivityRun {
+  id: string;
+  startedAt: number;
+  items: DeskActivity[];
+  status: "running" | "awaiting" | "done" | "error";
+}
+
 const SPECIALISTS: Record<string, SpecialistLabel> = {
+  supervisor: "SUPERVISOR",
+  supervisor_agent: "SUPERVISOR",
   rag_agent: "RAG",
   finance_agent: "FINANCE",
   portfolio_agent: "PORTFOLIO",
@@ -23,6 +32,47 @@ const SPECIALISTS: Record<string, SpecialistLabel> = {
   filesystem_agent: "FILES",
   memory_agent: "MEMORY",
 };
+
+function terminalStatus(item: DeskActivity): ActivityRun["status"] | null {
+  if (item.kind === "awaiting" || item.kind === "done" || item.kind === "error") return item.kind;
+  return null;
+}
+
+export function groupActivityRuns(items: DeskActivity[]): ActivityRun[] {
+  const runs: ActivityRun[] = [];
+  let current: ActivityRun | null = null;
+
+  for (const item of items) {
+    if (!current) {
+      current = {
+        id: `run-${item.id}`,
+        startedAt: item.ts,
+        items: [],
+        status: "running",
+      };
+      runs.push(current);
+    }
+
+    current.items.push(item);
+    const status = terminalStatus(item);
+    if (status) {
+      current.status = status;
+      current = null;
+    }
+  }
+
+  return runs.reverse();
+}
+
+export function humanizeToolName(name: string): string {
+  const words = name
+    .replace(/^yfinance_/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .toLowerCase();
+  return words ? `${words[0].toUpperCase()}${words.slice(1)}` : "Tool";
+}
 
 function readTotalTokens(usage: unknown): number | null {
   if (!usage || typeof usage !== "object") return null;
