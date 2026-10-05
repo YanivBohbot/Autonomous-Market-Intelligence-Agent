@@ -189,23 +189,35 @@ export interface BriefingQuote {
   name: string;
   price: number;
   change_pct: number;
+  volume?: number;
 }
 
 export interface BriefingWatchlistQuote extends BriefingQuote {
   points: { date: string; close: number }[];
 }
 
+export type BriefingInstrument = BriefingWatchlistQuote;
+
 export interface BriefingNewsItem {
   title: string;
   url: string;
+  summary?: string;
 }
 
 export interface BriefingData {
+  market?: string;
+  market_name?: string;
+  markets?: { id: string; name: string }[];
   indices: BriefingQuote[];
   sectors: BriefingQuote[];
   watchlist: BriefingWatchlistQuote[];
   narrative: string;
   news: BriefingNewsItem[];
+  movers?: {
+    most_active: BriefingQuote[];
+    gainers: BriefingQuote[];
+    losers: BriefingQuote[];
+  };
   client_alerts: {
     available: boolean;
     threshold_pct: number;
@@ -213,8 +225,57 @@ export interface BriefingData {
   };
 }
 
-export async function getBriefing(base = API_BASE): Promise<BriefingData> {
-  const res = await fetch(`${base}/data/briefing`);
+export async function getBriefing(market = "us", detail = true, base = API_BASE): Promise<BriefingData> {
+  const params = new URLSearchParams({ market, detail: String(detail) });
+  const res = await fetch(`${base}/data/briefing?${params}`);
   if (!res.ok) throw new Error(`briefing ${res.status}`);
+  return res.json();
+}
+
+export async function getBriefingInstrument(symbol: string, base = API_BASE): Promise<BriefingInstrument> {
+  const res = await fetch(`${base}/data/briefing/instrument?${new URLSearchParams({ symbol })}`);
+  if (!res.ok) throw new Error(`briefing instrument ${res.status}`);
+  return res.json();
+}
+
+export async function getBriefingIndices(market: string, base = API_BASE): Promise<{ items: BriefingInstrument[] }> {
+  const res = await fetch(`${base}/data/briefing/indices?${new URLSearchParams({ market })}`);
+  if (!res.ok) throw new Error(`briefing indices ${res.status}`);
+  return res.json();
+}
+
+export async function getBriefingSectors(base = API_BASE): Promise<{ items: BriefingInstrument[] }> {
+  const res = await fetch(`${base}/data/briefing/sectors`);
+  if (!res.ok) throw new Error(`briefing sectors ${res.status}`);
+  return res.json();
+}
+
+export async function getBriefingWatchlist(base = API_BASE): Promise<{ items: BriefingInstrument[] }> {
+  const res = await fetch(`${base}/data/briefing/watchlist`);
+  if (!res.ok) throw new Error(`briefing watchlist ${res.status}`);
+  return res.json();
+}
+
+export async function getBriefingNews(market: string, base = API_BASE): Promise<{ items: BriefingNewsItem[] }> {
+  const res = await fetch(`${base}/data/briefing/news?${new URLSearchParams({ market })}`);
+  if (!res.ok) throw new Error(`briefing news ${res.status}`);
+  return res.json();
+}
+
+export async function getBriefingNarrative(market: string, base = API_BASE): Promise<{ text: string }> {
+  const res = await fetch(`${base}/data/briefing/narrative?${new URLSearchParams({ market })}`);
+  if (!res.ok) throw new Error(`briefing narrative ${res.status}`);
+  return res.json();
+}
+
+export async function getBriefingMovers(market: string, base = API_BASE): Promise<NonNullable<BriefingData["movers"]>> {
+  const res = await fetch(`${base}/data/briefing/movers?${new URLSearchParams({ market })}`);
+  if (!res.ok) throw new Error(`briefing movers ${res.status}`);
+  return res.json();
+}
+
+export async function getBriefingClientAlerts(base = API_BASE): Promise<BriefingData["client_alerts"]> {
+  const res = await fetch(`${base}/data/briefing/client-alerts`);
+  if (!res.ok) throw new Error(`briefing client alerts ${res.status}`);
   return res.json();
 }

@@ -654,7 +654,7 @@ def test_fetch_market_news_returns_title_and_url(monkeypatch):
         def search(self, query, max_results, search_depth):
             assert query == "US stock market today"
             assert max_results == 5
-            assert search_depth == "advanced"
+            assert search_depth == "basic"
             return {"results": [
                 {"title": "Markets rally", "url": "https://example.com/a", "content": "ignored"},
                 {"title": "Fed holds rates", "url": "https://example.com/b", "content": "ignored"},
@@ -663,8 +663,8 @@ def test_fetch_market_news_returns_title_and_url(monkeypatch):
     monkeypatch.setattr("tavily.TavilyClient", FakeTavilyClient)
     result = asyncio.run(data_router_module._fetch_market_news())
     assert result == [
-        {"title": "Markets rally", "url": "https://example.com/a"},
-        {"title": "Fed holds rates", "url": "https://example.com/b"},
+        {"title": "Markets rally", "url": "https://example.com/a", "summary": "ignored"},
+        {"title": "Fed holds rates", "url": "https://example.com/b", "summary": "ignored"},
     ]
 
 
@@ -829,6 +829,74 @@ def _fake_quote(symbol, *, name=None):
     return {"symbol": symbol, "name": name or symbol, "price": 100.0, "change_pct": 1.0}
 
 
+def test_briefing_indices_endpoint_fetches_the_market_as_one_batch(client, monkeypatch):
+    calls = []
+
+    async def fake_batch(specs):
+        calls.append(specs)
+        return [{**_fake_quote(symbol, name=name), "points": []} for name, symbol in specs]
+
+    monkeypatch.setattr(data_router_module, "_cached_briefing_batch", fake_batch)
+
+    resp = client.get("/data/briefing/indices?market=asia")
+
+    assert resp.status_code == 200
+    assert calls == [data_router_module._MARKETS["asia"][1]]
+    assert len(resp.json()["items"]) == len(data_router_module._MARKETS["asia"][1])
+
+
+def test_briefing_indices_endpoint_rejects_an_unknown_market(client):
+    resp = client.get("/data/briefing/indices?market=moon")
+    assert resp.status_code == 422
+
+
+def test_cached_briefing_batch_downloads_a_group_once_and_reuses_it(monkeypatch):
+    specs = [("One", "ONE"), ("Two", "TWO")]
+    for cache in (data_router_module._quote_cache, data_router_module._history_cache, data_router_module._price_cache):
+        cache.clear()
+    calls = []
+
+    def fake_download(received):
+        calls.append(received)
+        return [
+            {**_fake_quote(symbol, name=name), "points": [{"date": "2026-10-05", "close": 100.0}]}
+            for name, symbol in received
+        ]
+
+    monkeypatch.setattr(data_router_module, "_download_briefing_batch", fake_download)
+
+    first = asyncio.run(data_router_module._cached_briefing_batch(specs))
+    second = asyncio.run(data_router_module._cached_briefing_batch(specs))
+
+    assert calls == [specs]
+    assert first == second
+    assert [item["symbol"] for item in first] == ["ONE", "TWO"]
+
+
+def test_get_briefing_overview_fetches_only_the_selected_markets_indices(client, monkeypatch):
+    calls = []
+
+    async def fake_snapshot(symbol, *, name=None):
+        calls.append(symbol)
+        return _fake_quote(symbol, name=name)
+
+    monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", fake_snapshot)
+
+    resp = client.get("/data/briefing?market=europe&detail=false")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["market"] == "europe"
+    assert body["market_name"] == "Europe"
+    assert calls == [symbol for _, symbol in data_router_module._MARKETS["europe"][1]]
+    assert body["sectors"] == [] and body["news"] == [] and body["narrative"] == ""
+    assert {item["id"] for item in body["markets"]} == set(data_router_module._MARKETS)
+
+
+def test_get_briefing_rejects_an_unknown_market(client):
+    resp = client.get("/data/briefing?market=moon")
+    assert resp.status_code == 422
+
+
 def test_get_briefing_happy_path_returns_all_sections(client, monkeypatch):
     async def fake_snapshot(symbol, *, name=None):
         return _fake_quote(symbol, name=name)
@@ -854,7 +922,7 @@ def test_get_briefing_happy_path_returns_all_sections(client, monkeypatch):
     resp = client.get("/data/briefing")
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["indices"]) == 4
+    assert len(body["indices"]) == len(data_router_module._MARKETS["us"][1])
     assert len(body["sectors"]) == 8
     assert len(body["watchlist"]) == 6
     assert all(w["points"] == [{"date": "2026-09-21", "close": 338.98}] for w in body["watchlist"])
@@ -881,7 +949,7 @@ def test_get_briefing_omits_one_failed_index_and_keeps_the_rest(client, monkeypa
     resp = client.get("/data/briefing")
     assert resp.status_code == 200
     symbols = {i["symbol"] for i in resp.json()["indices"]}
-    assert symbols == {"^GSPC", "^DJI", "^IXIC"}
+    assert symbols == {symbol for _, symbol in data_router_module._MARKETS["us"][1]} - {"^VIX"}
 
 
 def test_get_briefing_one_watchlist_history_failure_still_shows_its_quote(client, monkeypatch):
@@ -959,15 +1027,15 @@ def test_get_briefing_narrative_failure_does_not_affect_the_rest(client, monkeyp
     assert resp.status_code == 200
     body = resp.json()
     assert body["narrative"] == "Market data unavailable right now."
-    assert len(body["indices"]) == 4  # rest of the page unaffected
+    assert len(body["indices"]) == len(data_router_module._MARKETS["us"][1])  # rest of the page unaffected
 
 
-def test_get_briefing_fetches_all_18_quotes_in_one_parallel_batch(client, monkeypatch):
+def test_get_briefing_fetches_all_quotes_in_one_parallel_batch(client, monkeypatch):
     # Regression: indices/sectors/watchlist used to be 3 SEPARATE awaited
     # gathers run one after another, so a cold load paid yfinance's
     # latency 3 times over instead of once -- confirmed against the real
-    # endpoint at ~73s for one load. Spec step 3 requires "18 quotes ...
-    # in parallel", i.e. one batch.
+    # endpoint at ~73s for one load. Every configured quote must remain in
+    # one parallel batch even as more regional indices are added.
     import time
 
     async def slow_snapshot(symbol, *, name=None):
@@ -1036,4 +1104,4 @@ def test_get_briefing_news_failure_does_not_affect_the_rest(client, monkeypatch)
     assert resp.status_code == 200
     body = resp.json()
     assert body["news"] == []
-    assert len(body["indices"]) == 4  # rest of the page unaffected
+    assert len(body["indices"]) == len(data_router_module._MARKETS["us"][1])  # rest unaffected

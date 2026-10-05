@@ -90,10 +90,11 @@ async def _fetch_live_price(ticker: str) -> float:
 # /summary and /report endpoints each fetch the same client's tickers
 # independently -- clicking a client then "View full report" moments later
 # re-fetched every price from scratch. This short TTL cache means the
-# second fetch for a ticker already seen recently is instant; it does
-# nothing for the first (cold) fetch of a ticker.
+# second fetch for a ticker already seen recently is instant. Five minutes
+# keeps Briefing -> Client -> Report navigation responsive without pretending
+# that an old quote is real-time market data.
 _price_cache: dict[str, tuple[float, float]] = {}
-_PRICE_CACHE_TTL_S = 30.0
+_PRICE_CACHE_TTL_S = 300.0
 
 
 async def _live_price(ticker: str) -> float:
@@ -106,13 +107,29 @@ async def _live_price(ticker: str) -> float:
     return price
 
 
-_INDEX_TICKERS = [("S&P 500", "^GSPC"), ("Dow Jones", "^DJI"), ("Nasdaq", "^IXIC"), ("VIX", "^VIX")]
+_MARKETS: dict[str, tuple[str, list[tuple[str, str]]]] = {
+    "us": ("United States", [("S&P 500", "^GSPC"), ("Dow Jones", "^DJI"), ("Nasdaq", "^IXIC"), ("Russell 2000", "^RUT"), ("NYSE Composite", "^NYA"), ("S&P MidCap 400", "^MID"), ("VIX", "^VIX")]),
+    "europe": ("Europe", [("DAX", "^GDAXI"), ("FTSE 100", "^FTSE"), ("CAC 40", "^FCHI"), ("Euro Stoxx 50", "^STOXX50E"), ("IBEX 35", "^IBEX"), ("SMI", "^SSMI"), ("AEX", "^AEX")]),
+    "asia": ("Asia", [("Nikkei 225", "^N225"), ("Hang Seng", "^HSI"), ("Shanghai Composite", "000001.SS"), ("KOSPI", "^KS11"), ("Nifty 50", "^NSEI"), ("BSE Sensex", "^BSESN"), ("ASX 200", "^AXJO"), ("Taiwan Weighted", "^TWII")]),
+    "latin-america": ("Latin America", [("Ibovespa", "^BVSP"), ("S&P/BMV IPC", "^MXX"), ("Merval", "^MERV"), ("S&P Latin America 40", "^SPBLPGPT"), ("S&P IPSA", "^IPSA")]),
+    "currencies": ("Currencies", [("EUR / USD", "EURUSD=X"), ("USD / JPY", "JPY=X"), ("GBP / USD", "GBPUSD=X"), ("AUD / USD", "AUDUSD=X"), ("USD / CAD", "CAD=X"), ("USD / CHF", "CHF=X"), ("USD / CNY", "CNY=X")]),
+    "crypto": ("Cryptocurrency", [("Bitcoin", "BTC-USD"), ("Ethereum", "ETH-USD"), ("Solana", "SOL-USD"), ("XRP", "XRP-USD"), ("BNB", "BNB-USD"), ("Dogecoin", "DOGE-USD"), ("Cardano", "ADA-USD")]),
+}
+_INDEX_TICKERS = _MARKETS["us"][1]
 _SECTOR_ETFS = [
     ("Technology", "XLK"), ("Financial Services", "XLF"), ("Healthcare", "XLV"),
     ("Energy", "XLE"), ("Consumer Cyclical", "XLY"), ("Consumer Defensive", "XLP"),
     ("Industrials", "XLI"), ("Communication Services", "XLC"),
 ]
 _WATCHLIST_TICKERS = ["AAPL", "NVDA", "MSFT", "GOOGL", "AMZN", "META"]
+_MARKET_MOVER_TICKERS = {
+    "us": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "WMT", "XOM", "NFLX"],
+    "europe": ["SAP.DE", "ASML.AS", "SIE.DE", "AIR.PA", "MC.PA", "OR.PA", "SHEL.L", "AZN.L", "HSBA.L", "NESN.SW"],
+    "asia": ["7203.T", "6758.T", "9984.T", "0700.HK", "9988.HK", "005930.KS", "000660.KS", "RELIANCE.NS"],
+    "latin-america": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "AMXL.MX", "WALMEX.MX", "MELI"],
+    "currencies": [symbol for _, symbol in _MARKETS["currencies"][1]],
+    "crypto": [symbol for _, symbol in _MARKETS["crypto"][1]],
+}
 
 
 def _change_pct_from_quote(info: dict) -> float:
@@ -128,18 +145,28 @@ async def _quote_snapshot(symbol: str, *, name: str | None = None) -> dict:
 
     symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"
     info = parse_tool_payload(await yf_quote_tool.ainvoke({symbol_arg: symbol}))
-    return {
+    price = price_from_quote(info)
+    snapshot = {
         "symbol": symbol,
         "name": name or info.get("shortName") or info.get("longName") or symbol,
-        "price": price_from_quote(info),
+        "price": price,
         "change_pct": _change_pct_from_quote(info),
     }
+    # Reports and client summaries use the lighter price cache. Reusing the
+    # exact quote fetched here prevents another 5-6s yfinance round trip when
+    # an advisor opens a report directly after the Briefing.
+    _price_cache[symbol] = (price, time.monotonic())
+    volume = info.get("regularMarketVolume") or info.get("volume")
+    if isinstance(volume, (int, float)):
+        snapshot["volume"] = int(volume)
+    return snapshot
 
 
 # Briefing is a "daily summary", not a live ticker -- 600s, not the 30s
 # Reports/Clients use. Separate cache from _price_cache: this stores a
 # full snapshot dict (symbol/name/price/change_pct), not a bare float.
 _quote_cache: dict[str, tuple[dict, float]] = {}
+_quote_inflight: dict[str, asyncio.Task] = {}
 _BRIEFING_CACHE_TTL_S = 600.0
 
 
@@ -148,9 +175,17 @@ async def _cached_quote_snapshot(symbol: str, *, name: str | None = None) -> dic
     cached = _quote_cache.get(symbol)
     if cached is not None and now - cached[1] < _BRIEFING_CACHE_TTL_S:
         return cached[0]
-    snapshot = await _quote_snapshot(symbol, name=name)
-    _quote_cache[symbol] = (snapshot, now)
-    return snapshot
+    task = _quote_inflight.get(symbol)
+    if task is None:
+        task = asyncio.create_task(_quote_snapshot(symbol, name=name))
+        _quote_inflight[symbol] = task
+    try:
+        snapshot = await task
+        _quote_cache[symbol] = (snapshot, time.monotonic())
+        return snapshot
+    finally:
+        if _quote_inflight.get(symbol) is task:
+            _quote_inflight.pop(symbol, None)
 
 
 @router.get("/clients/{client_id}/summary")
@@ -174,7 +209,7 @@ async def _generate_narrative(report: dict) -> str:
     return await generate_portfolio_narrative(report)
 
 
-async def _fetch_market_news() -> list[dict]:
+async def _fetch_market_news(query: str = "US stock market today") -> list[dict]:
     # TavilyClient.search is SYNCHRONOUS -- must run in a thread or it
     # blocks the event loop for every other request this process serves.
     from tavily import TavilyClient
@@ -182,10 +217,13 @@ async def _fetch_market_news() -> list[dict]:
     try:
         client = TavilyClient(api_key=settings.TAVILY_API_KEY)
         response = await asyncio.to_thread(
-            client.search, query="US stock market today", max_results=5, search_depth="advanced",
+            client.search, query=query, max_results=5, search_depth="basic",
         )
         return [
-            {"title": r.get("title", ""), "url": r["url"]}
+            {
+                "title": r.get("title", ""), "url": r["url"],
+                **({"summary": r["content"][:280]} if r.get("content") else {}),
+            }
             for r in response.get("results", [])
             if r.get("url")
         ]
@@ -206,16 +244,49 @@ async def _generate_market_narrative(market: dict) -> str:
         return "Market data unavailable right now."
 
 
+async def _market_movers(market: str = "us") -> dict[str, list[dict]]:
+    results = await asyncio.gather(
+        *(_cached_quote_snapshot(symbol) for symbol in _MARKET_MOVER_TICKERS[market]), return_exceptions=True,
+    )
+    quotes = [quote for quote in results if not isinstance(quote, BaseException)]
+    return {
+        "most_active": sorted(quotes, key=lambda quote: quote.get("volume", 0), reverse=True)[:4],
+        "gainers": sorted(quotes, key=lambda quote: quote["change_pct"], reverse=True)[:4],
+        "losers": sorted(quotes, key=lambda quote: quote["change_pct"])[:4],
+    }
+
+
 @router.get("/briefing")
-async def get_briefing() -> dict:
+async def get_briefing(market: str = "us", detail: bool = True) -> dict:
+    if market not in _MARKETS:
+        raise HTTPException(status_code=422, detail="unknown market")
+    market_id = market
+    market_name, market_indices = _MARKETS[market_id]
+    # The first response intentionally fetches only four index quotes. The
+    # client then requests detail in the background, so the dashboard becomes
+    # useful without waiting for histories, Tavily, OpenAI, and CRM screening.
+    if not detail:
+        results = await asyncio.gather(
+            *(_cached_quote_snapshot(ticker, name=name) for name, ticker in market_indices),
+            return_exceptions=True,
+        )
+        return {
+            "market": market_id, "market_name": market_name,
+            "markets": [{"id": key, "name": value[0]} for key, value in _MARKETS.items()],
+            "indices": [result for result in results if not isinstance(result, BaseException)],
+            "sectors": [], "watchlist": [], "narrative": "", "news": [],
+            "movers": {"most_active": [], "gainers": [], "losers": []},
+            "client_alerts": {"available": False, "threshold_pct": 30.0, "breaches": []},
+        }
     # All 18 index/sector/watchlist quotes in ONE batch -- not 3 separate
     # awaited gathers run one after another, which used to pay yfinance's
     # latency 3 times over on a cold load (measured ~73s against the real
     # endpoint before this fix).
-    n_idx, n_sec = len(_INDEX_TICKERS), len(_SECTOR_ETFS)
+    n_idx, n_sec = len(market_indices), len(_SECTOR_ETFS)
     quote_specs = (
-        list(_INDEX_TICKERS) + list(_SECTOR_ETFS) + [(None, ticker) for ticker in _WATCHLIST_TICKERS]
+        list(market_indices) + list(_SECTOR_ETFS) + [(None, ticker) for ticker in _WATCHLIST_TICKERS]
     )
+    movers_task = asyncio.create_task(_market_movers(market_id))
     quote_results = await asyncio.gather(
         *(_cached_quote_snapshot(ticker, name=name) for name, ticker in quote_specs),
         return_exceptions=True,
@@ -228,16 +299,17 @@ async def get_briefing() -> dict:
     sectors = [r for r in sector_results if not isinstance(r, BaseException)]
     watchlist_base = [r for r in watchlist_results if not isinstance(r, BaseException)]
 
-    market = {"indices": indices, "sectors": sectors}
+    market_payload = {"indices": indices, "sectors": sectors}
 
     # None of these four depend on each other -- the narrative only needs
     # indices/sectors, the cabinet scan only needs the DB + live prices --
     # so they all run concurrently rather than one after another.
-    history_results, narrative, news, client_alerts = await asyncio.gather(
+    history_results, narrative, news, client_alerts, movers = await asyncio.gather(
         asyncio.gather(*(_price_history(w["symbol"]) for w in watchlist_base), return_exceptions=True),
-        _generate_market_narrative(market),
-        _fetch_market_news(),
+        _generate_market_narrative(market_payload),
+        _fetch_market_news() if market_id == "us" else _fetch_market_news(f"{market_name} markets today"),
         _cabinet_concentration_scan(),
+        movers_task,
     )
     watchlist = [
         {**w, "points": (h if not isinstance(h, BaseException) and h else [])}
@@ -245,8 +317,10 @@ async def get_briefing() -> dict:
     ]
 
     return {
+        "market": market_id, "market_name": market_name,
+        "markets": [{"id": key, "name": value[0]} for key, value in _MARKETS.items()],
         "indices": indices, "sectors": sectors, "watchlist": watchlist,
-        "narrative": narrative, "news": news, "client_alerts": client_alerts,
+        "narrative": narrative, "news": news, "movers": movers, "client_alerts": client_alerts,
     }
 
 
@@ -326,6 +400,278 @@ async def _price_history(ticker: str) -> list[dict]:
     text = _tool_content_text(raw)
     displays = normalize_price_history(text, {symbol_arg: ticker})
     return displays[0]["points"] if displays else []
+
+
+_history_cache: dict[str, tuple[list[dict], float]] = {}
+_history_inflight: dict[str, asyncio.Task] = {}
+_briefing_batch_inflight: dict[tuple[str, ...], asyncio.Task] = {}
+
+
+async def _cached_price_history(ticker: str) -> list[dict]:
+    now = time.monotonic()
+    cached = _history_cache.get(ticker)
+    if cached is not None and now - cached[1] < _BRIEFING_CACHE_TTL_S:
+        return cached[0]
+    task = _history_inflight.get(ticker)
+    if task is None:
+        task = asyncio.create_task(_price_history(ticker))
+        _history_inflight[ticker] = task
+    try:
+        points = await task
+        _history_cache[ticker] = (points, time.monotonic())
+        return points
+    finally:
+        if _history_inflight.get(ticker) is task:
+            _history_inflight.pop(ticker, None)
+
+
+def _download_briefing_batch(specs: list[tuple[str | None, str]]) -> list[dict]:
+    """Download quotes and chart history for a group in one yfinance call.
+
+    The generic agent tools intentionally go through MCP, but a dashboard fan-out
+    of dozens of MCP calls starts one stdio process per invocation.  yfinance's
+    native multi-symbol download is a much better fit for this read-only screen.
+    """
+    import yfinance as yf
+
+    symbols = list(dict.fromkeys(symbol for _, symbol in specs))
+    if not symbols:
+        return []
+    frame = yf.download(
+        symbols,
+        period="3mo",
+        interval="1d",
+        group_by="ticker",
+        auto_adjust=True,
+        threads=True,
+        progress=False,
+        timeout=10,
+        multi_level_index=True,
+    )
+    if frame is None or frame.empty:
+        return []
+
+    downloaded: list[dict] = []
+    for name, symbol in specs:
+        try:
+            if getattr(frame.columns, "nlevels", 1) > 1:
+                outer = frame.columns.get_level_values(0)
+                ticker_frame = frame[symbol] if symbol in outer else frame.xs(symbol, axis=1, level=-1)
+            else:
+                ticker_frame = frame
+            closes = ticker_frame["Close"].dropna()
+            if closes.empty:
+                continue
+            price = float(closes.iloc[-1])
+            previous = float(closes.iloc[-2]) if len(closes) > 1 else price
+            change_pct = ((price / previous) - 1.0) * 100.0 if previous else 0.0
+            points = [
+                {"date": index.strftime("%Y-%m-%d"), "close": float(value)}
+                for index, value in closes.items()
+            ]
+            item = {
+                "symbol": symbol,
+                "name": name or symbol,
+                "price": price,
+                "change_pct": change_pct,
+                "points": points,
+            }
+            if "Volume" in ticker_frame:
+                volumes = ticker_frame["Volume"].dropna()
+                if not volumes.empty:
+                    item["volume"] = int(volumes.iloc[-1])
+            downloaded.append(item)
+        except (KeyError, TypeError, ValueError):
+            # Yahoo can return a partial DataFrame when one regional symbol is
+            # unavailable. Keep the other cards usable instead of failing all.
+            continue
+    return downloaded
+
+
+async def _cached_briefing_batch(specs: list[tuple[str | None, str]]) -> list[dict]:
+    now = time.monotonic()
+    missing = []
+    for spec in specs:
+        symbol = spec[1]
+        quote = _quote_cache.get(symbol)
+        history = _history_cache.get(symbol)
+        if (
+            quote is None or now - quote[1] >= _BRIEFING_CACHE_TTL_S
+            or history is None or now - history[1] >= _BRIEFING_CACHE_TTL_S
+        ):
+            missing.append(spec)
+
+    if missing:
+        key = tuple(sorted(symbol for _, symbol in missing))
+        task = _briefing_batch_inflight.get(key)
+        if task is None:
+            task = asyncio.create_task(asyncio.to_thread(_download_briefing_batch, missing))
+            _briefing_batch_inflight[key] = task
+        try:
+            try:
+                downloaded = await task
+            except Exception:
+                downloaded = []
+            cached_at = time.monotonic()
+            for item in downloaded:
+                symbol = item["symbol"]
+                quote = {field: value for field, value in item.items() if field != "points"}
+                _quote_cache[symbol] = (quote, cached_at)
+                _history_cache[symbol] = (item["points"], cached_at)
+                _price_cache[symbol] = (item["price"], cached_at)
+        finally:
+            if _briefing_batch_inflight.get(key) is task:
+                _briefing_batch_inflight.pop(key, None)
+
+    resolved: list[dict] = []
+    now = time.monotonic()
+    for name, symbol in specs:
+        quote = _quote_cache.get(symbol)
+        history = _history_cache.get(symbol)
+        if quote is None or history is None:
+            continue
+        if now - quote[1] >= _BRIEFING_CACHE_TTL_S or now - history[1] >= _BRIEFING_CACHE_TTL_S:
+            continue
+        resolved.append({**quote[0], "name": name or quote[0]["name"], "points": history[0]})
+    return resolved
+
+
+def _instrument_name(symbol: str) -> str | None:
+    specs = [spec for _, entries in _MARKETS.values() for spec in entries] + _SECTOR_ETFS
+    for name, candidate in specs:
+        if candidate == symbol:
+            return name
+    if symbol in _WATCHLIST_TICKERS or any(symbol in values for values in _MARKET_MOVER_TICKERS.values()):
+        return None
+    raise HTTPException(status_code=422, detail="unknown briefing instrument")
+
+
+@router.get("/briefing/instrument")
+async def get_briefing_instrument(symbol: str) -> dict:
+    name = _instrument_name(symbol)
+    quote_result, history_result = await asyncio.gather(
+        _cached_quote_snapshot(symbol, name=name),
+        _cached_price_history(symbol),
+        return_exceptions=True,
+    )
+    if isinstance(quote_result, BaseException):
+        raise HTTPException(status_code=503, detail="market quote unavailable")
+    return {
+        **quote_result,
+        "points": [] if isinstance(history_result, BaseException) else history_result,
+    }
+
+
+@router.get("/briefing/indices")
+async def get_briefing_indices(market: str = "us") -> dict:
+    if market not in _MARKETS:
+        raise HTTPException(status_code=422, detail="unknown market")
+    return {"items": await _cached_briefing_batch(_MARKETS[market][1])}
+
+
+@router.get("/briefing/sectors")
+async def get_briefing_sectors() -> dict:
+    return {"items": await _cached_briefing_batch(_SECTOR_ETFS)}
+
+
+@router.get("/briefing/watchlist")
+async def get_briefing_watchlist() -> dict:
+    specs = [(None, symbol) for symbol in _WATCHLIST_TICKERS]
+    return {"items": await _cached_briefing_batch(specs)}
+
+
+_news_cache: dict[str, tuple[list[dict], float]] = {}
+_news_inflight: dict[str, asyncio.Task] = {}
+_narrative_cache: dict[str, tuple[str, float]] = {}
+_narrative_inflight: dict[str, asyncio.Task] = {}
+_NEWS_CACHE_TTL_S = 300.0
+
+
+async def _cached_market_news(market: str, query: str) -> list[dict]:
+    now = time.monotonic()
+    cached = _news_cache.get(market)
+    if cached is not None and now - cached[1] < _NEWS_CACHE_TTL_S:
+        return cached[0]
+    task = _news_inflight.get(market)
+    if task is None:
+        task = asyncio.create_task(_fetch_market_news(query))
+        _news_inflight[market] = task
+    try:
+        items = await task
+        _news_cache[market] = (items, time.monotonic())
+        return items
+    finally:
+        if _news_inflight.get(market) is task:
+            _news_inflight.pop(market, None)
+
+
+@router.get("/briefing/news")
+async def get_briefing_news(market: str = "us") -> dict:
+    if market not in _MARKETS:
+        raise HTTPException(status_code=422, detail="unknown market")
+    market_name = _MARKETS[market][0]
+    query = "US stock market today" if market == "us" else f"{market_name} markets today"
+    return {"items": await _cached_market_news(market, query)}
+
+
+async def _build_market_narrative(market: str) -> str:
+    indices, sectors = await asyncio.gather(
+        _cached_briefing_batch(_MARKETS[market][1]),
+        _cached_briefing_batch(_SECTOR_ETFS),
+    )
+    without_points = lambda items: [
+        {field: value for field, value in item.items() if field != "points"}
+        for item in items
+    ]
+    return await _generate_market_narrative({
+        "indices": without_points(indices),
+        "sectors": without_points(sectors),
+    })
+
+
+async def _cached_market_narrative(market: str) -> str:
+    now = time.monotonic()
+    cached = _narrative_cache.get(market)
+    if cached is not None and now - cached[1] < _BRIEFING_CACHE_TTL_S:
+        return cached[0]
+    task = _narrative_inflight.get(market)
+    if task is None:
+        task = asyncio.create_task(_build_market_narrative(market))
+        _narrative_inflight[market] = task
+    try:
+        text = await task
+        _narrative_cache[market] = (text, time.monotonic())
+        return text
+    finally:
+        if _narrative_inflight.get(market) is task:
+            _narrative_inflight.pop(market, None)
+
+
+@router.get("/briefing/narrative")
+async def get_briefing_narrative(market: str = "us") -> dict:
+    if market not in _MARKETS:
+        raise HTTPException(status_code=422, detail="unknown market")
+    return {"text": await _cached_market_narrative(market)}
+
+
+@router.get("/briefing/movers")
+async def get_briefing_movers(market: str = "us") -> dict:
+    if market not in _MARKETS:
+        raise HTTPException(status_code=422, detail="unknown market")
+    items = await _cached_briefing_batch([
+        (None, symbol) for symbol in _MARKET_MOVER_TICKERS[market]
+    ])
+    quotes = [{field: value for field, value in item.items() if field != "points"} for item in items]
+    return {
+        "most_active": sorted(quotes, key=lambda quote: quote.get("volume", 0), reverse=True)[:4],
+        "gainers": sorted(quotes, key=lambda quote: quote["change_pct"], reverse=True)[:4],
+        "losers": sorted(quotes, key=lambda quote: quote["change_pct"])[:4],
+    }
+
+
+@router.get("/briefing/client-alerts")
+async def get_briefing_client_alerts() -> dict:
+    return await _cabinet_concentration_scan()
 
 
 @router.get("/clients/{client_id}/report")

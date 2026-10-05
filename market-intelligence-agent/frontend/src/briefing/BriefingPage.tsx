@@ -1,144 +1,40 @@
-import { useEffect, useState } from "react";
-import { ConcentrationAlert } from "../desk/displays/ConcentrationAlert";
-import { getBriefing, type BriefingData, type BriefingQuote } from "../lib/api";
-import { Sparkline } from "./Sparkline";
-
-function changeColor(change_pct: number) {
-  return change_pct >= 0 ? "text-terminal-accent" : "text-terminal-danger";
-}
-
-function QuoteCard({ name, price, change_pct }: BriefingQuote) {
-  return (
-    <div className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
-      <div className="text-xs text-terminal-muted">{name}</div>
-      <div className="font-mono text-sm font-semibold text-terminal-text">{price.toFixed(2)}</div>
-      <div className={`text-xs ${changeColor(change_pct)}`}>
-        {change_pct >= 0 ? "+" : ""}{change_pct.toFixed(2)}%
-      </div>
-    </div>
-  );
-}
+import { useEffect, useMemo, useState } from "react";
+import { ClientAlertsPanel } from "./ClientAlertsPanel";
+import { MarketIndexGrid } from "./MarketIndexGrid";
+import { MarketMovers } from "./MarketMovers";
+import { MarketNews } from "./MarketNews";
+import { MarketSummary } from "./MarketSummary";
+import { MarketTabs } from "./MarketTabs";
+import { MARKETS } from "./markets";
+import { SectorPanel } from "./SectorPanel";
+import { WatchlistGrid } from "./WatchlistGrid";
+import { loadMarketIndices, prefetchMarket } from "./briefingData";
 
 export function BriefingPage() {
-  const [data, setData] = useState<BriefingData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
+  const [marketId, setMarketId] = useState("us");
+  const market = useMemo(() => MARKETS.find((item) => item.id === marketId) ?? MARKETS[0], [marketId]);
   useEffect(() => {
-    getBriefing()
-      .then(setData)
-      .catch(() => setError("Failed to load the briefing."));
+    let active = true;
+    void (async () => {
+      try { await loadMarketIndices("us"); } catch { return; }
+      for (const item of MARKETS) {
+        if (!active || item.id === "us") continue;
+        try { await loadMarketIndices(item.id); } catch { /* a regional feed may be temporarily unavailable */ }
+      }
+    })();
+    return () => { active = false; };
   }, []);
+  return <main className="min-h-0 min-w-0 flex-1 overflow-auto bg-terminal-bg font-sans text-terminal-text">
+    <div className="mx-auto max-w-[1500px] px-4 py-6 md:px-7">
+      <header className="mb-7 rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-6 shadow-sm dark:border-terminal-border dark:from-blue-950/40 dark:via-terminal-panel dark:to-emerald-950/30">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-600">Market intelligence</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Global markets briefing</h1><p className="mt-2 max-w-2xl text-sm text-terminal-muted">Live indices, trend charts, market context and actionable signals — refreshed independently for faster navigation.</p></div><div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />Live data</div></div>
+        <MarketTabs markets={MARKETS} active={marketId} onChange={setMarketId} onPrefetch={prefetchMarket} />
+      </header>
 
-  if (error) {
-    return (
-      <main className="flex min-h-0 flex-1 items-center justify-center font-mono text-sm text-terminal-danger">
-        {error}
-      </main>
-    );
-  }
-  if (!data) {
-    return (
-      <main className="flex min-h-0 flex-1 items-center justify-center font-mono text-sm text-terminal-muted">
-        Loading…
-      </main>
-    );
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 font-mono text-sm text-terminal-text">
-      <section className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-terminal-muted">Indices</h3>
-        {data.indices.length > 0 ? (
-          <div className="grid grid-cols-4 gap-2">
-            {data.indices.map((q) => <QuoteCard key={q.symbol} {...q} />)}
-          </div>
-        ) : (
-          <div className="text-xs text-terminal-muted">Indices unavailable.</div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-terminal-muted">Watchlist</h3>
-        {data.watchlist.length > 0 ? (
-          <div className="grid grid-cols-3 gap-2">
-            {data.watchlist.map((q) => (
-              <div key={q.symbol} className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
-                <div className="text-xs text-terminal-muted">{q.name}</div>
-                <div className="font-mono text-sm font-semibold text-terminal-text">{q.price.toFixed(2)}</div>
-                <div className={`text-xs ${changeColor(q.change_pct)}`}>
-                  {q.change_pct >= 0 ? "+" : ""}{q.change_pct.toFixed(2)}%
-                </div>
-                <Sparkline points={q.points} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-xs text-terminal-muted">Watchlist unavailable.</div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-terminal-muted">Sector performance</h3>
-        {data.sectors.length > 0 ? (
-          <div className="flex flex-col gap-1 rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
-            {data.sectors.map((s) => (
-              <div key={s.symbol} className="flex items-center justify-between">
-                <span>{s.name}</span>
-                <span className={changeColor(s.change_pct)}>
-                  {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-xs text-terminal-muted">Sector data unavailable.</div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-terminal-muted">
-          Résumé du marché macro-économique et micro-économique
-        </h3>
-        <div className="whitespace-pre-line rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3 text-xs leading-relaxed text-terminal-text">
-          {data.narrative}
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-terminal-muted">News</h3>
-        {data.news.length > 0 ? (
-          <ul className="flex flex-col gap-1 text-xs">
-            {data.news.map((n) => (
-              <li key={n.url}>
-                <a href={n.url} target="_blank" rel="noreferrer" className="text-terminal-accent hover:underline">
-                  {n.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="text-xs text-terminal-muted">No news available.</div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-terminal-muted">Client alerts</h3>
-        {data.client_alerts.available ? (
-          data.client_alerts.breaches.length > 0 ? (
-            <ConcentrationAlert
-              display={{
-                type: "concentration_alert",
-                threshold_pct: data.client_alerts.threshold_pct,
-                breaches: data.client_alerts.breaches,
-              }}
-            />
-          ) : (
-            <div className="text-xs text-terminal-muted">No concentration breaches.</div>
-          )
-        ) : (
-          <div className="text-xs text-terminal-muted">Alerts unavailable.</div>
-        )}
-      </section>
+      <div className="space-y-7">
+        <MarketIndexGrid market={market} />
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="space-y-6"><MarketSummary market={marketId} /><MarketNews market={marketId} /><WatchlistGrid /><ClientAlertsPanel /></div><aside className="space-y-6"><SectorPanel /><MarketMovers market={marketId} /></aside></div>
+      </div>
     </div>
-  );
+  </main>;
 }
