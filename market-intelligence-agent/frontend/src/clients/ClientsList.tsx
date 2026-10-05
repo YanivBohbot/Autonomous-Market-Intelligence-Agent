@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getClients, type ClientWithHoldings } from "../lib/api";
 
-export function ClientsList() {
+export function ClientsList({ basePath = "/clients" }: { basePath?: string } = {}) {
   const navigate = useNavigate();
   const [clients, setClients] = useState<ClientWithHoldings[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export function ClientsList() {
         <button
           key={c.client_id}
           type="button"
-          onClick={() => navigate(`/clients/${c.client_id}`)}
+          onClick={() => navigate(`${basePath}/${c.client_id}`)}
           aria-label={c.name}
           className="w-full rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3 text-left transition-colors hover:border-terminal-accent/50"
         >

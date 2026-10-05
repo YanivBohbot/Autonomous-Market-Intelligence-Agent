@@ -62,4 +62,27 @@ describe("ClientsList", () => {
     await user.click(await screen.findByText("Jane Doe"));
     expect(await screen.findByTestId("navigated-to")).toBeInTheDocument();
   });
+
+  it("clicking a client row navigates under a custom basePath when given one", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const { Route, Routes } = await import("react-router-dom");
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{
+        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
+        risk_profile: "balanced", advisor: "Sam", city: "Paris", holdings: [],
+      }],
+    }));
+    render(
+      <MemoryRouter initialEntries={["/reports"]}>
+        <Routes>
+          <Route path="/reports" element={<ClientsList basePath="/reports" />} />
+          <Route path="/reports/:id" element={<div data-testid="navigated-to">arrived</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByText("Jane Doe"));
+    expect(await screen.findByTestId("navigated-to")).toBeInTheDocument();
+  });
 });
