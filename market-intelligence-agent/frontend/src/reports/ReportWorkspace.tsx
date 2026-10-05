@@ -81,7 +81,13 @@ function ReportWorkspaceBody({ clientId }: { clientId: number }) {
     );
   }
 
-  if (!summary) return null;
+  if (!summary) {
+    return (
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center font-mono text-sm text-terminal-muted">
+        Loading…
+      </main>
+    );
+  }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-auto p-4 font-mono text-sm text-terminal-text">

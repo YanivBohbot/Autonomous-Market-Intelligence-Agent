@@ -48,6 +48,23 @@ function fetchRouter(handlers: { summary?: () => Promise<unknown>; report?: () =
 }
 
 describe("ReportWorkspace", () => {
+  it("shows a loading indicator while the summary itself is loading, not a blank page", async () => {
+    // Regression (live QA): the page rendered nothing at all (return null)
+    // while the summary fetch was in flight -- indistinguishable from a
+    // crash or a frozen tab during the several seconds a cold yfinance
+    // quote can take.
+    let resolveSummary: (v: unknown) => void;
+    const summaryPromise = new Promise((resolve) => { resolveSummary = resolve; });
+    vi.stubGlobal("fetch", fetchRouter({ summary: () => summaryPromise as Promise<unknown> }));
+
+    renderAt("12");
+    expect(await screen.findByText(/loading/i)).toBeInTheDocument();
+
+    resolveSummary!({ ok: true, json: async () => SUMMARY });
+    expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
+    expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+  });
+
   it("shows the client summary quickly and a 'View full report' button, without fetching the full report", async () => {
     const fetchMock = fetchRouter({});
     vi.stubGlobal("fetch", fetchMock);
