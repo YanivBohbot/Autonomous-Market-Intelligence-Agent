@@ -183,3 +183,38 @@ export async function confirmImport(
   if (!res.ok) throw new Error(`confirm ${res.status}: ${await res.text()}`);
   return res.json();
 }
+
+export interface BriefingQuote {
+  symbol: string;
+  name: string;
+  price: number;
+  change_pct: number;
+}
+
+export interface BriefingWatchlistQuote extends BriefingQuote {
+  points: { date: string; close: number }[];
+}
+
+export interface BriefingNewsItem {
+  title: string;
+  url: string;
+}
+
+export interface BriefingData {
+  indices: BriefingQuote[];
+  sectors: BriefingQuote[];
+  watchlist: BriefingWatchlistQuote[];
+  narrative: string;
+  news: BriefingNewsItem[];
+  client_alerts: {
+    available: boolean;
+    threshold_pct: number;
+    breaches: { label: string; ticker: string; weight_pct: number; market_value: number }[];
+  };
+}
+
+export async function getBriefing(base = API_BASE): Promise<BriefingData> {
+  const res = await fetch(`${base}/data/briefing`);
+  if (!res.ok) throw new Error(`briefing ${res.status}`);
+  return res.json();
+}
