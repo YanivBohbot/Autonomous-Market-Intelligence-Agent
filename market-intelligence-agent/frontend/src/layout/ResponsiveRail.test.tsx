@@ -24,6 +24,18 @@ describe("ResponsiveRail", () => {
     document.body.style.overflow = "";
   });
 
+  it("keeps a closed rail invisible off-canvas on mobile but visible on desktop", async () => {
+    const user = userEvent.setup();
+    render(<RailHarness />);
+    const rail = screen.getByText("Briefing").closest("aside");
+    expect(rail).toHaveClass("invisible", "xl:visible");
+
+    await user.click(screen.getByRole("button", { name: "Open navigation" }));
+
+    expect(rail).toHaveClass("visible");
+    expect(rail).not.toHaveClass("invisible");
+  });
+
   it("closes on Escape, restores opener focus, and unlocks body scroll", async () => {
     const user = userEvent.setup();
     render(<RailHarness />);

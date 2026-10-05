@@ -105,4 +105,34 @@ describe("IntelligenceSlot", () => {
     render(<HarnessWithAncestorContext />);
     expect(screen.getByTestId("context-value")).toHaveTextContent("from-ancestor");
   });
+
+  it("moves portal content to a replacement target without duplicating it", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+
+    function RetargetingHarness() {
+      const [first, setFirst] = useState<HTMLDivElement | null>(null);
+      const [second, setSecond] = useState<HTMLDivElement | null>(null);
+      const [useSecond, setUseSecond] = useState(false);
+      const [, setOccupied] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setUseSecond(true)}>Move target</button>
+          <IntelligenceSlotProvider container={useSecond ? second : first} onOccupiedChange={setOccupied}>
+            <Pusher text="one portal" />
+          </IntelligenceSlotProvider>
+          <div ref={setFirst} data-testid="first-target" />
+          <div ref={setSecond} data-testid="second-target" />
+        </>
+      );
+    }
+
+    render(<RetargetingHarness />);
+    expect(screen.getByTestId("first-target")).toContainElement(screen.getByTestId("pushed"));
+
+    await user.click(screen.getByRole("button", { name: "Move target" }));
+
+    expect(screen.getByTestId("second-target")).toContainElement(screen.getByTestId("pushed"));
+    expect(screen.getAllByTestId("pushed")).toHaveLength(1);
+  });
 });

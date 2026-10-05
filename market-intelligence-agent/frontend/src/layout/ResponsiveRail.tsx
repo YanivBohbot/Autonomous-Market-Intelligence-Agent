@@ -89,6 +89,7 @@ export function ResponsiveRail({
 
   const edgeClass = side === "left" ? "left-0 border-r" : "right-0 border-l";
   const openClass = open ? "translate-x-0" : side === "left" ? "-translate-x-full" : "translate-x-full";
+  const visibilityClass = open ? "visible" : "invisible xl:visible";
   const overlayId = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-overlay`;
 
   return (
@@ -106,7 +107,7 @@ export function ResponsiveRail({
         role={open ? "dialog" : undefined}
         aria-modal={open ? "true" : undefined}
         aria-labelledby={open ? titleId : undefined}
-        className={`fixed inset-y-0 z-50 flex w-72 flex-col border-terminal-border bg-surface-elevated shadow-2xl transition-transform duration-200 xl:static xl:z-auto xl:translate-x-0 xl:shadow-none ${edgeClass} ${openClass} ${className}`}
+        className={`fixed inset-y-0 z-50 flex w-72 flex-col border-terminal-border bg-surface-elevated shadow-2xl transition-transform duration-200 xl:static xl:z-auto xl:translate-x-0 xl:shadow-none ${edgeClass} ${openClass} ${visibilityClass} ${className}`}
       >
         <div className="flex items-center justify-between border-b border-terminal-border px-4 py-3 xl:hidden">
           <h2 id={titleId} className="text-sm font-semibold text-terminal-text">{title}</h2>

@@ -14,6 +14,13 @@ vi.mock("./reports/ReportWorkspace", () => ({
 vi.mock("./briefing/BriefingPage", () => ({
   BriefingPage: () => <div data-testid="briefing-page" />,
 }));
+vi.mock("./layout/GlobalMarketTicker", () => ({
+  GlobalMarketTicker: () => <div data-testid="global-market-ticker" />,
+}));
+vi.mock("./lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./lib/api")>();
+  return { ...actual, getHealth: vi.fn(() => new Promise(() => undefined)) };
+});
 
 import App from "./App";
 
