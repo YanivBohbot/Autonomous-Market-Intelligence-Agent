@@ -189,6 +189,45 @@ async def _fetch_market_news() -> list[dict]:
     return [{"title": r.get("title", ""), "url": r["url"]} for r in response.get("results", [])]
 
 
+async def _cabinet_concentration_scan() -> dict:
+    unavailable = {"available": False, "threshold_pct": 30.0, "breaches": []}
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            rows = list(conn.execute(build_holdings_query(risk_profile=None, client_names=None)))
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return unavailable
+    if not rows:
+        return unavailable
+
+    tickers = sorted({r[1] for r in rows})
+    price_results = await asyncio.gather(*(_live_price(t) for t in tickers), return_exceptions=True)
+    prices = {t: p for t, p in zip(tickers, price_results) if not isinstance(p, BaseException)}
+
+    by_client: dict[str, list[Position]] = {}
+    for name, ticker, shares, avg_cost, sector in rows:
+        if ticker not in prices:
+            continue
+        by_client.setdefault(name, []).append(Position(
+            ticker=ticker, shares=shares, avg_cost=avg_cost, price=prices[ticker], sector=sector,
+        ))
+
+    portfolios = [LabeledPortfolio(label=name, positions=pos) for name, pos in by_client.items() if pos]
+    if not portfolios:
+        return unavailable
+
+    try:
+        screen = compute_concentration_screen(portfolios, threshold_pct=30.0)
+    except ValueError:
+        # Duplicate client name, or another portfolio-shape issue
+        # compute_concentration_screen rejects outright -- degrade rather
+        # than 500 the whole Briefing page over it.
+        return unavailable
+    return {"available": True, "threshold_pct": screen["threshold_pct"], "breaches": screen["breaches"]}
+
+
 def _tool_content_text(result) -> str:
     # Same content-block-joining step parse_tool_payload does, stopped
     # before its JSON/literal_eval attempt -- yfinance_get_price_history's

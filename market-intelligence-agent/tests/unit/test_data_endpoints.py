@@ -675,3 +675,109 @@ def test_fetch_market_news_returns_empty_list_when_tavily_raises(monkeypatch):
     monkeypatch.setattr("tavily.TavilyClient", FailingTavilyClient)
     result = asyncio.run(data_router_module._fetch_market_news())
     assert result == []
+
+
+def test_cabinet_scan_flags_a_breach_across_two_clients(client, monkeypatch):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO companies VALUES ('NVDA', 'NVIDIA', 'Technology')")
+    conn.execute("INSERT INTO companies VALUES ('MSFT', 'Microsoft', 'Technology')")
+    conn.execute("INSERT INTO companies VALUES ('GOOGL', 'Alphabet', 'Technology')")
+    conn.execute("INSERT INTO companies VALUES ('AMZN', 'Amazon', 'Consumer Cyclical')")
+    conn.execute(
+        "INSERT INTO clients VALUES (2, 'Bob Lee', 'bob@x.com', 'VIP', 'aggressive', 'Sam', 'Paris', '2024-01-01')"
+    )
+    # Jane: four equal-weight holdings (25% each) -- genuinely diversified,
+    # no breach at the 30% threshold.
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'MSFT', 5, 400.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'GOOGL', 10, 200.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'AMZN', 10, 200.0)")
+    conn.execute("INSERT INTO holdings VALUES (2, 'NVDA', 100, 30.0)")  # 100% in one stock
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return {"AAPL": 200.0, "MSFT": 400.0, "GOOGL": 200.0, "AMZN": 200.0, "NVDA": 2000.0}[ticker]
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+
+    result = asyncio.run(data_router_module._cabinet_concentration_scan())
+    assert result["available"] is True
+    assert result["threshold_pct"] == 30.0
+    assert any(b["label"] == "Bob Lee" and b["ticker"] == "NVDA" for b in result["breaches"])
+    assert all(b["label"] != "Jane Doe" for b in result["breaches"])
+
+
+def test_cabinet_scan_excludes_a_holding_whose_price_fetch_fails(client, monkeypatch):
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO companies VALUES ('NVDA', 'NVIDIA', 'Technology')")
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.execute("INSERT INTO holdings VALUES (1, 'NVDA', 5, 30.0)")
+    conn.commit()
+    conn.close()
+
+    async def flaky_price(ticker):
+        if ticker == "NVDA":
+            raise ValueError("yfinance is down")
+        return 200.0
+
+    monkeypatch.setattr(data_router_module, "_live_price", flaky_price)
+
+    result = asyncio.run(data_router_module._cabinet_concentration_scan())
+    assert result["available"] is True  # one bad ticker never flips this to False
+
+
+def test_cabinet_scan_unavailable_when_no_client_has_any_holding(client):
+    result = asyncio.run(data_router_module._cabinet_concentration_scan())
+    assert result == {"available": False, "threshold_pct": 30.0, "breaches": []}
+
+
+def test_cabinet_scan_unavailable_when_the_query_itself_fails(client, monkeypatch):
+    def boom(*args, **kwargs):
+        raise sqlite3.OperationalError("db is locked")
+
+    monkeypatch.setattr(data_router_module.sqlite3, "connect", boom)
+    result = asyncio.run(data_router_module._cabinet_concentration_scan())
+    assert result == {"available": False, "threshold_pct": 30.0, "breaches": []}
+
+
+def test_cabinet_scan_does_not_flag_a_client_whose_only_holding_is_an_etf(client, monkeypatch):
+    # Regression (chantier 3 final review finding 1, reused here): a
+    # 100%-ETF position must not be flagged, same as the single-client
+    # report path already guarantees.
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute("INSERT INTO companies VALUES ('BND', 'Vanguard Bond ETF', 'ETF')")
+    conn.execute("INSERT INTO holdings VALUES (1, 'BND', 100, 70.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return 70.0
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+
+    result = asyncio.run(data_router_module._cabinet_concentration_scan())
+    assert result["available"] is True
+    assert result["breaches"] == []
+
+
+def test_cabinet_scan_does_not_crash_on_two_clients_sharing_a_name(client, monkeypatch):
+    # compute_concentration_screen raises ValueError on a duplicate label --
+    # a reasonable advisor expects the alerts section to degrade, not 500
+    # the whole Briefing page, over two same-named clients.
+    conn = sqlite3.connect(data_router_module.DB_PATH)
+    conn.execute(
+        "INSERT INTO clients VALUES (2, 'Jane Doe', 'jane2@x.com', 'VIP', 'balanced', 'Sam', 'Paris', '2024-01-01')"
+    )
+    conn.execute("INSERT INTO holdings VALUES (1, 'AAPL', 10, 150.0)")
+    conn.execute("INSERT INTO holdings VALUES (2, 'AAPL', 5, 100.0)")
+    conn.commit()
+    conn.close()
+
+    async def fake_price(ticker):
+        return 200.0
+
+    monkeypatch.setattr(data_router_module, "_live_price", fake_price)
+
+    result = asyncio.run(data_router_module._cabinet_concentration_scan())
+    assert result == {"available": False, "threshold_pct": 30.0, "breaches": []}
