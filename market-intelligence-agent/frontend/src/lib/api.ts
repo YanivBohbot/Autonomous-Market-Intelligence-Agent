@@ -70,6 +70,55 @@ export async function getClientSummary(clientId: number, base = API_BASE): Promi
   return res.json();
 }
 
+export interface GeneratedReportFile {
+  filename: string;
+  generated_at: string;
+  download_url: string;
+}
+
+export interface ClientReport {
+  client_id: number;
+  name: string;
+  email: string;
+  segment: string;
+  risk_profile: string;
+  advisor: string;
+  city: string;
+  totals: { market_value: number; cost_basis: number; unrealized_pnl: number; unrealized_pnl_pct: number } | null;
+  positions: {
+    ticker: string; shares: number; price: number; sector: string | null;
+    market_value: number; cost_basis: number; unrealized_pnl: number;
+    unrealized_pnl_pct: number; weight_pct: number;
+  }[];
+  sector_allocation: Record<string, number> | null;
+  concentration: { threshold_pct: number; breach_count: number; breaches: { label: string; ticker: string; weight_pct: number; market_value: number }[] } | null;
+  price_history: Record<string, { date: string; close: number }[]>;
+  unpriced_tickers: string[];
+  generated_reports: GeneratedReportFile[];
+}
+
+export async function getClientReport(clientId: number, base = API_BASE): Promise<ClientReport> {
+  const res = await fetch(`${base}/data/clients/${clientId}/report`);
+  if (!res.ok) throw new Error(`client report ${res.status}`);
+  return res.json();
+}
+
+async function _detailOrStatus(res: Response, fallbackLabel: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.detail === "string") return body.detail;
+  } catch {
+    // body wasn't JSON -- fall through to the generic message
+  }
+  return `${fallbackLabel} ${res.status}`;
+}
+
+export async function generateClientReport(clientId: number, base = API_BASE): Promise<{ filename: string }> {
+  const res = await fetch(`${base}/data/clients/${clientId}/report/generate`, { method: "POST" });
+  if (!res.ok) throw new Error(await _detailOrStatus(res, "generate report"));
+  return res.json();
+}
+
 export interface ThreadMessage {
   id: string;
   role: "user" | "assistant";

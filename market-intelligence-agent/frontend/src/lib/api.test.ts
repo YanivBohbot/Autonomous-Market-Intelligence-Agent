@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { uploadToWorkspace, getClients, getClientSummary, getDocuments, getThreadHistory, importPdf, previewImport, confirmImport } from "./api";
+import { uploadToWorkspace, getClients, getClientSummary, getDocuments, getThreadHistory, importPdf, previewImport, confirmImport, getClientReport, generateClientReport } from "./api";
 
 describe("uploadToWorkspace", () => {
   beforeEach(() => {
@@ -103,5 +103,45 @@ describe("data section API", () => {
       body: JSON.stringify({ type: "holdings", rows }),
     });
     expect(result).toEqual({ written: 1 });
+  });
+});
+
+describe("reports API", () => {
+  it("getClientReport fetches /data/clients/:id/report", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        client_id: 1, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
+        risk_profile: "balanced", advisor: "Sam", city: "Paris",
+        totals: null, positions: [], sector_allocation: null, concentration: null,
+        price_history: {}, unpriced_tickers: [], generated_reports: [],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await getClientReport(1);
+    expect(fetchMock).toHaveBeenCalledWith("/data/clients/1/report");
+    expect(result.name).toBe("Jane Doe");
+  });
+
+  it("generateClientReport posts to /data/clients/:id/report/generate", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ filename: "jane-doe-portfolio-brief-2026-01-01.xlsx" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await generateClientReport(1);
+    expect(fetchMock).toHaveBeenCalledWith("/data/clients/1/report/generate", { method: "POST" });
+    expect(result.filename).toBe("jane-doe-portfolio-brief-2026-01-01.xlsx");
+  });
+
+  it("generateClientReport throws the backend's detail message on failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false, status: 502, json: async () => ({ detail: "could not price: AAPL" }),
+    }));
+    await expect(generateClientReport(1)).rejects.toThrow("could not price: AAPL");
+  });
+
+  it("generateClientReport falls back to a generic message when the body isn't JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false, status: 500, json: async () => { throw new Error("not json"); },
+    }));
+    await expect(generateClientReport(1)).rejects.toThrow("500");
   });
 });
