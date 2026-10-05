@@ -750,6 +750,8 @@ def test_cabinet_scan_excludes_a_holding_whose_price_fetch_fails(client, monkeyp
 
     result = asyncio.run(data_router_module._cabinet_concentration_scan())
     assert result["available"] is True  # one bad ticker never flips this to False
+    assert all(b["ticker"] != "NVDA" for b in result["breaches"])  # excluded, not just ignored
+    assert any(b["ticker"] == "AAPL" and b["weight_pct"] == 100.0 for b in result["breaches"])
 
 
 def test_cabinet_scan_unavailable_when_no_client_has_any_holding(client):
