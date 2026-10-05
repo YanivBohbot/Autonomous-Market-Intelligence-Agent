@@ -11,6 +11,9 @@ vi.mock("./clients/ClientWorkspace", () => ({
 vi.mock("./reports/ReportWorkspace", () => ({
   ReportWorkspace: () => <div data-testid="report-workspace" />,
 }));
+vi.mock("./briefing/BriefingPage", () => ({
+  BriefingPage: () => <div data-testid="briefing-page" />,
+}));
 
 import App from "./App";
 
@@ -51,9 +54,9 @@ describe("App routing", () => {
     expect(screen.queryByRole("link", { name: "Research" })).not.toBeInTheDocument();
   });
 
-  it("the one not-yet-built section renders ComingSoonPage without crashing", () => {
+  it("/briefing renders BriefingPage", () => {
     renderAt("/briefing");
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+    expect(screen.getByTestId("briefing-page")).toBeInTheDocument();
   });
 
   it("/reports renders the report client list", async () => {

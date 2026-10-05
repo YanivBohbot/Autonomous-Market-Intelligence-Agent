@@ -1,7 +1,7 @@
 import { useState, useRef, type FormEvent, type KeyboardEvent } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "./layout/AppLayout";
-import { ComingSoonPage } from "./layout/ComingSoonPage";
+import { BriefingPage } from "./briefing/BriefingPage";
 import { ChatPane } from "./components/ChatPane";
 import { ActivityRail } from "./components/ActivityRail";
 import { ApprovalCard } from "./components/ApprovalCard";
@@ -119,15 +119,7 @@ export default function App() {
       <Routes>
         <Route element={<AppLayout threadId={threadId} onNewSession={onNewSession} />}>
           <Route path="/" element={<Navigate to="/research" replace />} />
-          <Route
-            path="/briefing"
-            element={
-              <ComingSoonPage
-                title="Briefing"
-                description="Automatic daily summary: concentration alerts, notable market moves, agent synthesis. Coming in a future chantier."
-              />
-            }
-          />
+          <Route path="/briefing" element={<BriefingPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/clients/:id" element={<ClientWorkspace />} />
           <Route path="/research" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
