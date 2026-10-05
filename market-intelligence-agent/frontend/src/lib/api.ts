@@ -95,6 +95,7 @@ export interface ClientReport {
   price_history: Record<string, { date: string; close: number }[]>;
   unpriced_tickers: string[];
   generated_reports: GeneratedReportFile[];
+  narrative: string;
 }
 
 export async function getClientReport(clientId: number, base = API_BASE): Promise<ClientReport> {

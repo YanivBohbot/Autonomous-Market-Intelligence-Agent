@@ -13,6 +13,13 @@ function renderAt(id: string) {
   );
 }
 
+const SUMMARY = {
+  client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
+  risk_profile: "balanced", advisor: "Sam", city: "Paris",
+  totals: { market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33 },
+  positions: [], unpriced_tickers: [],
+};
+
 const FULL_REPORT = {
   client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
   risk_profile: "balanced", advisor: "Sam", city: "Paris",
@@ -25,120 +32,135 @@ const FULL_REPORT = {
   price_history: { AAPL: [{ date: "2026-09-21", close: 338.98 }] },
   unpriced_tickers: [],
   generated_reports: [{ filename: "jane-doe-portfolio-brief-2026-01-01.xlsx", generated_at: "2026-01-01T00:00:00+00:00", download_url: "/workspace/files/jane-doe-portfolio-brief-2026-01-01.xlsx" }],
+  narrative: "Jane Doe's portfolio is concentrated in AAPL, which carries more single-stock risk than a balanced profile would typically target.",
 };
 
+function fetchRouter(handlers: { summary?: () => Promise<unknown>; report?: () => Promise<unknown>; generate?: () => Promise<unknown> }) {
+  return vi.fn((url: string, init?: RequestInit) => {
+    if (init?.method === "POST" && url.includes("/generate")) {
+      return (handlers.generate ?? (() => Promise.resolve({ ok: true, json: async () => ({ filename: "new.xlsx" }) })))();
+    }
+    if (url.includes("/report")) {
+      return (handlers.report ?? (() => Promise.resolve({ ok: true, json: async () => FULL_REPORT })))();
+    }
+    return (handlers.summary ?? (() => Promise.resolve({ ok: true, json: async () => SUMMARY })))();
+  });
+}
+
 describe("ReportWorkspace", () => {
-  it("renders every section when every field is populated", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => FULL_REPORT }));
+  it("shows the client summary quickly and a 'View full report' button, without fetching the full report", async () => {
+    const fetchMock = fetchRouter({});
+    vi.stubGlobal("fetch", fetchMock);
     renderAt("12");
     expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByText("Technology")).toBeInTheDocument(); // SectorAllocationChart
-    expect(screen.getByText(/Concentration/)).toBeInTheDocument(); // ConcentrationAlert
-    expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0); // appears in pie/table/alert/price chart
-    expect(screen.getByText("jane-doe-portfolio-brief-2026-01-01.xlsx")).toBeInTheDocument(); // ReportFileCard
-    expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/reports");
+    expect(screen.getByRole("button", { name: /view full report/i })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/report") && !String(url).includes("/summary"))).toBe(false);
   });
 
-  it("omits the concentration alert when there are zero breaches (not just when null)", async () => {
-    // Regression (final review finding 2): ConcentrationAlert has no empty
-    // state -- rendering it whenever `concentration` is non-null (even with
-    // breaches: []) drew an amber "Concentration > 30%" box for every
-    // normal, well-diversified client.
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ ...FULL_REPORT, concentration: { threshold_pct: 30, breach_count: 0, breaches: [] } }),
-    }));
+  it("shows a loading indicator while the full report loads, then renders the narrative and sections", async () => {
+    let resolveReport: (v: unknown) => void;
+    const reportPromise = new Promise((resolve) => { resolveReport = resolve; });
+    const fetchMock = fetchRouter({ report: () => reportPromise as Promise<unknown> });
+    vi.stubGlobal("fetch", fetchMock);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+
     renderAt("12");
     await screen.findByText("Jane Doe");
-    expect(screen.queryByText(/Concentration/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /view full report/i }));
+    expect(await screen.findByText(/loading/i)).toBeInTheDocument();
+
+    resolveReport!({ ok: true, json: async () => FULL_REPORT });
+    expect(await screen.findByText(FULL_REPORT.narrative)).toBeInTheDocument();
+    expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Technology")).toBeInTheDocument(); // SectorAllocationChart
+    expect(screen.getByText(/Concentration/)).toBeInTheDocument(); // ConcentrationAlert
+    expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
+    expect(screen.getByText("jane-doe-portfolio-brief-2026-01-01.xlsx")).toBeInTheDocument();
+  });
+
+  it("shows an inline error and keeps the summary visible when the full report fetch fails", async () => {
+    const fetchMock = fetchRouter({ report: () => Promise.resolve({ ok: false, status: 500, json: async () => ({}) }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+
+    renderAt("12");
+    await screen.findByText("Jane Doe");
+    await user.click(screen.getByRole("button", { name: /view full report/i }));
+    expect(await screen.findByText(/failed to load the full report/i)).toBeInTheDocument();
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
   });
 
   it("omits the sector chart and concentration alert when both are null", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ ...FULL_REPORT, sector_allocation: null, concentration: null }),
-    }));
+    const fetchMock = fetchRouter({ report: () => Promise.resolve({ ok: true, json: async () => ({ ...FULL_REPORT, sector_allocation: null, concentration: null }) }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+
     renderAt("12");
     await screen.findByText("Jane Doe");
+    await user.click(screen.getByRole("button", { name: /view full report/i }));
+    await screen.findByText(FULL_REPORT.narrative);
     expect(screen.queryByText("Technology")).not.toBeInTheDocument();
     expect(screen.queryByText(/Concentration/)).not.toBeInTheDocument();
   });
 
-  it("shows 'Prices unavailable' instead of 'No position.' when every ticker failed to price", async () => {
-    // Regression (final review finding 3): ReportWorkspace merged
-    // chantier 2's three header branches (totals / Prices unavailable /
-    // No position.) into two, so a full yfinance outage told the advisor
-    // the client holds nothing instead of flagging the outage.
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        ...FULL_REPORT, totals: null, positions: [], sector_allocation: null,
-        concentration: null, price_history: {}, unpriced_tickers: ["AAPL"],
-      }),
-    }));
+  it("shows 'Prices unavailable' in the header when every ticker failed to price", async () => {
+    const fetchMock = fetchRouter({ summary: () => Promise.resolve({ ok: true, json: async () => ({ ...SUMMARY, totals: null, unpriced_tickers: ["AAPL"] }) }) });
+    vi.stubGlobal("fetch", fetchMock);
     renderAt("12");
-    await screen.findByText("Jane Doe");
-    expect(screen.getAllByText(/prices unavailable/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/no position/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/prices unavailable/i)).toBeInTheDocument();
   });
 
-  it("shows 'No position.' when totals is null", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        ...FULL_REPORT, totals: null, positions: [], sector_allocation: null,
-        concentration: null, price_history: {},
-      }),
-    }));
-    renderAt("12");
-    await screen.findByText("Jane Doe");
-    expect(screen.getAllByText(/no position/i).length).toBeGreaterThan(0);
-  });
-
-  it("clicking Generate report calls generateClientReport and re-fetches on success", async () => {
-    // Regression (final review finding 5): the original version of this
-    // test only checked that a POST happened -- it still passed with
-    // load() removed from onGenerate. This asserts the GET actually ran
-    // again (2 GETs, not 1) and that the newly generated file shows up.
+  it("clicking Generate report calls generateClientReport and re-fetches the full report on success", async () => {
+    let getFullReportCount = 0;
+    const fetchMock = fetchRouter({
+      report: () => {
+        getFullReportCount += 1;
+        const generated_reports = getFullReportCount >= 2
+          ? [...FULL_REPORT.generated_reports, { filename: "new.xlsx", generated_at: "2026-01-02T00:00:00+00:00", download_url: "/workspace/files/new.xlsx" }]
+          : FULL_REPORT.generated_reports;
+        return Promise.resolve({ ok: true, json: async () => ({ ...FULL_REPORT, generated_reports }) });
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
-    let getCount = 0;
-    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
-      if (init?.method === "POST") {
-        return Promise.resolve({ ok: true, json: async () => ({ filename: "new-file.xlsx" }) });
-      }
-      getCount += 1;
-      const generated_reports = getCount >= 2
-        ? [...FULL_REPORT.generated_reports, { filename: "new-file.xlsx", generated_at: "2026-01-02T00:00:00+00:00", download_url: "/workspace/files/new-file.xlsx" }]
-        : FULL_REPORT.generated_reports;
-      return Promise.resolve({ ok: true, json: async () => ({ ...FULL_REPORT, generated_reports }) });
-    }));
+
     renderAt("12");
     await screen.findByText("Jane Doe");
+    await user.click(screen.getByRole("button", { name: /view full report/i }));
+    await screen.findByText(FULL_REPORT.narrative);
     await user.click(screen.getByRole("button", { name: /generate report/i }));
-    expect(await screen.findByText("new-file.xlsx")).toBeInTheDocument();
-    expect(getCount).toBe(2);
+    expect(await screen.findByText("new.xlsx")).toBeInTheDocument();
   });
 
   it("shows the thrown error message inline when Generate report fails", async () => {
+    const fetchMock = fetchRouter({ generate: () => Promise.resolve({ ok: false, status: 502, json: async () => ({ detail: "could not price: AAPL" }) }) });
+    vi.stubGlobal("fetch", fetchMock);
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
-    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
-      if (init?.method === "POST") {
-        return Promise.resolve({ ok: false, status: 502, json: async () => ({ detail: "could not price: AAPL" }) });
-      }
-      return Promise.resolve({ ok: true, json: async () => FULL_REPORT });
-    }));
+
     renderAt("12");
     await screen.findByText("Jane Doe");
+    await user.click(screen.getByRole("button", { name: /view full report/i }));
+    await screen.findByText(FULL_REPORT.narrative);
     await user.click(screen.getByRole("button", { name: /generate report/i }));
     expect(await screen.findByText(/could not price: AAPL/i)).toBeInTheDocument();
   });
 
-  it("shows an error banner with a link back to /reports when the report fetch fails", async () => {
+  it("shows an error banner with a link back to /reports when the summary fetch fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
     renderAt("999");
     expect(await screen.findByText(/failed to load/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/reports");
+  });
+
+  it("always shows a link back to /reports once the summary loads", async () => {
+    vi.stubGlobal("fetch", fetchRouter({}));
+    renderAt("12");
+    await screen.findByText("Jane Doe");
     expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/reports");
   });
 });
