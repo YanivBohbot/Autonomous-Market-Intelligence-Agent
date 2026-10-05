@@ -24,6 +24,13 @@ export default {
           user: "rgb(var(--terminal-user) / <alpha-value>)",
           "user-border": "rgb(var(--terminal-user-border) / <alpha-value>)",
         },
+        brand: {
+          blue: "rgb(var(--brand-blue) / <alpha-value>)",
+        },
+        surface: {
+          elevated: "rgb(var(--surface-elevated) / <alpha-value>)",
+          soft: "rgb(var(--surface-soft) / <alpha-value>)",
+        },
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],

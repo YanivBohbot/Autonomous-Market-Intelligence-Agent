@@ -17,6 +17,9 @@
   --terminal-danger-dim: 254 226 226; /* red-100 */
   --terminal-user: 239 246 255; /* blue-50 */
   --terminal-user-border: 37 99 235; /* blue-600 */
+  --brand-blue: 37 99 235;
+  --surface-elevated: 255 255 255;
+  --surface-soft: 241 245 249;
   --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 1px rgb(0 0 0 / 0.06);
   --scrollbar-thumb: 203 213 225;
   --scrollbar-thumb-hover: 148 163 184;
@@ -70,6 +73,9 @@ main [contenteditable="true"]:focus {
   --terminal-danger-dim: 107 26 26;
   --terminal-user: 30 58 95;
   --terminal-user-border: 37 99 235;
+  --brand-blue: 96 165 250;
+  --surface-elevated: 17 24 39;
+  --surface-soft: 15 23 42;
   --card-shadow: none;
   --scrollbar-thumb: 28 39 51;
   --scrollbar-thumb-hover: 45 63 82;
@@ -98,19 +104,6 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover { background: rgb(var(--scrollbar-thumb-hover)); }
 
-/* Scan-line overlay on the header bar -- a CRT texture that only fits the
-   dark terminal aesthetic; a no-op background in light mode. */
-.scan-lines { background-image: none; }
-[data-theme="dark"] .scan-lines {
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0,0,0,0.06) 2px,
-    rgba(0,0,0,0.06) 4px
-  );
-}
-
 /* Streaming caret */
 .streaming-caret::after {
   content: "▌";
@@ -135,4 +128,13 @@ body {
 .chat-prose ol { @apply ml-4 list-decimal; }
 .chat-prose h1, .chat-prose h2, .chat-prose h3 {
   @apply font-semibold text-terminal-text mt-3 mb-1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
