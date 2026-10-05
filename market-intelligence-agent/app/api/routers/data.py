@@ -174,6 +174,21 @@ async def _generate_narrative(report: dict) -> str:
     return await generate_portfolio_narrative(report)
 
 
+async def _fetch_market_news() -> list[dict]:
+    # TavilyClient.search is SYNCHRONOUS -- must run in a thread or it
+    # blocks the event loop for every other request this process serves.
+    from tavily import TavilyClient
+
+    try:
+        client = TavilyClient(api_key=settings.TAVILY_API_KEY)
+        response = await asyncio.to_thread(
+            client.search, query="US stock market today", max_results=5, search_depth="advanced",
+        )
+    except Exception:
+        return []
+    return [{"title": r.get("title", ""), "url": r["url"]} for r in response.get("results", [])]
+
+
 def _tool_content_text(result) -> str:
     # Same content-block-joining step parse_tool_payload does, stopped
     # before its JSON/literal_eval attempt -- yfinance_get_price_history's

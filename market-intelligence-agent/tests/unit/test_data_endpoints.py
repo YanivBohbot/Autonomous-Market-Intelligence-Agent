@@ -640,3 +640,38 @@ def test_cached_quote_snapshot_expires_after_its_own_longer_ttl(monkeypatch):
 
     assert calls == ["AAPL", "AAPL"]
     data_router_module._quote_cache.clear()
+
+
+def test_fetch_market_news_returns_title_and_url(monkeypatch):
+    class FakeTavilyClient:
+        def __init__(self, api_key):
+            pass
+
+        def search(self, query, max_results, search_depth):
+            assert query == "US stock market today"
+            assert max_results == 5
+            assert search_depth == "advanced"
+            return {"results": [
+                {"title": "Markets rally", "url": "https://example.com/a", "content": "ignored"},
+                {"title": "Fed holds rates", "url": "https://example.com/b", "content": "ignored"},
+            ]}
+
+    monkeypatch.setattr("tavily.TavilyClient", FakeTavilyClient)
+    result = asyncio.run(data_router_module._fetch_market_news())
+    assert result == [
+        {"title": "Markets rally", "url": "https://example.com/a"},
+        {"title": "Fed holds rates", "url": "https://example.com/b"},
+    ]
+
+
+def test_fetch_market_news_returns_empty_list_when_tavily_raises(monkeypatch):
+    class FailingTavilyClient:
+        def __init__(self, api_key):
+            pass
+
+        def search(self, query, max_results, search_depth):
+            raise RuntimeError("Tavily is down")
+
+    monkeypatch.setattr("tavily.TavilyClient", FailingTavilyClient)
+    result = asyncio.run(data_router_module._fetch_market_news())
+    assert result == []
