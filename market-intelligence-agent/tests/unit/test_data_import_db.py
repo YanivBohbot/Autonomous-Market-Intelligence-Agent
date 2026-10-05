@@ -132,9 +132,23 @@ def test_get_client_with_holdings_returns_the_client_and_their_holdings(conn):
     assert result == {
         "client_id": 1, "name": "Jane Doe", "email": "jane@x.com", "segment": "VIP",
         "risk_profile": "balanced", "advisor": "Sam", "city": "Paris",
-        "holdings": [{"ticker": "AAPL", "shares": 10.0, "avg_cost": 150.0}],
+        "holdings": [{"ticker": "AAPL", "shares": 10.0, "avg_cost": 150.0, "sector": "Technology"}],
     }
 
 
 def test_get_client_with_holdings_returns_none_for_an_unknown_id(conn):
     assert get_client_with_holdings(conn, 999) is None
+
+
+def test_get_client_with_holdings_keeps_a_holding_whose_ticker_has_no_companies_row(conn):
+    # SQLite does not enforce the holdings.ticker REFERENCES companies.ticker
+    # foreign key unless PRAGMA foreign_keys=ON (it isn't, here) -- this
+    # INSERT is legal even though 'GHOST' is absent from companies. An INNER
+    # JOIN would silently drop this holding; this test is the guard against
+    # ever switching back to one.
+    conn.execute("INSERT INTO holdings VALUES (1, 'GHOST', 5.0, 10.0)")
+    conn.commit()
+
+    result = get_client_with_holdings(conn, 1)
+
+    assert result["holdings"] == [{"ticker": "GHOST", "shares": 5.0, "avg_cost": 10.0, "sector": None}]

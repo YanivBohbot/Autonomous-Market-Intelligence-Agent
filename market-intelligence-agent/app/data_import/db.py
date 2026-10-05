@@ -49,9 +49,12 @@ def get_client_with_holdings(conn: sqlite3.Connection, client_id: int) -> dict |
         return None
     cid, name, email, segment, risk_profile, advisor, city = row
     holdings = [
-        {"ticker": ticker, "shares": shares, "avg_cost": avg_cost}
-        for ticker, shares, avg_cost in conn.execute(
-            "SELECT ticker, shares, avg_cost FROM holdings WHERE client_id = ?", (cid,)
+        {"ticker": ticker, "shares": shares, "avg_cost": avg_cost, "sector": sector}
+        for ticker, shares, avg_cost, sector in conn.execute(
+            "SELECT h.ticker, h.shares, h.avg_cost, co.sector "
+            "FROM holdings h LEFT JOIN companies co ON co.ticker = h.ticker "
+            "WHERE h.client_id = ?",
+            (cid,),
         )
     ]
     return {

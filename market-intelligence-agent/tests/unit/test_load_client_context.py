@@ -18,6 +18,7 @@ def _seed(db_path):
             segment TEXT NOT NULL, risk_profile TEXT NOT NULL, advisor TEXT NOT NULL,
             city TEXT NOT NULL, joined_on DATE NOT NULL
         );
+        CREATE TABLE companies (ticker TEXT PRIMARY KEY, name TEXT NOT NULL, sector TEXT NOT NULL);
         CREATE TABLE holdings (
             client_id INTEGER NOT NULL, ticker TEXT NOT NULL, shares REAL NOT NULL, avg_cost REAL NOT NULL
         );
