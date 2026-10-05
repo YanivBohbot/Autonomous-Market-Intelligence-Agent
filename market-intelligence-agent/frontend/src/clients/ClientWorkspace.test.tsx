@@ -46,7 +46,7 @@ describe("ClientWorkspace", () => {
     }));
     renderAt("12");
     expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /retour/i })).toHaveAttribute("href", "/clients");
+    expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/clients");
   });
 
   it("renders the client's profile and computed P&L in the header", async () => {
@@ -152,7 +152,7 @@ describe("ClientWorkspace", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422, json: async () => ({}) }));
     renderAt("not-a-number");
     expect(await screen.findByText(/failed to load/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /retour/i })).toHaveAttribute("href", "/clients");
+    expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/clients");
     expect(screen.queryByTestId("desk-view-mock")).not.toBeInTheDocument();
   });
 });

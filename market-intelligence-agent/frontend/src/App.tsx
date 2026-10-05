@@ -116,25 +116,25 @@ export default function App() {
     <div className="flex h-full flex-col bg-terminal-bg">
       <Routes>
         <Route element={<AppLayout threadId={threadId} onNewSession={onNewSession} />}>
-          <Route path="/" element={<Navigate to="/recherche" replace />} />
+          <Route path="/" element={<Navigate to="/research" replace />} />
           <Route
             path="/briefing"
             element={
               <ComingSoonPage
                 title="Briefing"
-                description="Résumé quotidien automatique : alertes de concentration, mouvements de marché notables, synthèse de l'agent. Arrive dans un prochain chantier."
+                description="Automatic daily summary: concentration alerts, notable market moves, agent synthesis. Coming in a future chantier."
               />
             }
           />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/clients/:id" element={<ClientWorkspace />} />
-          <Route path="/recherche" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
+          <Route path="/research" element={<DeskView key={threadId} threadId={`desk_${threadId}`} />} />
           <Route
-            path="/rapports"
+            path="/reports"
             element={
               <ComingSoonPage
-                title="Rapports"
-                description="Génération et historique des rapports clients (Excel/PDF/Word). Arrive dans un prochain chantier."
+                title="Reports"
+                description="Report generation and history for clients (Excel/PDF/Word). Coming in a future chantier."
               />
             }
           />

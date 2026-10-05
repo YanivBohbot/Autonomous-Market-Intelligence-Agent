@@ -147,11 +147,11 @@ async def test_client_context_prompt_appends_the_active_client_when_set():
     )
     await agent.ainvoke({
         "messages": [HumanMessage("q")],
-        "client_context": "Client actif: Jane Doe, segment VIP, risque balanced, conseiller Sam.",
+        "client_context": "Active client: Jane Doe, segment VIP, risk balanced, advisor Sam.",
     })
     system_text = model.seen[0][0].content
     assert system_text.startswith("You are X.")
-    assert "Client actif: Jane Doe" in system_text
+    assert "Active client: Jane Doe" in system_text
 
 
 @pytest.mark.anyio

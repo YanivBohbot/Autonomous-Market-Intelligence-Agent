@@ -26,13 +26,13 @@ describe("App routing", () => {
     );
   });
 
-  it("/ redirects to /recherche", () => {
+  it("/ redirects to /research", () => {
     renderAt("/");
     expect(screen.getByTestId("desk-view")).toBeInTheDocument();
   });
 
-  it("/recherche renders Market Desk", () => {
-    renderAt("/recherche");
+  it("/research renders Market Desk", () => {
+    renderAt("/research");
     expect(screen.getByTestId("desk-view")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/ask the agent/i)).not.toBeInTheDocument();
   });
@@ -45,13 +45,13 @@ describe("App routing", () => {
 
   it("/classic has no AppLayout nav (it's outside the layout)", () => {
     renderAt("/classic");
-    expect(screen.queryByRole("link", { name: "Recherche" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Research" })).not.toBeInTheDocument();
   });
 
   it("the two not-yet-built sections render ComingSoonPage without crashing", () => {
-    for (const path of ["/briefing", "/rapports"]) {
+    for (const path of ["/briefing", "/reports"]) {
       const { unmount } = renderAt(path);
-      expect(screen.getByText(/bientôt disponible/i)).toBeInTheDocument();
+      expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
       unmount();
     }
   });
@@ -78,7 +78,7 @@ describe("App routing", () => {
   it("New session gives the desk a new thread id", async () => {
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
-    renderAt("/recherche");
+    renderAt("/research");
     const before = screen.getByTestId("desk-view").textContent;
     await user.click(screen.getByRole("button", { name: /new session/i }));
     expect(screen.getByTestId("desk-view").textContent).not.toBe(before);
@@ -88,7 +88,7 @@ describe("App routing", () => {
     const classic = renderAt("/classic");
     const classicThread = screen.getByText(/^web_session_/).textContent;
     classic.unmount();
-    renderAt("/recherche");
+    renderAt("/research");
     expect(screen.getByTestId("desk-view").textContent).not.toBe(classicThread);
   });
 

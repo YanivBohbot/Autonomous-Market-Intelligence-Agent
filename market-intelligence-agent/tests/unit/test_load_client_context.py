@@ -36,7 +36,7 @@ def test_matching_thread_id_with_an_existing_client_sets_client_context(tmp_path
 
     result = load_client_context({}, {"configurable": {"thread_id": "clients_1"}})
 
-    assert result == {"client_context": "Client actif: Jane Doe, segment VIP, risque balanced, conseiller Sam."}
+    assert result == {"client_context": "Active client: Jane Doe, segment VIP, risk balanced, advisor Sam."}
 
 
 def test_matching_thread_id_with_no_such_client_gives_none(tmp_path, monkeypatch):

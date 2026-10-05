@@ -12,14 +12,14 @@ interface AppLayoutProps {
 const NAV_ITEMS = [
   { to: "/briefing", label: "Briefing" },
   { to: "/clients", label: "Clients" },
-  { to: "/recherche", label: "Recherche" },
-  { to: "/rapports", label: "Rapports" },
-  { to: "/data", label: "Données" },
+  { to: "/research", label: "Research" },
+  { to: "/reports", label: "Reports" },
+  { to: "/data", label: "Data" },
 ];
 
 const emptyIntelligence = (
   <aside className="flex h-full w-64 flex-none flex-col items-center justify-center border-l border-terminal-border bg-terminal-panel">
-    <span className="font-mono text-[10px] text-terminal-muted">Aucune activité</span>
+    <span className="font-mono text-[10px] text-terminal-muted">No activity</span>
   </aside>
 );
 
@@ -94,7 +94,7 @@ export function AppLayout({ threadId, onNewSession }: AppLayoutProps) {
           </button>
           <button
             type="button"
-            title="Profil (bientôt disponible)"
+            title="Profile (coming soon)"
             className="rounded border border-terminal-border bg-terminal-bg px-2.5 py-1 font-mono text-xs text-terminal-muted"
           >
             Profil

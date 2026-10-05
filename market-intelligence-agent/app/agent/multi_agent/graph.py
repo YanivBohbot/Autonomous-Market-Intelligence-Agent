@@ -41,8 +41,8 @@ def load_client_context(state: SupervisorState, config: RunnableConfig) -> dict:
     if client is None:
         return {"client_context": None}
     return {"client_context": (
-        f"Client actif: {client['name']}, segment {client['segment']}, "
-        f"risque {client['risk_profile']}, conseiller {client['advisor']}."
+        f"Active client: {client['name']}, segment {client['segment']}, "
+        f"risk {client['risk_profile']}, advisor {client['advisor']}."
     )}
 
 

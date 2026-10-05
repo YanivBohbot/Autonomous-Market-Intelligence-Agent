@@ -100,7 +100,7 @@ def test_routing_prompt_includes_the_active_client_when_present():
     with patch.object(supervisor_mod, "_router") as mock:
         mock.invoke.return_value = RoutingDecision(next="portfolio_agent", reasoning="client question")
         state = _state(messages=[HumanMessage(content="qui est le client")])
-        state["client_context"] = "Client actif: Amanda Brooks, segment VIP, risque conservative, conseiller Sarah Mitchell."
+        state["client_context"] = "Active client: Amanda Brooks, segment VIP, risk conservative, advisor Sarah Mitchell."
         supervisor_node(state)
     invoked_messages = mock.invoke.call_args[0][0]
     system_text = invoked_messages[0].content
