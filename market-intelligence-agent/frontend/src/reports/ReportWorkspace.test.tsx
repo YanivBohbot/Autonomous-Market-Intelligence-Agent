@@ -17,7 +17,10 @@ const SUMMARY = {
   client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
   risk_profile: "balanced", advisor: "Sam", city: "Paris",
   totals: { market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33 },
-  positions: [], unpriced_tickers: [],
+  positions: [
+    { ticker: "AAPL", shares: 10, avg_cost: 150, price: 200, sector: "Technology", market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33, weight_pct: 100 },
+  ],
+  unpriced_tickers: [],
 };
 
 const FULL_REPORT = {
@@ -48,7 +51,7 @@ function fetchRouter(handlers: { summary?: () => Promise<unknown>; report?: () =
 }
 
 describe("ReportWorkspace", () => {
-  it("shows a loading indicator while the summary itself is loading, not a blank page", async () => {
+  it("shows a structured summary skeleton while the summary itself is loading", async () => {
     // Regression (live QA): the page rendered nothing at all (return null)
     // while the summary fetch was in flight -- indistinguishable from a
     // crash or a frozen tab during the several seconds a cold yfinance
@@ -58,20 +61,31 @@ describe("ReportWorkspace", () => {
     vi.stubGlobal("fetch", fetchRouter({ summary: () => summaryPromise as Promise<unknown> }));
 
     renderAt("12");
-    expect(await screen.findByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading report profile" })).toBeInTheDocument();
+    expect(screen.getAllByRole("status", { name: "Loading report metric" })).toHaveLength(4);
 
     resolveSummary!({ ok: true, json: async () => SUMMARY });
     expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading report profile" })).not.toBeInTheDocument();
   });
 
-  it("shows the client summary quickly and a 'View full report' button, without fetching the full report", async () => {
+  it("shows a summary hero and KPIs without crossing the full-report gate", async () => {
     const fetchMock = fetchRouter({});
     vi.stubGlobal("fetch", fetchMock);
     renderAt("12");
-    expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Jane Doe" })).toBeInTheDocument();
+    expect(screen.getByText("Balanced risk")).toBeInTheDocument();
+    expect(screen.getByText("Market value")).toBeInTheDocument();
+    expect(screen.getByText("$2,000.00")).toBeInTheDocument();
+    expect(screen.getByText("Unrealized P&L")).toBeInTheDocument();
+    expect(screen.getByText("+$500.00")).toBeInTheDocument();
+    expect(screen.getByText("Return")).toBeInTheDocument();
+    expect(screen.getByText("+33.3%")).toBeInTheDocument();
+    expect(screen.getByText("Price coverage")).toBeInTheDocument();
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /view full report/i })).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/report") && !String(url).includes("/summary"))).toBe(false);
+    const reportCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/report") && !String(url).includes("/summary"));
+    expect(reportCalls).toHaveLength(0);
   });
 
   it("shows a loading indicator while the full report loads, then renders the narrative and sections", async () => {
@@ -84,21 +98,24 @@ describe("ReportWorkspace", () => {
 
     renderAt("12");
     await screen.findByText("Jane Doe");
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/report") && !String(url).includes("/summary"))).toHaveLength(0);
     await user.click(screen.getByRole("button", { name: /view full report/i }));
-    expect(await screen.findByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading full report" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Jane Doe" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/report") && !String(url).includes("/summary"))).toHaveLength(1);
 
     resolveReport!({ ok: true, json: async () => FULL_REPORT });
     expect(await screen.findByText(FULL_REPORT.narrative)).toBeInTheDocument();
-    expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading full report" })).not.toBeInTheDocument();
     expect(screen.getByText("Technology")).toBeInTheDocument(); // SectorAllocationChart
     expect(screen.getAllByText(/Concentration/).length).toBeGreaterThan(0); // section heading + ConcentrationAlert
     expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
     expect(screen.getByText("jane-doe-portfolio-brief-2026-01-01.xlsx")).toBeInTheDocument();
     // Each chart section has its own caption -- live QA feedback was "a
     // wall of text, then a wall of unlabeled graphs."
-    expect(screen.getByText("Portfolio allocation")).toBeInTheDocument();
-    expect(screen.getByText("Sector exposure")).toBeInTheDocument();
-    expect(screen.getByText("Positions")).toBeInTheDocument();
+    for (const heading of ["Analysis", "Portfolio allocation", "Sector exposure", "Price trends", "Concentration risk", "Positions", "Generated reports"]) {
+      expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    }
   });
 
   it("shows an inline error and keeps the summary visible when the full report fetch fails", async () => {
@@ -154,8 +171,10 @@ describe("ReportWorkspace", () => {
     await screen.findByText("Jane Doe");
     await user.click(screen.getByRole("button", { name: /view full report/i }));
     await screen.findByText(FULL_REPORT.narrative);
+    expect(getFullReportCount).toBe(1);
     await user.click(screen.getByRole("button", { name: /generate report/i }));
     expect(await screen.findByText("new.xlsx")).toBeInTheDocument();
+    expect(getFullReportCount).toBe(2);
   });
 
   it("shows the thrown error message inline when Generate report fails", async () => {
@@ -175,7 +194,7 @@ describe("ReportWorkspace", () => {
   it("shows an error banner with a link back to /reports when the summary fetch fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
     renderAt("999");
-    expect(await screen.findByText(/failed to load/i)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/failed to load/i);
     expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/reports");
   });
 

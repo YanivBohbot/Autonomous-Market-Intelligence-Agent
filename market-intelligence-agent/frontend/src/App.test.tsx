@@ -78,6 +78,7 @@ describe("App routing", () => {
     );
     renderAt("/reports");
     expect(screen.queryByTestId("report-workspace")).not.toBeInTheDocument();
+    expect(await screen.findByText("No report clients yet")).toBeInTheDocument();
   });
 
   it("/reports/:id renders the report workspace", () => {

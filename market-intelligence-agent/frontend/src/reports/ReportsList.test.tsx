@@ -1,13 +1,26 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { ClientWithHoldings } from "../lib/api";
 import { ReportsList } from "./ReportsList";
 
-function renderAt() {
+const CLIENTS: ClientWithHoldings[] = [{
+  client_id: 1,
+  name: "Jane Doe",
+  email: "jane@x.com",
+  segment: "VIP",
+  risk_profile: "balanced",
+  advisor: "Sam",
+  city: "Paris",
+  holdings: [{ ticker: "AAPL", shares: 10, avg_cost: 150 }],
+}];
+
+function renderList(clients = CLIENTS) {
   return render(
     <MemoryRouter initialEntries={["/reports"]}>
       <Routes>
-        <Route path="/reports" element={<ReportsList />} />
+        <Route path="/reports" element={<ReportsList clients={clients} />} />
         <Route path="/reports/:id" element={<div data-testid="navigated-to">arrived</div>} />
       </Routes>
     </MemoryRouter>,
@@ -15,39 +28,30 @@ function renderAt() {
 }
 
 describe("ReportsList", () => {
-  it("renders each client's profile (no holdings table)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => [{
-        client_id: 1, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
-        risk_profile: "balanced", advisor: "Sam", city: "Paris",
-        holdings: [{ ticker: "AAPL", shares: 10, avg_cost: 150 }],
-      }],
-    }));
-    renderAt();
-    expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByText(/balanced/)).toBeInTheDocument();
+  it("renders report-selection cards with client context but no holdings table", () => {
+    renderList();
+
+    expect(screen.getByRole("heading", { name: "Choose a client" })).toBeInTheDocument();
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
+    expect(screen.getByText("Balanced risk")).toBeInTheDocument();
+    expect(screen.getByText("Advisor Sam")).toBeInTheDocument();
+    expect(screen.getByText(/1 holding/)).toBeInTheDocument();
     expect(screen.queryByText("AAPL")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open report for Jane Doe" })).toBeInTheDocument();
   });
 
-  it("shows an error message when the fetch fails", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
-    renderAt();
-    expect(await screen.findByText(/failed to load clients/i)).toBeInTheDocument();
-  });
-
-  it("clicking a client row navigates to /reports/:id", async () => {
-    const { default: userEvent } = await import("@testing-library/user-event");
+  it("navigates to the selected client report", async () => {
     const user = userEvent.setup();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => [{
-        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
-        risk_profile: "balanced", advisor: "Sam", city: "Paris", holdings: [],
-      }],
-    }));
-    renderAt();
-    await user.click(await screen.findByText("Jane Doe"));
+    renderList();
+
+    await user.click(screen.getByRole("button", { name: "Open report for Jane Doe" }));
+
     expect(await screen.findByTestId("navigated-to")).toBeInTheDocument();
+  });
+
+  it("shows an intentional empty state", () => {
+    renderList([]);
+
+    expect(screen.getByText("No report clients yet")).toBeInTheDocument();
   });
 });
