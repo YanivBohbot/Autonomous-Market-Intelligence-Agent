@@ -1,6 +1,6 @@
 # Research Email Report Attachments — Design
 
-**Status:** Conversational design approved by the user on 2026-10-06. Written specification pending user review.
+**Status:** Design and written specification approved by the user on 2026-10-06.
 
 ## Goal
 
