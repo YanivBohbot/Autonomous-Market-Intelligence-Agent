@@ -1,19 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 
-// Delegates the chat to DeskView instead of rendering a bare CopilotChat --
-// DeskView already owns a correctly-configured CopilotKitProvider +
-// HttpAgent (registered for MARKET_DESK_AGENT_ID) + messageFilter +
-// useDeskInterrupt/useToolDisplay. A standalone CopilotChat here had none
-// of that: useAgent (called by DeskActivityRail) throws
-// "useCopilotKit must be used within CopilotKitProvider" with no provider
-// above it, which crashed every real render of this page. Mocking DeskView
-// (not the whole @copilotkit/react-core/v2 module) proves the delegation
-// itself, which is what keeps this page working: if ClientWorkspace ever
-// reverts to building its own CopilotChat/provider, this mock is bypassed
-// and DeskView's props assertion below stops proving anything useful --
-// the live QA pass is what ultimately catches that regression.
 const deskViewProps: Record<string, unknown>[] = [];
 vi.mock("../desk/DeskView", () => ({
   DeskView: (props: Record<string, unknown>) => {
@@ -22,7 +11,29 @@ vi.mock("../desk/DeskView", () => ({
   },
 }));
 
+import type { ClientSummary } from "../lib/api";
 import { ClientWorkspace } from "./ClientWorkspace";
+
+const clientSummary = (overrides: Partial<ClientSummary> = {}): ClientSummary => ({
+  client_id: 12,
+  name: "Jane Doe",
+  email: "jane@x.com",
+  segment: "VIP",
+  risk_profile: "balanced",
+  advisor: "Sam",
+  city: "Paris",
+  totals: null,
+  positions: [],
+  unpriced_tickers: [],
+  ...overrides,
+});
+
+function respondWith(summary: ClientSummary) {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => summary,
+  }));
+}
 
 function renderAt(id: string) {
   return render(
@@ -35,103 +46,94 @@ function renderAt(id: string) {
 }
 
 describe("ClientWorkspace", () => {
-  it("always shows a link back to /clients, even when the client loaded successfully", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
-        risk_profile: "balanced", advisor: "Sam", city: "Paris",
-        totals: null, positions: [], unpriced_tickers: [],
-      }),
-    }));
-    renderAt("12");
-    expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/clients");
+  beforeEach(() => {
+    deskViewProps.length = 0;
   });
 
-  it("renders the client's profile and computed P&L in the header", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
-        risk_profile: "balanced", advisor: "Sam", city: "Paris",
-        totals: { market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33 },
-        positions: [], unpriced_tickers: [],
-      }),
-    }));
+  it("shows a structured client workspace skeleton while the summary loads", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => undefined)));
+
     renderAt("12");
-    expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByText(/VIP/)).toBeInTheDocument();
+
+    expect(screen.getByRole("status", { name: "Loading client profile" })).toBeInTheDocument();
+    expect(screen.getAllByRole("status", { name: "Loading client metric" })).toHaveLength(4);
+    expect(screen.queryByTestId("desk-view-mock")).not.toBeInTheDocument();
   });
 
-  it("shows 'no position' copy when totals is null and nothing is unpriced", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
-        risk_profile: "balanced", advisor: "Sam", city: "Paris",
-        totals: null, positions: [], unpriced_tickers: [],
-      }),
+  it("renders the client hero, badges, and four portfolio KPIs", async () => {
+    respondWith(clientSummary({
+      totals: { market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33 },
+      positions: [
+        { ticker: "AAPL", shares: 5, avg_cost: 300, price: 400, market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33, weight_pct: 100, sector: "Technology" },
+      ],
     }));
+
     renderAt("12");
-    expect(await screen.findByText(/no position/i)).toBeInTheDocument();
+
+    expect(await screen.findByRole("heading", { name: "Jane Doe" })).toBeInTheDocument();
+    expect(screen.getByText("VIP")).toBeInTheDocument();
+    expect(screen.getByText("Balanced risk")).toHaveAttribute("data-tone", "info");
+    expect(screen.getByText("Advisor Sam")).toHaveAttribute("data-tone", "neutral");
+    expect(screen.getByText("Market value")).toBeInTheDocument();
+    expect(screen.getByText("$2,000.00")).toBeInTheDocument();
+    expect(screen.getByText("Unrealized P&L")).toBeInTheDocument();
+    expect(screen.getByText("+$500.00")).toBeInTheDocument();
+    expect(screen.getByText("Return")).toBeInTheDocument();
+    expect(screen.getByText("+33.3%")).toBeInTheDocument();
+    expect(screen.getByText("Priced positions")).toBeInTheDocument();
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to clients/i })).toHaveAttribute("href", "/clients");
   });
 
-  it("shows 'prices unavailable' instead of 'no position' when every ticker failed to price", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
-        risk_profile: "balanced", advisor: "Sam", city: "Paris",
-        totals: null, positions: [], unpriced_tickers: ["AAPL"],
-      }),
-    }));
+  it("shows no-position copy when the portfolio is empty", async () => {
+    respondWith(clientSummary());
+
     renderAt("12");
-    expect(await screen.findByText(/prices unavailable/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no position/i)).not.toBeInTheDocument();
+
+    expect(await screen.findByText("No positions")).toBeInTheDocument();
   });
 
-  it("notes partially-unpriced tickers next to the computed totals", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
-        risk_profile: "balanced", advisor: "Sam", city: "Paris",
-        totals: { market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33 },
-        positions: [], unpriced_tickers: ["MSFT"],
-      }),
-    }));
+  it("shows pricing-unavailable copy when every ticker failed to price", async () => {
+    respondWith(clientSummary({ unpriced_tickers: ["AAPL"] }));
+
     renderAt("12");
-    expect(await screen.findByText(/MSFT/)).toBeInTheDocument();
+
+    expect(await screen.findByText("Pricing unavailable")).toBeInTheDocument();
+    expect(screen.getByText("AAPL could not be priced")).toBeInTheDocument();
+    expect(screen.queryByText("No positions")).not.toBeInTheDocument();
   });
 
-  it("delegates the chat to DeskView with a client-scoped threadId", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        client_id: 12, name: "Jane Doe", email: "jane@x.com", segment: "VIP",
-        risk_profile: "balanced", advisor: "Sam", city: "Paris",
-        totals: null, positions: [], unpriced_tickers: [],
-      }),
+  it("makes partial pricing explicit next to the portfolio metrics", async () => {
+    respondWith(clientSummary({
+      totals: { market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33 },
+      positions: [
+        { ticker: "AAPL", shares: 5, avg_cost: 300, price: 400, market_value: 2000, cost_basis: 1500, unrealized_pnl: 500, unrealized_pnl_pct: 33.33, weight_pct: 100, sector: "Technology" },
+      ],
+      unpriced_tickers: ["MSFT"],
     }));
+
     renderAt("12");
+
+    expect(await screen.findByText("1 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Totals exclude MSFT")).toBeInTheDocument();
+  });
+
+  it("delegates the chat to DeskView with the exact client-scoped threadId", async () => {
+    respondWith(clientSummary());
+
+    renderAt("12");
+
     await screen.findByTestId("desk-view-mock");
     expect(deskViewProps[deskViewProps.length - 1].threadId).toBe("clients_12");
   });
 
-  it("remounts (fresh fetch, fresh DeskView/thread) when navigating from one client to another", async () => {
-    const { default: userEvent } = await import("@testing-library/user-event");
-    const { Link } = await import("react-router-dom");
+  it("remounts with a fresh fetch and thread when navigating between clients", async () => {
     const user = userEvent.setup();
-    vi.stubGlobal("fetch", vi.fn((url: string) => {
-      const id = url.match(/\/clients\/(\d+)\/summary/)?.[1];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const id = String(input).match(/\/clients\/(\d+)\/summary/)?.[1];
       return Promise.resolve({
         ok: true,
-        json: async () => ({
-          client_id: Number(id), name: `Client ${id}`, email: "x@x.com", segment: "VIP",
-          risk_profile: "balanced", advisor: "Sam", city: "Paris",
-          totals: null, positions: [], unpriced_tickers: [],
-        }),
+        json: async () => clientSummary({ client_id: Number(id), name: `Client ${id}` }),
       });
     }));
     render(
@@ -141,18 +143,31 @@ describe("ClientWorkspace", () => {
         </Routes>
       </MemoryRouter>,
     );
+
     expect(await screen.findByText("Client 12")).toBeInTheDocument();
     await user.click(screen.getByText("go to 13"));
+
     expect(await screen.findByText("Client 13")).toBeInTheDocument();
     expect(screen.queryByText("Client 12")).not.toBeInTheDocument();
     expect(deskViewProps[deskViewProps.length - 1].threadId).toBe("clients_13");
   });
 
-  it("shows an error banner with a link back to /clients when the summary fetch fails, and does not mount the chat", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422, json: async () => ({}) }));
-    renderAt("not-a-number");
-    expect(await screen.findByText(/failed to load/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /back/i })).toHaveAttribute("href", "/clients");
+  it("offers retry and back navigation after a summary error, then recovers", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => clientSummary() });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAt("12");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Client workspace unavailable");
+    expect(screen.getByRole("link", { name: /back to clients/i })).toHaveAttribute("href", "/clients");
     expect(screen.queryByTestId("desk-view-mock")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("heading", { name: "Jane Doe" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("desk-view-mock")).toBeInTheDocument();
   });
 });

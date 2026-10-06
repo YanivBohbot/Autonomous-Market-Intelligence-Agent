@@ -2,73 +2,157 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { DeskView } from "../desk/DeskView";
 import { getClientSummary, type ClientSummary } from "../lib/api";
+import { ErrorState, Skeleton } from "../ui/FeedbackStates";
+import { MetricCard } from "../ui/MetricCard";
+import { PageHeader } from "../ui/PageHeader";
+import { StatusBadge, type StatusTone } from "../ui/StatusBadge";
 
-// Delegates the chat entirely to DeskView instead of building a second,
-// standalone CopilotChat -- DeskView already owns a correctly-configured
-// CopilotKitProvider + HttpAgent (registered for MARKET_DESK_AGENT_ID) +
-// messageFilter + useDeskInterrupt/useToolDisplay/DeskActivityRail wiring.
-// A hand-rolled CopilotChat here had none of that: useAgent (called by
-// DeskActivityRail) requires a CopilotKitProvider above it, which this
-// component never provided, so every real render of /clients/:id crashed.
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function titleCase(value: string) {
+  return value ? `${value[0].toUpperCase()}${value.slice(1)}` : "Unknown";
+}
+
+function riskTone(profile: string): StatusTone {
+  const normalized = profile.toLowerCase();
+  if (normalized.includes("aggressive") || normalized.includes("high")) return "warning";
+  if (normalized.includes("conservative") || normalized.includes("low")) return "success";
+  return "info";
+}
+
+function signedCurrency(value: number) {
+  if (value === 0) return currencyFormatter.format(value);
+  return `${value > 0 ? "+" : "-"}${currencyFormatter.format(Math.abs(value))}`;
+}
+
+function signedPercentage(value: number) {
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function ClientWorkspaceLoading() {
+  return (
+    <main className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-[1500px] space-y-4 p-4 sm:p-6 lg:p-8">
+        <div className="rounded-3xl border border-terminal-border bg-terminal-panel p-5 shadow-sm md:p-6">
+          <Skeleton className="h-28" label="Loading client profile" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <Skeleton key={index} className="h-28" label="Loading client metric" />
+          ))}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function PortfolioMetrics({ summary }: { summary: ClientSummary }) {
+  const pricedCount = summary.positions.length;
+  const totalCount = pricedCount + summary.unpriced_tickers.length;
+  const excluded = summary.unpriced_tickers.join(", ");
+  const partialPricingDetail = excluded ? `Totals exclude ${excluded}` : "Current portfolio valuation";
+
+  if (!summary.totals) {
+    const unavailable = summary.unpriced_tickers.length > 0;
+    return (
+      <section aria-label="Portfolio overview" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Market value"
+          value={unavailable ? "Pricing unavailable" : "No positions"}
+          detail={unavailable ? `${excluded} could not be priced` : "No holdings recorded"}
+          tone={unavailable ? "warning" : "neutral"}
+        />
+        <MetricCard label="Unrealized P&L" value="—" detail="Awaiting priced positions" />
+        <MetricCard label="Return" value="—" detail="Awaiting priced positions" />
+        <MetricCard label="Priced positions" value={`${pricedCount} of ${totalCount}`} detail={unavailable ? "Pricing coverage" : "No holdings recorded"} />
+      </section>
+    );
+  }
+
+  const pnlTone: StatusTone = summary.totals.unrealized_pnl > 0
+    ? "success"
+    : summary.totals.unrealized_pnl < 0
+      ? "danger"
+      : "neutral";
+
+  return (
+    <section aria-label="Portfolio overview" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricCard label="Market value" value={currencyFormatter.format(summary.totals.market_value)} detail={partialPricingDetail} tone="info" />
+      <MetricCard label="Unrealized P&L" value={signedCurrency(summary.totals.unrealized_pnl)} detail={`Cost basis ${currencyFormatter.format(summary.totals.cost_basis)}`} tone={pnlTone} />
+      <MetricCard label="Return" value={signedPercentage(summary.totals.unrealized_pnl_pct)} detail="Unrealized portfolio return" tone={pnlTone} />
+      <MetricCard label="Priced positions" value={`${pricedCount} of ${totalCount}`} detail={excluded ? `${summary.unpriced_tickers.length} awaiting price` : "Full pricing coverage"} tone={excluded ? "warning" : "success"} />
+    </section>
+  );
+}
+
 function ClientWorkspaceBody({ clientId }: { clientId: number }) {
   const [summary, setSummary] = useState<ClientSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryVersion, setRetryVersion] = useState(0);
 
   useEffect(() => {
     let active = true;
     setSummary(null);
     setError(null);
     getClientSummary(clientId)
-      .then((s) => {
-        if (active) setSummary(s);
+      .then((nextSummary) => {
+        if (active) setSummary(nextSummary);
       })
       .catch(() => {
-        if (active) setError("Failed to load this client.");
+        if (active) setError("The latest client summary could not be loaded. Check the API connection and try again.");
       });
     return () => {
       active = false;
     };
-  }, [clientId]);
+  }, [clientId, retryVersion]);
 
   if (error) {
     return (
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 font-mono text-sm">
-        <div className="text-terminal-danger">{error}</div>
-        <Link to="/clients" className="text-terminal-accent underline">
-          Back to list
-        </Link>
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl space-y-4 p-4 sm:p-6 lg:p-8">
+          <Link to="/clients" className="inline-flex rounded-xl border border-terminal-border px-3 py-2 text-sm font-semibold text-terminal-muted transition-colors hover:border-brand-blue/50 hover:text-brand-blue">
+            Back to clients
+          </Link>
+          <ErrorState
+            title="Client workspace unavailable"
+            description={error}
+            actionLabel="Retry"
+            onAction={() => setRetryVersion((version) => version + 1)}
+          />
+        </div>
       </main>
     );
   }
 
+  if (!summary) return <ClientWorkspaceLoading />;
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="border-b border-terminal-border bg-terminal-panel px-4 py-3 font-mono text-sm text-terminal-text">
-        <Link to="/clients" className="mb-2 inline-block text-xs text-terminal-muted hover:text-terminal-accent">
-          ← Back to list
-        </Link>
-        {summary && (
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="font-semibold">{summary.name}</span>
-              <span className="ml-2 text-xs text-terminal-muted">
-                {summary.segment} · {summary.risk_profile} · {summary.advisor}
-              </span>
-            </div>
-            {summary.totals ? (
-              <span className="text-xs text-terminal-accent">
-                ${summary.totals.market_value.toFixed(2)} ({summary.totals.unrealized_pnl_pct.toFixed(1)}%)
-                {summary.unpriced_tickers.length > 0 && (
-                  <span className="ml-1 text-terminal-muted">(excl. {summary.unpriced_tickers.join(", ")})</span>
-                )}
-              </span>
-            ) : summary.unpriced_tickers.length > 0 ? (
-              <span className="text-xs text-terminal-danger">Prices unavailable</span>
-            ) : (
-              <span className="text-xs text-terminal-muted">No position.</span>
+      <div className="shrink-0 border-b border-terminal-border bg-terminal-bg/65">
+        <div className="mx-auto w-full max-w-[1500px] space-y-4 p-4 sm:p-6 lg:px-8 lg:py-6">
+          <PageHeader
+            eyebrow="Client workspace"
+            title={summary.name}
+            description={`${summary.email} · ${summary.city}`}
+            actions={(
+              <Link to="/clients" className="rounded-xl border border-terminal-border bg-terminal-panel px-3 py-2 text-sm font-semibold text-terminal-muted transition-colors hover:border-brand-blue/50 hover:text-brand-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue">
+                Back to clients
+              </Link>
             )}
-          </div>
-        )}
+          >
+            <div className="flex flex-wrap gap-2">
+              <StatusBadge tone="info">{summary.segment}</StatusBadge>
+              <StatusBadge tone={riskTone(summary.risk_profile)}>{titleCase(summary.risk_profile)} risk</StatusBadge>
+              <StatusBadge>Advisor {summary.advisor}</StatusBadge>
+            </div>
+          </PageHeader>
+          <PortfolioMetrics summary={summary} />
+        </div>
       </div>
       <DeskView threadId={`clients_${clientId}`} />
     </div>
@@ -77,11 +161,7 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
 
 export function ClientWorkspace() {
   const { id } = useParams<{ id: string }>();
-  // Keyed on id: a route param change (switching clients) does not remount
-  // a component by default in react-router, but this page needs a full
-  // remount on every client switch -- otherwise DeskActivityRail's single
-  // shared agent subscription mixes two clients' activity, and a summary
-  // fetch for the client being left can resolve after navigation and paint
-  // the wrong client's header.
+  // A route-param change does not remount a component by default. This key
+  // keeps each client's summary and Desk activity strictly isolated.
   return <ClientWorkspaceBody key={id} clientId={Number(id)} />;
 }
