@@ -1,137 +1,188 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import * as api from "../lib/api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import * as XLSX from "xlsx";
+import * as api from "../lib/api";
 import { ImportPanel } from "./ImportPanel";
+
+const HOLDING_ROW = { client_email: "jane@x.com", ticker: "AAPL", shares: 10, avg_cost: 150 };
 
 vi.mock("xlsx", () => ({
   read: vi.fn(() => ({ SheetNames: ["Sheet1"], Sheets: { Sheet1: {} } })),
-  utils: { sheet_to_json: vi.fn(() => [{ client_email: "jane@x.com", ticker: "AAPL", shares: 10, avg_cost: 150 }]) },
+  utils: { sheet_to_json: vi.fn(() => [HOLDING_ROW]) },
 }));
 
-function selectFile(input: HTMLElement, file: File) {
-  Object.defineProperty(input, "files", { value: [file] });
+function fileInput() {
+  return screen.getByLabelText("Choose file") as HTMLInputElement;
+}
+
+function selectFile(file: File) {
+  const input = fileInput();
+  Object.defineProperty(input, "files", { configurable: true, value: [file] });
   fireEvent.change(input);
 }
 
-function selectAndUpload(input: HTMLElement, file: File) {
-  selectFile(input, file);
-  fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+function uploadSelected() {
+  fireEvent.click(screen.getByRole("button", { name: "Upload selected file" }));
+}
+
+function selectAndUpload(file: File) {
+  selectFile(file);
+  uploadSelected();
+}
+
+function dropFile(file: File) {
+  fireEvent.drop(screen.getByRole("button", { name: "Choose a file to import" }), {
+    dataTransfer: { files: [file] },
+  });
 }
 
 describe("ImportPanel", () => {
-  it("uploads a .pdf directly and shows success", async () => {
-    vi.spyOn(api, "importPdf").mockResolvedValue({ filename: "report.pdf", chunks_added: 5 });
-    render(<ImportPanel />);
-    const input = screen.getByLabelText(/choose a file/i);
-    selectAndUpload(input, new File(["%PDF"], "report.pdf", { type: "application/pdf" }));
-    expect(await screen.findByText(/5 chunks/i)).toBeInTheDocument();
+  beforeEach(() => {
+    vi.mocked(XLSX.utils.sheet_to_json).mockReset().mockReturnValue([HOLDING_ROW]);
   });
 
-  it("parses a .xlsx, shows a valid preview, and the Confirm button is enabled", async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("opens the hidden file picker with Enter and Space", async () => {
+    const user = userEvent.setup();
+    render(<ImportPanel />);
+    const clickSpy = vi.spyOn(fileInput(), "click");
+    const dropZone = screen.getByRole("button", { name: "Choose a file to import" });
+
+    dropZone.focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+
+    expect(clickSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a distinct drag-enter state and clears it on drag-leave", () => {
+    render(<ImportPanel />);
+    const dropZone = screen.getByRole("button", { name: "Choose a file to import" });
+
+    fireEvent.dragEnter(dropZone);
+    expect(dropZone).toHaveAttribute("data-dragging", "true");
+    expect(screen.getByText("Drop file here")).toBeInTheDocument();
+    fireEvent.dragLeave(dropZone);
+    expect(dropZone).toHaveAttribute("data-dragging", "false");
+  });
+
+  it("accepts a dropped PDF, uploads it directly, and shows success", async () => {
+    vi.spyOn(api, "importPdf").mockResolvedValue({ filename: "report.pdf", chunks_added: 5 });
+    render(<ImportPanel />);
+
+    dropFile(new File(["%PDF"], "report.pdf", { type: "application/pdf" }));
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    uploadSelected();
+
+    expect(await screen.findByText(/5 chunks added/i)).toBeInTheDocument();
+  });
+
+  it("accepts a dropped Excel file and shows a valid preview", async () => {
     vi.spyOn(api, "previewImport").mockResolvedValue({
       type: "holdings", valid: true,
       rows: [{ client_id: 1, ticker: "AAPL", shares: 10, avg_cost: 150 }], errors: [],
     });
     render(<ImportPanel />);
-    const input = screen.getByLabelText(/choose a file/i);
-    selectAndUpload(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: /confirmer/i })).not.toBeDisabled());
+
+    dropFile(new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    uploadSelected();
+
+    expect(await screen.findByText("1 row(s) ready to import.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm import" })).not.toBeDisabled();
   });
 
-  it("disables Confirm and shows row errors for an invalid file", async () => {
+  it("rejects unsupported extensions before any import API call", () => {
+    const pdfSpy = vi.spyOn(api, "importPdf");
+    const previewSpy = vi.spyOn(api, "previewImport");
+    render(<ImportPanel />);
+
+    dropFile(new File(["text"], "notes.txt", { type: "text/plain" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Unsupported file type");
+    expect(screen.getByRole("button", { name: "Upload selected file" })).toBeDisabled();
+    expect(pdfSpy).not.toHaveBeenCalled();
+    expect(previewSpy).not.toHaveBeenCalled();
+  });
+
+  it("disables confirmation and shows validation errors for an invalid preview", async () => {
     vi.spyOn(api, "previewImport").mockResolvedValue({
       type: "holdings", valid: false, rows: [],
       errors: [{ row: 0, field: "client_email", message: "no client with this email" }],
     });
     render(<ImportPanel />);
-    const input = screen.getByLabelText(/choose a file/i);
-    selectAndUpload(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+
+    selectAndUpload(new File(["ignored"], "holdings.xlsx"));
+
     expect(await screen.findByText(/no client with this email/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /confirmer/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Confirm import" })).toBeDisabled();
   });
 
-  it("clicking Confirm calls confirmImport with the RAW parsed rows, not the backend's cleaned preview rows", async () => {
-    // The backend's /confirm re-runs detect_import_type on whatever rows it
-    // receives. If ImportPanel sent preview.rows (the cleaned
-    // {client_id, ticker, shares, avg_cost} shape for holdings) instead of
-    // the raw parsed rows (which still carry client_email), detection would
-    // fail and /confirm would 409 -- every holdings import would be broken.
+  it("confirms a holdings import with raw parsed rows and shows success", async () => {
     vi.spyOn(api, "previewImport").mockResolvedValue({
       type: "holdings", valid: true,
       rows: [{ client_id: 1, ticker: "AAPL", shares: 10, avg_cost: 150 }], errors: [],
     });
     const confirmSpy = vi.spyOn(api, "confirmImport").mockResolvedValue({ written: 1 });
     render(<ImportPanel />);
-    const input = screen.getByLabelText(/choose a file/i);
-    selectAndUpload(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-    const confirmButton = await screen.findByRole("button", { name: /confirmer/i });
-    await waitFor(() => expect(confirmButton).not.toBeDisabled());
-    fireEvent.click(confirmButton);
-    await waitFor(() =>
-      expect(confirmSpy).toHaveBeenCalledWith("holdings", [
-        { client_email: "jane@x.com", ticker: "AAPL", shares: 10, avg_cost: 150 },
-      ]),
-    );
+
+    selectAndUpload(new File(["ignored"], "holdings.xlsx"));
+    await screen.findByText("1 row(s) ready to import.");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
+
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("holdings", [HOLDING_ROW]));
+    expect(await screen.findByText("Imported 1 row(s).")).toBeInTheDocument();
   });
 
-  it("clicking Confirm for a clients import also sends the raw parsed rows", async () => {
-    vi.mocked(XLSX.utils.sheet_to_json).mockReturnValueOnce([
-      { name: "Jane Doe", email: "jane@x.com", segment: "VIP", risk_profile: "balanced", advisor: "Sam", city: "Paris" },
-    ]);
+  it("confirms a clients import with raw parsed rows", async () => {
+    const rawClient = { name: "Jane Doe", email: "jane@x.com", segment: "VIP", risk_profile: "balanced", advisor: "Sam", city: "Paris" };
+    vi.mocked(XLSX.utils.sheet_to_json).mockReturnValueOnce([rawClient]);
     vi.spyOn(api, "previewImport").mockResolvedValue({
-      type: "clients",
-      valid: true,
-      rows: [
-        {
-          name: "Jane Doe", email: "jane@x.com", segment: "VIP", risk_profile: "balanced",
-          advisor: "Sam", city: "Paris", joined_on: "2026-10-04",
-        },
-      ],
-      errors: [],
+      type: "clients", valid: true,
+      rows: [{ ...rawClient, joined_on: "2026-10-04" }], errors: [],
     });
     const confirmSpy = vi.spyOn(api, "confirmImport").mockResolvedValue({ written: 1 });
     render(<ImportPanel />);
-    const input = screen.getByLabelText(/choose a file/i);
-    selectAndUpload(input, new File(["ignored"], "clients.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-    const confirmButton = await screen.findByRole("button", { name: /confirmer/i });
-    await waitFor(() => expect(confirmButton).not.toBeDisabled());
-    fireEvent.click(confirmButton);
-    await waitFor(() =>
-      expect(confirmSpy).toHaveBeenCalledWith("clients", [
-        { name: "Jane Doe", email: "jane@x.com", segment: "VIP", risk_profile: "balanced", advisor: "Sam", city: "Paris" },
-      ]),
-    );
+
+    selectAndUpload(new File(["ignored"], "clients.xls"));
+    await screen.findByText("1 row(s) ready to import.");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
+
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("clients", [rawClient]));
   });
 
-  it("resets the file input after processing so re-selecting the same filename works", async () => {
-    vi.spyOn(api, "previewImport").mockResolvedValue({
-      type: "holdings", valid: true,
-      rows: [{ client_id: 1, ticker: "AAPL", shares: 10, avg_cost: 150 }], errors: [],
-    });
+  it("resets selection so the same file can be processed twice", async () => {
+    const previewSpy = vi.spyOn(api, "previewImport").mockResolvedValue({ type: "holdings", valid: true, rows: [], errors: [] });
     render(<ImportPanel />);
-    const input = screen.getByLabelText(/choose a file/i) as HTMLInputElement;
-    selectAndUpload(input, new File(["ignored"], "holdings.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: /confirmer/i })).not.toBeDisabled());
-    expect(input.value).toBe("");
+    const file = new File(["ignored"], "holdings.xlsx");
+
+    selectAndUpload(file);
+    await waitFor(() => expect(previewSpy).toHaveBeenCalledTimes(1));
+    expect(fileInput().value).toBe("");
+    selectAndUpload(file);
+
+    await waitFor(() => expect(previewSpy).toHaveBeenCalledTimes(2));
   });
 
-  it("shows an 'unrecognized file format' status when previewImport rejects", async () => {
+  it("shows an unrecognized-format error returned by preview validation", async () => {
     vi.spyOn(api, "previewImport").mockRejectedValue(new Error("unrecognized file format"));
     render(<ImportPanel />);
-    const input = screen.getByLabelText(/choose a file/i);
-    selectAndUpload(input, new File(["ignored"], "mystery.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-    expect(await screen.findByText(/unrecognized file format/i)).toBeInTheDocument();
+
+    selectAndUpload(new File(["ignored"], "mystery.xlsx"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("unrecognized file format");
   });
 
-  it("calls previewImport with an empty rows array when the sheet parses to zero rows", async () => {
+  it("sends an empty row array to preview validation", async () => {
     vi.mocked(XLSX.utils.sheet_to_json).mockReturnValueOnce([]);
-    const previewSpy = vi.spyOn(api, "previewImport").mockResolvedValue({
-      type: "holdings", valid: true, rows: [], errors: [],
-    });
+    const previewSpy = vi.spyOn(api, "previewImport").mockResolvedValue({ type: "holdings", valid: true, rows: [], errors: [] });
     render(<ImportPanel />);
-    const input = screen.getByLabelText(/choose a file/i);
-    selectAndUpload(input, new File(["ignored"], "empty.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+
+    selectAndUpload(new File(["ignored"], "empty.xlsx"));
+
     await waitFor(() => expect(previewSpy).toHaveBeenCalledWith([]));
   });
 });

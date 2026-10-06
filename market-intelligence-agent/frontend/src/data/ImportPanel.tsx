@@ -1,6 +1,11 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
 import * as XLSX from "xlsx";
 import { confirmImport, importPdf, previewImport, type ImportPreviewResult } from "../lib/api";
+import { Icon } from "../ui/Icon";
+import { SectionHeader } from "../ui/SectionHeader";
+import { SurfaceCard } from "../ui/SurfaceCard";
+
+const ACCEPTED_EXTENSIONS = [".pdf", ".xlsx", ".xls"] as const;
 
 export function ImportPanel() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -9,14 +14,42 @@ export function ImportPanel() {
   const [rawRows, setRawRows] = useState<Record<string, unknown>[] | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function onFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
-    setSelectedFile(file);
+  function selectFile(file: File | null): void {
     setStatus(null);
     setPreview(null);
     setRawRows(null);
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+    const normalized = file.name.toLowerCase();
+    if (!ACCEPTED_EXTENSIONS.some((extension) => normalized.endsWith(extension))) {
+      setSelectedFile(null);
+      setStatus("Unsupported file type. Choose a PDF, XLSX, or XLS file.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+    setSelectedFile(file);
+  }
+
+  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
+    selectFile(event.target.files?.[0] ?? null);
+  }
+
+  function onDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragging(false);
+    selectFile(event.dataTransfer.files[0] ?? null);
+  }
+
+  function onDropZoneKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      inputRef.current?.click();
+    }
   }
 
   async function onUpload() {
@@ -35,7 +68,6 @@ export function ImportPanel() {
       const workbook = XLSX.read(buffer, { type: "array" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
-
       const result = await previewImport(rows);
       setPreview(result);
       setRawRows(rows);
@@ -44,8 +76,6 @@ export function ImportPanel() {
     } finally {
       setUploading(false);
       setSelectedFile(null);
-      // Reset so re-selecting the SAME filename (e.g. after fixing a
-      // rejected import) still fires a change event.
       if (inputRef.current) inputRef.current.value = "";
     }
   }
@@ -65,46 +95,60 @@ export function ImportPanel() {
     }
   }
 
-  return (
-    <div className="space-y-3 font-mono text-sm text-terminal-text">
-      <div className="flex items-center gap-2">
-        <label className="block">
-          <span className="mb-1 block text-xs text-terminal-muted">Choose a file (.pdf, .xlsx)</span>
-          <input ref={inputRef} type="file" accept=".pdf,.xlsx,.xls" onChange={onFileChange} className="text-xs" />
-        </label>
-        <button
-          type="button"
-          onClick={onUpload}
-          disabled={!selectedFile || uploading}
-          className="mt-4 rounded-xl bg-terminal-accent px-4 py-2 font-mono text-sm font-semibold text-terminal-bg disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {uploading ? "Uploading…" : "Upload"}
-        </button>
-      </div>
+  const isError = status?.startsWith("Error:") || status?.startsWith("Unsupported");
 
-      {status && <div className="rounded border border-terminal-border bg-terminal-panel card-shadow p-2 text-xs">{status}</div>}
+  return (
+    <div className="space-y-5">
+      <SectionHeader title="Import files" description="PDF files are ingested directly. Excel files are validated in a preview before confirmation." />
+      <SurfaceCard tone="soft" padding="lg" className="space-y-4">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Choose a file to import"
+          data-dragging={dragging}
+          onClick={() => inputRef.current?.click()}
+          onKeyDown={onDropZoneKeyDown}
+          onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          className={`flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue ${dragging ? "border-brand-blue bg-blue-50 dark:bg-blue-950/30" : "border-terminal-border bg-terminal-panel hover:border-brand-blue/50"}`}
+        >
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-50 text-brand-blue dark:bg-blue-950/50"><Icon name="upload" /></span>
+          <p className="mt-3 font-semibold text-terminal-text">{dragging ? "Drop file here" : selectedFile?.name ?? "Drop a PDF or Excel file here"}</p>
+          <p className="mt-1 text-sm text-terminal-muted">or press Enter, Space, or click to browse · PDF, XLSX, XLS</p>
+        </div>
+        <label htmlFor="data-import-file" className="sr-only">Choose file</label>
+        <input id="data-import-file" ref={inputRef} type="file" accept={ACCEPTED_EXTENSIONS.join(",")} onChange={onFileChange} className="sr-only" />
+        <div className="flex justify-end">
+          <button type="button" aria-label="Upload selected file" onClick={onUpload} disabled={!selectedFile || uploading} className="rounded-xl bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+            {uploading ? "Uploading…" : "Upload file"}
+          </button>
+        </div>
+      </SurfaceCard>
+
+      {status && (
+        <div role={isError ? "alert" : "status"} className={`rounded-2xl border p-4 text-sm ${isError ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200" : "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200"}`}>
+          {status}
+        </div>
+      )}
 
       {preview && (
-        <div className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3">
-          <div className="mb-2 text-xs text-terminal-muted">Type detected: {preview.type}</div>
+        <SurfaceCard padding="lg" className="space-y-4">
+          <SectionHeader title="Import preview" description={`Detected ${preview.type} data.`} />
           {preview.valid ? (
-            <div className="text-xs text-terminal-accent">{preview.rows.length} row(s) ready to import.</div>
+            <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-300">{preview.rows.length} row(s) ready to import.</p>
           ) : (
-            <ul className="space-y-1 text-xs text-terminal-danger">
-              {preview.errors.map((e, i) => (
-                <li key={i}>Row {e.row + 1}, {e.field}: {e.message}</li>
+            <ul className="space-y-2 text-sm text-terminal-danger">
+              {preview.errors.map((error, index) => (
+                <li key={`${error.row}-${error.field}-${index}`}>Row {error.row + 1}, {error.field}: {error.message}</li>
               ))}
             </ul>
           )}
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={!preview.valid || confirming}
-            className="mt-3 rounded-xl bg-terminal-accent px-4 py-2 font-mono text-sm font-semibold text-terminal-bg disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Confirmer
+          <button type="button" onClick={onConfirm} disabled={!preview.valid || confirming} className="rounded-xl bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+            {confirming ? "Importing…" : "Confirm import"}
           </button>
-        </div>
+        </SurfaceCard>
       )}
     </div>
   );
