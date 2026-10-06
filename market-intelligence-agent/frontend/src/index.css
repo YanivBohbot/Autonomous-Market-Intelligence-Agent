@@ -25,20 +25,37 @@
   --scrollbar-thumb-hover: 148 163 184;
 }
 
-/* CopilotKit v2's own stylesheet ships --border/--input at oklch(92.2% 0 0)
-   for light mode -- nearly white, invisible against a white page (the chat
-   composer's frame disappeared). Higher specificity than its bare :root
-   rule wins regardless of CSS load order, without touching their file. */
-html[data-theme="light"] {
-  --border: #cbd5e1; /* slate-300 */
-  --input: #cbd5e1;
-  /* The composer and several cards border with a raw zinc-200/gray-200
-     utility (not the --border var above), at oklch(~92%) -- effectively
-     invisible on a white page. Re-point those two tokens at their own
-     400-weight value (still only touched in light mode; dark mode uses
-     separate zinc-700+ classes and never reads these two). */
-  --cpk-color-zinc-200: oklch(70.5% 0.015 286.067);
-  --cpk-color-gray-200: oklch(70.7% 0.022 261.325);
+/* Keep CopilotKit's supported v2 theme tokens local to Research. The public
+   data attribute handles both possible className placements without relying
+   on generated component classes. */
+.finance-desk-chat[data-copilotkit],
+.finance-desk-chat [data-copilotkit] {
+  --background: rgb(var(--terminal-bg));
+  --foreground: rgb(var(--terminal-text));
+  --card: rgb(var(--terminal-panel));
+  --card-foreground: rgb(var(--terminal-text));
+  --popover: rgb(var(--terminal-panel));
+  --popover-foreground: rgb(var(--terminal-text));
+  --primary: rgb(var(--brand-blue));
+  --primary-foreground: #ffffff;
+  --secondary: rgb(var(--surface-soft));
+  --secondary-foreground: rgb(var(--terminal-text));
+  --muted: rgb(var(--surface-soft));
+  --muted-foreground: rgb(var(--terminal-muted));
+  --accent: rgb(var(--surface-soft));
+  --accent-foreground: rgb(var(--terminal-text));
+  --border: rgb(var(--terminal-border));
+  --input: rgb(var(--terminal-border));
+  --ring: rgb(var(--brand-blue));
+  --radius: 0.875rem;
+  --cpk-color-zinc-200: rgb(var(--terminal-border));
+  --cpk-color-gray-200: rgb(var(--terminal-border));
+}
+
+.finance-desk-chat {
+  min-height: 0;
+  overflow: hidden;
+  background: rgb(var(--terminal-panel));
 }
 
 /* The Market Desk composer (CopilotKit v2's prebuilt chat input) has no
@@ -46,15 +63,16 @@ html[data-theme="light"] {
    unstable, so target the input element directly and give it the same
    frame as Classic's textarea (App.tsx), using the same tokens so both
    stay in sync across theme changes. */
-main textarea,
-main [contenteditable="true"] {
+.finance-desk-chat textarea,
+.finance-desk-chat [contenteditable="true"] {
   border: 1px solid rgb(var(--terminal-border)) !important;
   border-radius: 0.75rem;
   background-color: rgb(var(--terminal-bg));
 }
-main textarea:focus,
-main [contenteditable="true"]:focus {
-  border-color: rgb(var(--terminal-accent) / 0.6) !important;
+.finance-desk-chat textarea:focus,
+.finance-desk-chat [contenteditable="true"]:focus {
+  border-color: rgb(var(--brand-blue) / 0.7) !important;
+  box-shadow: 0 0 0 3px rgb(var(--brand-blue) / 0.14);
   outline: none;
 }
 

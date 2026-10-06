@@ -67,18 +67,36 @@ function DeskBody({ threadId }: { threadId: string }) {
       { title: "Stock price", message: "What is AAPL trading at?" },
       { title: "Concentration risk", message: "Are any clients over-concentrated in one stock?" },
     ],
+    available: "always",
   }, []);
   return (
     <>
       {intelligencePortal}
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-terminal-border bg-terminal-panel px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
+              Market Desk
+            </p>
+            <h1 className="mt-0.5 text-base font-semibold tracking-tight text-terminal-text sm:text-lg">
+              Research workspace
+            </h1>
+            <p className="mt-0.5 text-xs text-terminal-muted">
+              Multi-agent market research, portfolio analysis, and approved actions.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-terminal-border bg-terminal-bg px-3 py-1 text-[11px] font-semibold text-terminal-muted">
+            <span className="h-1.5 w-1.5 rounded-full bg-terminal-accent shadow-glow-green" aria-hidden="true" />
+            Live intelligence
+          </span>
+        </header>
         <div className="pointer-events-none absolute inset-x-4 bottom-20 z-50 flex">
           <ThinkingIndicator />
         </div>
         <CopilotChat
           agentId={MARKET_DESK_AGENT_ID}
           threadId={threadId}
-          className="h-full"
+          className="finance-desk-chat h-full min-h-0"
           // Same composer bar as Classic (App.tsx): a static bottom bar
           // with a top border and panel background, not a floating pill --
           // CopilotKit's own light-mode styling here was unreadable against
