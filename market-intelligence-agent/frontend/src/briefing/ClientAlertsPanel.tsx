@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { getBriefingClientAlerts, type BriefingData } from "../lib/api";
+import { Skeleton } from "../ui/FeedbackStates";
+import { SectionHeader } from "../ui/SectionHeader";
+import { StatusBadge, type StatusTone } from "../ui/StatusBadge";
+import { SurfaceCard } from "../ui/SurfaceCard";
 
 type ClientAlerts = BriefingData["client_alerts"];
 
@@ -43,33 +47,32 @@ export function ClientAlertsPanel() {
 
   if (!data) {
     return (
-      <section className="rounded-2xl border border-terminal-border bg-terminal-panel p-5 shadow-sm">
-        <div className="animate-pulse">
-          <div className="h-3 w-28 rounded bg-terminal-border/60" />
-          <div className="mt-3 h-5 w-56 rounded bg-terminal-border/50" />
-          <div className="mt-5 h-20 rounded-xl bg-terminal-border/30" />
+      <SurfaceCard padding="lg">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-28" label="Loading concentration alert category" />
+          <Skeleton className="h-5 w-56" label="Loading concentration alert heading" />
+          <Skeleton className="mt-2 h-20" label="Loading concentration alert details" />
         </div>
-      </section>
+      </SurfaceCard>
     );
   }
 
   const hasBreaches = data.available && data.breaches.length > 0;
+  const statusTone: StatusTone = hasBreaches ? "warning" : data.available ? "success" : "neutral";
 
   return (
-    <section className="rounded-2xl border border-terminal-border bg-terminal-panel p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Portfolio risk</p>
-          <h2 className="mt-1 text-xl font-semibold">Client concentration alerts</h2>
-          <p className="mt-1 text-xs text-terminal-muted">Positions above the {data.threshold_pct}% concentration threshold.</p>
-        </div>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-          hasBreaches
-            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
-            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-        }`}>
-          {hasBreaches ? `${data.breaches.length} flagged` : data.available ? "All clear" : "Unavailable"}
-        </span>
+    <SurfaceCard padding="lg">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">Portfolio risk</p>
+      <div className="mt-1">
+        <SectionHeader
+          title="Client concentration alerts"
+          description={`Positions above the ${data.threshold_pct}% concentration threshold.`}
+          action={(
+            <StatusBadge tone={statusTone}>
+              {hasBreaches ? `${data.breaches.length} flagged` : data.available ? "All clear" : "Unavailable"}
+            </StatusBadge>
+          )}
+        />
       </div>
 
       {hasBreaches ? (
@@ -83,9 +86,9 @@ export function ClientAlertsPanel() {
                     <p className="truncate text-sm font-semibold text-terminal-text">{breach.label}</p>
                     <p className="mt-0.5 text-xs text-terminal-muted">{breach.ticker} · {money.format(breach.market_value)}</p>
                   </div>
-                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold tabular-nums text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+                  <StatusBadge tone="warning">
                     {breach.weight_pct.toFixed(1)}%
-                  </span>
+                  </StatusBadge>
                 </div>
               </div>
             </article>
@@ -102,6 +105,6 @@ export function ClientAlertsPanel() {
           </div>
         </div>
       )}
-    </section>
+    </SurfaceCard>
   );
 }
