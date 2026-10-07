@@ -15,7 +15,12 @@ export type IconName =
   | "document"
   | "upload"
   | "check"
-  | "warning";
+  | "warning"
+  | "mail"
+  | "send"
+  | "edit"
+  | "paperclip"
+  | "shield";
 
 const PATHS: Record<IconName, ReactNode> = {
   briefing: <path d="M4 19V9m5 10V5m5 14v-7m5 7V3" />,
@@ -33,6 +38,11 @@ const PATHS: Record<IconName, ReactNode> = {
   upload: <path d="M12 16V4m0 0L7 9m5-5 5 5M5 20h14" />,
   check: <path d="m5 12 4 4L19 6" />,
   warning: <><path d="M12 3 2.7 19h18.6L12 3Z" /><path d="M12 9v4m0 3h.01" /></>,
+  mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></>,
+  send: <><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></>,
+  edit: <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></>,
+  paperclip: <path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 0 1-2.8-2.8l8.9-8.9" />,
+  shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-4" /></>,
 };
 
 export function Icon({ name, className = "h-5 w-5", title }: { name: IconName; className?: string; title?: string }) {

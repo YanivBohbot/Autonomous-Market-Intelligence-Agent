@@ -76,7 +76,19 @@ describe("EmailAttachmentSelector", () => {
     expect(onChange).toHaveBeenCalledWith(REPORT.filename);
   });
 
-  it("keeps a selected report when the email recipient changes outside the selector", async () => {
+  it("shows selected report details and removes the attachment", async () => {
+    getGeneratedReportsMock.mockResolvedValue([REPORT]);
+    render(<EmailAttachmentSelector value={REPORT.filename} onChange={onChange} />);
+    await finishDebounce();
+
+    expect(screen.getByText("Selected report")).toBeInTheDocument();
+    expect(screen.getByText("Margaret Collins")).toBeInTheDocument();
+    expect(screen.getByText(REPORT.filename)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove attachment" }));
+    expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("does not reload or clear a valid selected report on rerender", async () => {
     getGeneratedReportsMock.mockResolvedValue([REPORT]);
     const { rerender } = render(
       <EmailAttachmentSelector value={REPORT.filename} onChange={onChange} />,

@@ -38,7 +38,7 @@ describe("ApprovalPanel", () => {
   });
 
   it.each([
-    [email, ["recipient", "subject", "body"]],
+    [email, ["Recipient", "Subject", "Message"]],
     [file, ["path", "content"]],
     [memory, ["key", "value"]],
   ])("shows the fields of %s", (req, fields) => {
@@ -52,16 +52,29 @@ describe("ApprovalPanel", () => {
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
   });
 
-  it("Approve submits an approve decision", async () => {
+  it("presents email approval as a clear business action", async () => {
+    setup({ requests: [email], allowed: [[...ALL]] });
+
+    expect(screen.getByRole("heading", { name: "Review email before sending" })).toBeInTheDocument();
+    expect(screen.getByText("Approval required")).toBeInTheDocument();
+    expect(screen.getByText("Nothing is sent until you approve.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Recipient")).toBeInTheDocument();
+    expect(screen.getByLabelText("Message")).toBeInTheDocument();
+    expect(screen.queryByText("send_email")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve & send" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit email" })).toBeInTheDocument();
+  });
+
+  it("Approve & send submits an approve decision", async () => {
     const { user, onSubmit } = setup({ requests: [email], allowed: [[...ALL]] });
-    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await user.click(screen.getByRole("button", { name: "Approve & send" }));
     expect(onSubmit).toHaveBeenCalledWith([{ type: "approve" }]);
   });
 
   it("keeps approve unchanged when no report is selected", async () => {
     const { user, onSubmit } = setup({ requests: [email], allowed: [[...ALL]] });
     await screen.findByRole("option", { name: /margaret-collins/ });
-    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await user.click(screen.getByRole("button", { name: "Approve & send" }));
     expect(onSubmit).toHaveBeenCalledWith([{ type: "approve" }]);
   });
 
@@ -72,7 +85,7 @@ describe("ApprovalPanel", () => {
       screen.getByRole("combobox", { name: "Attachment (optional)" }),
       REPORT.filename,
     );
-    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await user.click(screen.getByRole("button", { name: "Approve & send" }));
     expect(onSubmit).toHaveBeenCalledWith([{
       type: "edit",
       edited_action: {
@@ -90,10 +103,10 @@ describe("ApprovalPanel", () => {
     const { user, onSubmit } = setup({ requests: [advisorEmail], allowed: [[...ALL]] });
     await screen.findByRole("option", { name: /Margaret Collins/ });
     await user.selectOptions(screen.getByRole("combobox"), REPORT.filename);
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.clear(screen.getByLabelText("recipient"));
-    await user.type(screen.getByLabelText("recipient"), "other.advisor@firm.com");
-    await user.click(screen.getByRole("button", { name: "Send edited" }));
+    await user.click(screen.getByRole("button", { name: "Edit email" }));
+    await user.clear(screen.getByLabelText("Recipient"));
+    await user.type(screen.getByLabelText("Recipient"), "other.advisor@firm.com");
+    await user.click(screen.getByRole("button", { name: "Approve changes & send" }));
 
     expect(onSubmit.mock.calls[0][0][0].edited_action.args).toMatchObject({
       recipient: "other.advisor@firm.com",
@@ -106,10 +119,10 @@ describe("ApprovalPanel", () => {
     const { user, onSubmit } = setup({ requests: [email], allowed: [[...ALL]] });
     await screen.findByRole("option", { name: /margaret-collins/ });
     await user.selectOptions(screen.getByRole("combobox"), REPORT.filename);
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.clear(screen.getByLabelText("subject"));
-    await user.type(screen.getByLabelText("subject"), "Updated report");
-    await user.click(screen.getByRole("button", { name: "Send edited" }));
+    await user.click(screen.getByRole("button", { name: "Edit email" }));
+    await user.clear(screen.getByLabelText("Subject"));
+    await user.type(screen.getByLabelText("Subject"), "Updated report");
+    await user.click(screen.getByRole("button", { name: "Approve changes & send" }));
     expect(onSubmit.mock.calls[0][0][0].edited_action.args).toMatchObject({
       subject: "Updated report",
       attachment_filename: REPORT.filename,
@@ -121,7 +134,7 @@ describe("ApprovalPanel", () => {
     const { user, onSubmit } = setup({ requests: [request], allowed: [[...ALL]] });
     await screen.findByRole("option", { name: /margaret-collins/ });
     await user.selectOptions(screen.getByRole("combobox"), "");
-    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await user.click(screen.getByRole("button", { name: "Approve & send" }));
     expect(onSubmit.mock.calls[0][0][0].edited_action.args.attachment_filename).toBeNull();
   });
 
@@ -135,18 +148,18 @@ describe("ApprovalPanel", () => {
     const { user, onSubmit } = setup({ requests: [request], allowed: [["approve", "reject"]] });
 
     expect(await screen.findByRole("combobox", { name: "Attachment (optional)" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await user.click(screen.getByRole("button", { name: "Approve & send" }));
 
     expect(onSubmit).toHaveBeenCalledWith([{ type: "approve" }]);
   });
 
-  it("Edit then Send edited submits the edited args", async () => {
+  it("Edit email then Approve changes & send submits the edited args", async () => {
     const { user, onSubmit } = setup({ requests: [email], allowed: [[...ALL]] });
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    const subject = screen.getByLabelText("subject");
+    await user.click(screen.getByRole("button", { name: "Edit email" }));
+    const subject = screen.getByLabelText("Subject");
     await user.clear(subject);
     await user.type(subject, "Weekly report");
-    await user.click(screen.getByRole("button", { name: "Send edited" }));
+    await user.click(screen.getByRole("button", { name: "Approve changes & send" }));
     expect(onSubmit).toHaveBeenCalledWith([
       {
         type: "edit",
@@ -156,6 +169,23 @@ describe("ApprovalPanel", () => {
         },
       },
     ]);
+  });
+
+  it("Cancel changes restores the original email and exits edit mode", async () => {
+    const { user, onSubmit } = setup({ requests: [email], allowed: [[...ALL]] });
+    await screen.findByRole("option", { name: /Margaret Collins/ });
+    await user.selectOptions(screen.getByRole("combobox"), REPORT.filename);
+    await user.click(screen.getByRole("button", { name: "Edit email" }));
+    await user.clear(screen.getByLabelText("Subject"));
+    await user.type(screen.getByLabelText("Subject"), "Changed subject");
+
+    await user.click(screen.getByRole("button", { name: "Cancel changes" }));
+
+    expect(screen.getByLabelText("Subject")).toHaveValue("Hi");
+    expect(screen.getByLabelText("Subject")).toHaveAttribute("readonly");
+    expect(screen.getByRole("combobox")).toHaveValue(REPORT.filename);
+    expect(screen.getByRole("button", { name: "Edit email" })).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("Reject without a reason submits a bare reject", async () => {
@@ -175,8 +205,7 @@ describe("ApprovalPanel", () => {
 
   it("waits for every request, then submits decisions in request order", async () => {
     const { user, onSubmit } = setup({ requests: [email, file], allowed: [[...ALL], [...ALL]] });
-    const approves = screen.getAllByRole("button", { name: "Approve" });
-    await user.click(approves[1]); // decide the second one first
+    await user.click(screen.getByRole("button", { name: "Approve" })); // decide the file request first
     expect(onSubmit).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Reject" }));
     await user.click(screen.getByRole("button", { name: "Confirm reject" }));
@@ -186,19 +215,19 @@ describe("ApprovalPanel", () => {
 
   it("submits once even when clicked twice", () => {
     const { onSubmit } = setup({ requests: [email], allowed: [[...ALL]] });
-    const approve = screen.getByRole("button", { name: "Approve" });
+    const approve = screen.getByRole("button", { name: "Approve & send" });
     // fireEvent (not user-event): dispatches even if the button was already
     // removed by the first click, which is exactly the race we guard against.
     fireEvent.click(approve);
     fireEvent.click(approve);
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve & send" })).not.toBeInTheDocument();
   });
 
   it("hides buttons the review config does not allow", () => {
     setup({ requests: [email], allowed: [["approve", "reject"]] });
-    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit email" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve & send" })).toBeInTheDocument();
   });
 
   it("renders a cancel-only card when there are no requests", async () => {
