@@ -16,20 +16,29 @@ placeholder — the tool returns a fake-success string and never calls SES.
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
+from email.message import EmailMessage
 
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
+from app.report_catalog import resolve_generated_report
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+MAX_RAW_EMAIL_BYTES = 10_000_000
 
 
 class EmailInput(BaseModel):
     recipient: str = Field(description="The recipient's email address.")
     subject: str = Field(description="Subject line of the email.")
     body: str = Field(description="Plain-text body of the email.")
+    attachment_filename: str | None = Field(
+        default=None,
+        description="Optional generated report basename selected during human approval.",
+    )
 
 
 def _is_placeholder_sender(sender: str) -> bool:
@@ -41,47 +50,84 @@ def _is_placeholder_sender(sender: str) -> bool:
     )
 
 
+def _create_ses_client():
+    import boto3
+
+    return boto3.client("ses", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+
+
 @tool("send_email", args_schema=EmailInput)
-def send_email_tool(recipient: str, subject: str, body: str) -> str:
-    """Send a plain-text email via Amazon SES. Use this for reports, replies,
-    or notifications addressed to a single recipient."""
+def send_email_tool(
+    recipient: str,
+    subject: str,
+    body: str,
+    attachment_filename: str | None = None,
+) -> str:
+    """Send an email via Amazon SES, optionally with a validated generated report."""
     sender = settings.EMAIL_SENDER
     logger.info("SEND_EMAIL: from=%s to=%s subject=%r", sender, recipient, subject)
 
+    report = None
+    if attachment_filename:
+        try:
+            report = resolve_generated_report(recipient, attachment_filename)
+        except ValueError as exc:
+            logger.warning("SEND_EMAIL: blocked attachment — %s", exc)
+            return f"Email blocked: {exc}"
+
     if _is_placeholder_sender(sender):
         logger.warning("SEND_EMAIL: simulation mode — sender %r looks placeholder", sender)
-        return f"SIMULATION SUCCÈS : Email virtuellement envoyé à {recipient} avec le sujet '{subject}'."
-
-    # Lazy import: boto3 / botocore live in the slim AgentCore container
-    # image but aren't in the local dev dep tree (pyproject.toml). Importing
-    # at module level breaks pytest collection. Local dev hits the
-    # simulation gate above and never reaches this point.
-    import boto3
-    from botocore.exceptions import BotoCoreError, ClientError
-
-    region = os.environ.get("AWS_REGION", "us-east-1")
-    client = boto3.client("ses", region_name=region)
-    try:
-        resp = client.send_email(
-            Source=sender,
-            Destination={"ToAddresses": [recipient]},
-            Message={
-                "Subject": {"Data": subject, "Charset": "UTF-8"},
-                "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
-            },
+        attachment_note = f" Pièce jointe : {report.name}." if report else ""
+        return (
+            f"SIMULATION SUCCÈS : Email virtuellement envoyé à {recipient} "
+            f"avec le sujet '{subject}'.{attachment_note}"
         )
-    except ClientError as e:
-        # Most common SES errors at this layer:
-        # - MessageRejected: identity unverified, or sandbox+unverified-recipient
-        # - AccessDeniedException: IAM doesn't allow SendEmail on this identity
-        # - Throttling: 1/sec sandbox rate exceeded
-        code = e.response.get("Error", {}).get("Code", "Unknown")
-        msg = e.response.get("Error", {}).get("Message", str(e))
-        logger.error("SEND_EMAIL: SES rejected — %s: %s", code, msg)
-        return f"Erreur SES ({code}) : {msg}"
-    except BotoCoreError as e:
-        logger.exception("SEND_EMAIL: boto layer failed")
-        return f"Erreur réseau SES : {e}"
+
+    try:
+        client = _create_ses_client()
+        if report is None:
+            resp = client.send_email(
+                Source=sender,
+                Destination={"ToAddresses": [recipient]},
+                Message={
+                    "Subject": {"Data": subject, "Charset": "UTF-8"},
+                    "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
+                },
+            )
+        else:
+            message = EmailMessage()
+            message["From"] = sender
+            message["To"] = recipient
+            message["Subject"] = subject
+            message.set_content(body)
+            content_type, _ = mimetypes.guess_type(report.name)
+            maintype, subtype = (content_type or "application/octet-stream").split("/", 1)
+            message.add_attachment(
+                report.read_bytes(),
+                maintype=maintype,
+                subtype=subtype,
+                filename=report.name,
+            )
+            raw = message.as_bytes()
+            if len(raw) > MAX_RAW_EMAIL_BYTES:
+                return "Email blocked: attachment makes the message exceed 10,000,000 bytes."
+            resp = client.send_raw_email(
+                Source=sender,
+                Destinations=[recipient],
+                RawMessage={"Data": raw},
+            )
+    except Exception as exc:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        if isinstance(exc, ClientError):
+            code = exc.response.get("Error", {}).get("Code", "Unknown")
+            msg = exc.response.get("Error", {}).get("Message", str(exc))
+            logger.error("SEND_EMAIL: SES rejected — %s: %s", code, msg)
+            return f"Erreur SES ({code}) : {msg}"
+        if isinstance(exc, BotoCoreError):
+            logger.exception("SEND_EMAIL: boto layer failed")
+            return f"Erreur réseau SES : {exc}"
+        raise
 
     message_id = resp.get("MessageId", "<unknown>")
     logger.info("SEND_EMAIL: sent successfully, MessageId=%s", message_id)

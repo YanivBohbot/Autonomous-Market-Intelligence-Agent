@@ -10,7 +10,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 
 | # | Name | Type | Backend | Args | What it does | Why we have it |
 |---|---|---|---|---|---|---|
-| 1 | `send_email` | side-effect | SMTP/Gmail (native) | recipient, subject, body | Sends an email from the configured sender account; falls back to a console simulation when credentials are placeholder. | Lets the agent take a real-world action (notify a human, deliver a brief) — primary motivation for the HITL approval gate. |
+| 1 | `send_email` | side-effect | Amazon SES (native) | recipient, subject, body, attachment_filename (optional) | Sends an email from the configured sender; a validated generated report uses MIME and SES `send_raw_email`. Placeholder senders return a simulation. | Lets the agent take a real-world action (notify a human, deliver a brief) — primary motivation for the HITL approval gate. |
 | 2 | `read_query` | read-only | MCP stdio → `mcp-server-sqlite` (prod: Lambda `sqlite-crm`) | query (SELECT — WITH in prod only) | Runs a read-only SQL query against the wealth-management DB `customers.db` (companies, clients, transactions, holdings, watchlists). | Gives the agent the advisor's private client/portfolio data to combine with market prices and company reports. |
 | 3 | `yfinance_get_ticker_info` | read-only | MCP stdio → `yfmcp` | ticker | Returns the latest quote (price, change, volume, day stats) for a given ticker. | Live market price is the most-asked datapoint for a market-intelligence agent; cheap real-time signal. |
 | 4 | `yfinance_get_price_history` | read-only | MCP stdio → `yfmcp` | ticker, period (default `"1mo"`) | Returns historical OHLCV bars for a ticker over the requested period. | Enables trend / momentum reasoning that a single quote can't support. |
@@ -40,8 +40,8 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 
 ### 1. `send_email`
 - **File:** `app/agent/tools/emails.py`
-- **What:** SMTP send via Gmail (587, STARTTLS). If `EMAIL_SENDER` still contains the placeholder `"ton_email"`, the tool prints to stdout and returns success without sending — useful for portfolio demos.
-- **Why:** It is the only native side-effect tool currently shipped. It exists to exercise the human-in-the-loop approval flow end-to-end: the LLM proposes a recipient/subject/body, the graph hits `interrupt()`, the user approves or rejects in the Streamlit UI, and only then does `ToolNode` execute the send.
+- **What:** Sends plain messages through Amazon SES `send_email`. When the human selects a recipient-owned generated report during approval, the tool resolves that safe basename again, builds a MIME message, and uses SES `send_raw_email`. If `EMAIL_SENDER` is empty or a placeholder, it returns a simulation result without contacting SES.
+- **Why:** It is the only native side-effect tool currently shipped. The LLM proposes the recipient, subject, and body; the human can optionally attach an existing generated report before approving. Revalidating the file at execution time keeps the HITL flow useful without trusting a browser-supplied path.
 
 ### 2. `read_query`
 - **File:** `app/agent/tools/mcp_clients/mcp_client.py` (selects from registry); prod: `prod/lambdas/sqlite_crm/handler.py`
