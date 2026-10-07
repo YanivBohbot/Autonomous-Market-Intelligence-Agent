@@ -18,9 +18,19 @@ SENT = []
 
 
 @tool("send_email")
-async def _fake_send_email(recipient: str, subject: str, body: str) -> str:
+async def _fake_send_email(
+    recipient: str,
+    subject: str,
+    body: str,
+    attachment_filename: str | None = None,
+) -> str:
     """Fake send."""
-    SENT.append({"recipient": recipient, "subject": subject, "body": body})
+    SENT.append({
+        "recipient": recipient,
+        "subject": subject,
+        "body": body,
+        "attachment_filename": attachment_filename,
+    })
     return f"sent to {recipient}"
 
 
@@ -69,7 +79,7 @@ async def test_approve_sends():
     graph, cfg, _, patches = await _run_until_interrupt()
     try:
         result = await graph.ainvoke(Command(resume={"decisions": [{"type": "approve"}]}), cfg)
-        assert SENT == [_CALL["args"]]
+        assert SENT == [{**_CALL["args"], "attachment_filename": None}]
         assert result["messages"][-1].content == "Email handled."
     finally:
         for p in patches:
@@ -93,6 +103,25 @@ async def test_edit_sends_the_corrected_email():
     try:
         edited = {"name": "send_email", "args": {**_CALL["args"], "subject": "Weekly report"}}
         await graph.ainvoke(Command(resume={"decisions": [{"type": "edit", "edited_action": edited}]}), cfg)
+        assert SENT == [{**edited["args"], "attachment_filename": None}]
+    finally:
+        for p in patches:
+            p.stop()
+
+
+@pytest.mark.anyio
+async def test_edit_sends_the_selected_report_filename():
+    graph, cfg, _, patches = await _run_until_interrupt()
+    try:
+        filename = "margaret-collins-portfolio-brief-2026-10-06.xlsx"
+        edited = {
+            "name": "send_email",
+            "args": {**_CALL["args"], "attachment_filename": filename},
+        }
+        await graph.ainvoke(
+            Command(resume={"decisions": [{"type": "edit", "edited_action": edited}]}),
+            cfg,
+        )
         assert SENT == [edited["args"]]
     finally:
         for p in patches:
