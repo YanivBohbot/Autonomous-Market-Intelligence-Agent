@@ -1,15 +1,20 @@
-"""Serves files the agent's tools write into the workspace so a frontend can
-display them — currently just browser_take_screenshot's PNGs, so the
-Streamlit chat can render them inline instead of only narrating a path."""
+"""Serve safe workspace artifacts and recipient-scoped report metadata."""
 
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
+from app.report_catalog import list_generated_reports
 
 router = APIRouter(prefix="/workspace")
+
+
+@router.get("/reports")
+async def get_generated_reports(recipient: str) -> dict:
+    return {"items": [asdict(item) for item in list_generated_reports(recipient)]}
 
 
 @router.get("/screenshots/{filename}")
