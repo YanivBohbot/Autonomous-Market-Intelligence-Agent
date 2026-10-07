@@ -92,6 +92,25 @@ describe("EmailAttachmentSelector", () => {
     expect(onChange).toHaveBeenCalledWith("");
   });
 
+  it("clears a stale selection on recipient change even when refresh fails", async () => {
+    getGeneratedReportsMock
+      .mockResolvedValueOnce([REPORT])
+      .mockRejectedValueOnce(new Error("503"));
+    const { rerender } = render(
+      <EmailAttachmentSelector recipient="margaret@example.com" value={REPORT.filename} onChange={onChange} />,
+    );
+    await finishDebounce();
+    expect(onChange).not.toHaveBeenCalled();
+
+    rerender(
+      <EmailAttachmentSelector recipient="jane@example.com" value={REPORT.filename} onChange={onChange} />,
+    );
+    await finishDebounce();
+
+    expect(onChange).toHaveBeenCalledWith("");
+    expect(screen.getByRole("alert")).toHaveTextContent("Generated reports unavailable");
+  });
+
   it("disables selection when edits are forbidden", async () => {
     getGeneratedReportsMock.mockResolvedValue([REPORT]);
     render(

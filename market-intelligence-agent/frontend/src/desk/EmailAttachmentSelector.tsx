@@ -25,12 +25,17 @@ export function EmailAttachmentSelector({
   const [failed, setFailed] = useState(false);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
+  const previousRecipientRef = useRef(recipient);
 
   valueRef.current = value;
   onChangeRef.current = onChange;
 
   useEffect(() => {
     let active = true;
+    if (previousRecipientRef.current !== recipient) {
+      previousRecipientRef.current = recipient;
+      if (valueRef.current) onChangeRef.current("");
+    }
     setLoading(true);
     setFailed(false);
 

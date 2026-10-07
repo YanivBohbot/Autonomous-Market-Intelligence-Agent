@@ -154,7 +154,7 @@ function RequestCard({
               type="button"
               className={`${btn} border-terminal-accent/50 text-terminal-accent`}
               onClick={() => {
-                if (request.name === "send_email" && (attachment || originalAttachment)) {
+                if (request.name === "send_email" && attachment !== originalAttachment) {
                   onDecide({
                     type: "edit",
                     edited_action: { name: request.name, args: editedEmailArgs(false) },

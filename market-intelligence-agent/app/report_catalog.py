@@ -30,7 +30,15 @@ def _client_prefix(recipient: str, db_path: Path) -> str | None:
             "SELECT name FROM clients WHERE lower(email) = lower(?)",
             (recipient.strip(),),
         ).fetchone()
-    return None if row is None else f"{slugify(row[0])}-portfolio-brief-"
+        if row is None:
+            return None
+        matching_names = conn.execute(
+            "SELECT count(*) FROM clients WHERE lower(name) = lower(?)",
+            (row[0],),
+        ).fetchone()[0]
+    if matching_names != 1:
+        raise ValueError("client report ownership is ambiguous")
+    return f"{slugify(row[0])}-portfolio-brief-"
 
 
 def list_generated_reports(
@@ -40,7 +48,10 @@ def list_generated_reports(
     workspace_root: str | Path | None = None,
 ) -> list[GeneratedReport]:
     database, workspace = _paths(db_path, workspace_root)
-    prefix = _client_prefix(recipient, database)
+    try:
+        prefix = _client_prefix(recipient, database)
+    except ValueError:
+        return []
     if prefix is None:
         return []
 

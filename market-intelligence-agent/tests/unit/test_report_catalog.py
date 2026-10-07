@@ -48,6 +48,31 @@ def test_unknown_recipient_has_empty_catalog(tmp_path):
     ) == []
 
 
+def test_duplicate_client_names_fail_closed_for_catalog_and_resolution(tmp_path):
+    db = tmp_path / "customers.db"
+    _db(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO clients (name, email) VALUES (?, ?)",
+            ("Margaret Collins", "other.margaret@example.com"),
+        )
+    reports = tmp_path / "workspace" / "reports"
+    reports.mkdir(parents=True)
+    report = reports / "margaret-collins-portfolio-brief-2026-10-06.xlsx"
+    report.write_bytes(b"report")
+
+    assert list_generated_reports(
+        "margaret@example.com", db_path=db, workspace_root=tmp_path / "workspace"
+    ) == []
+    with pytest.raises(ValueError, match="ownership is ambiguous"):
+        resolve_generated_report(
+            "margaret@example.com",
+            report.name,
+            db_path=db,
+            workspace_root=tmp_path / "workspace",
+        )
+
+
 @pytest.mark.parametrize("filename", ["../secret.txt", "..\\secret.txt", "/tmp/secret.txt"])
 def test_rejects_unsafe_names(tmp_path, filename):
     db = tmp_path / "customers.db"

@@ -109,6 +109,16 @@ describe("ApprovalPanel", () => {
     expect(await screen.findByRole("combobox", { name: "Attachment (optional)" })).toBeDisabled();
   });
 
+  it("approves an unchanged proposed attachment when edit is not allowed", async () => {
+    const request = { ...email, args: { ...email.args, attachment_filename: REPORT.filename } };
+    const { user, onSubmit } = setup({ requests: [request], allowed: [["approve", "reject"]] });
+
+    expect(await screen.findByRole("combobox", { name: "Attachment (optional)" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(onSubmit).toHaveBeenCalledWith([{ type: "approve" }]);
+  });
+
   it("Edit then Send edited submits the edited args", async () => {
     const { user, onSubmit } = setup({ requests: [email], allowed: [[...ALL]] });
     await user.click(screen.getByRole("button", { name: "Edit" }));
