@@ -24,6 +24,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from app.agent.tools.client_portfolio import load_client_portfolio
+from app.report_names import slugify
 
 # Same categorical palette PortfolioPieChart.tsx already uses in the chat --
 # copied here (not shared/imported; there is no shared Python/TS config
@@ -117,14 +118,6 @@ def build_portfolio_report_xlsx(portfolio: dict, *, threshold_pct: float = 30.0)
 
     workbook.close()
     return output.getvalue()
-
-
-def slugify(name: str) -> str:
-    # Lowercase, spaces to hyphens, drop anything that isn't alnum/hyphen --
-    # a client name can contain an apostrophe (O'Brien) that must never
-    # reach a filesystem path unescaped.
-    cleaned = "".join(c if c.isalnum() or c in (" ", "-") else "" for c in name.lower())
-    return "-".join(cleaned.split())
 
 
 async def save_portfolio_report(

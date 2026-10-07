@@ -24,7 +24,7 @@ from app.agent.tools.finance_calc import (
     compute_portfolio_metrics,
 )
 from app.agent.tools.knowledge_base import KB_MANIFEST_PATH
-from app.agent.tools.portfolio_report import build_portfolio_report_xlsx, slugify
+from app.agent.tools.portfolio_report import build_portfolio_report_xlsx
 from app.core.config import settings
 from app.data_import.client_summary import build_client_summary
 from app.data_import.db import (
@@ -38,6 +38,7 @@ from app.data_import.db import (
     write_holdings,
 )
 from app.data_import.pdf_ingest import ingest_single_pdf
+from app.report_names import slugify
 from app.data_import.validation import (
     detect_import_type,
     validate_clients_rows,

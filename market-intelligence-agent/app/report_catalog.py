@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.agent.tools.portfolio_report import slugify
 from app.core.config import settings
 from app.data_import.db import DB_PATH
+from app.report_names import slugify
 
 
 @dataclass(frozen=True)
