@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { EDITABLE_FIELDS, type ActionRequest, type Decision, type DecisionType, type PendingApproval } from "./approvals";
+import { EmailAttachmentSelector } from "./EmailAttachmentSelector";
 
 interface Props {
   approval: PendingApproval;
@@ -78,8 +79,20 @@ function RequestCard({
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries((fields ?? []).map((f) => [f, String(request.args[f] ?? "")])),
   );
+  const originalAttachment = request.name === "send_email" && typeof request.args.attachment_filename === "string"
+    ? request.args.attachment_filename
+    : "";
+  const [attachment, setAttachment] = useState(originalAttachment);
   const can = (d: DecisionType) => allowed.includes(d);
   const locked = decided !== undefined;
+
+  function editedEmailArgs(includeFieldEdits: boolean) {
+    return {
+      ...request.args,
+      ...(includeFieldEdits ? values : {}),
+      attachment_filename: attachment || null,
+    };
+  }
 
   return (
     <div className="rounded-xl border border-terminal-warn/40 bg-terminal-panel card-shadow p-3 font-mono text-xs text-terminal-text">
@@ -113,6 +126,15 @@ function RequestCard({
         <pre className="overflow-x-auto rounded bg-terminal-bg p-2 text-[11px]">{JSON.stringify(request.args, null, 2)}</pre>
       )}
 
+      {request.name === "send_email" && (
+        <EmailAttachmentSelector
+          recipient={values.recipient ?? ""}
+          value={attachment}
+          disabled={locked || !can("edit")}
+          onChange={setAttachment}
+        />
+      )}
+
       {rejecting && !locked && (
         <label className="mt-2 flex flex-col gap-0.5">
           <span className="text-[10px] uppercase text-terminal-muted">reason (optional)</span>
@@ -131,7 +153,16 @@ function RequestCard({
             <button
               type="button"
               className={`${btn} border-terminal-accent/50 text-terminal-accent`}
-              onClick={() => onDecide({ type: "approve" })}
+              onClick={() => {
+                if (request.name === "send_email" && (attachment || originalAttachment)) {
+                  onDecide({
+                    type: "edit",
+                    edited_action: { name: request.name, args: editedEmailArgs(false) },
+                  });
+                  return;
+                }
+                onDecide({ type: "approve" });
+              }}
             >
               Approve
             </button>
@@ -145,7 +176,15 @@ function RequestCard({
             <button
               type="button"
               className={`${btn} border-terminal-accent/50 text-terminal-accent`}
-              onClick={() => onDecide({ type: "edit", edited_action: { name: request.name, args: { ...request.args, ...values } } })}
+              onClick={() => onDecide({
+                type: "edit",
+                edited_action: {
+                  name: request.name,
+                  args: request.name === "send_email"
+                    ? editedEmailArgs(true)
+                    : { ...request.args, ...values },
+                },
+              })}
             >
               Send edited
             </button>
