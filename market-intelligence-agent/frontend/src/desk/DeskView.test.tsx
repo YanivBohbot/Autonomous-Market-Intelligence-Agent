@@ -89,19 +89,10 @@ describe("DeskView", () => {
     expect(input.sendButton).toContain("bg-terminal-accent");
   });
 
-  it("keeps all three suggestions permanently available", () => {
+  it("does not register persistent prompt suggestions", () => {
     render(<DeskView threadId="research_3" />);
-    const config = suggestionConfigs[suggestionConfigs.length - 1] as {
-      available: string;
-      suggestions: { title: string; message: string }[];
-    };
 
-    expect(config.available).toBe("always");
-    expect(config.suggestions).toEqual([
-      { title: "Portfolio value", message: "What is the total value of a client's portfolio?" },
-      { title: "Stock price", message: "What is AAPL trading at?" },
-      { title: "Concentration risk", message: "Are any clients over-concentrated in one stock?" },
-    ]);
+    expect(suggestionConfigs).toHaveLength(0);
   });
 
   it("keeps DeskActivityRail inside the Intelligence portal", () => {

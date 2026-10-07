@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { CopilotChat, CopilotKitProvider, HttpAgent, useConfigureSuggestions } from "@copilotkit/react-core/v2";
+import { CopilotChat, CopilotKitProvider, HttpAgent } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
 import { DeskActivityRail } from "./DeskActivityRail";
@@ -61,14 +61,6 @@ function DeskBody({ threadId }: { threadId: string }) {
   // it through plain state) since DeskActivityRail calls useAgent, which
   // needs that provider's context.
   const intelligencePortal = useIntelligenceSlot(<DeskActivityRail />);
-  useConfigureSuggestions({
-    suggestions: [
-      { title: "Portfolio value", message: "What is the total value of a client's portfolio?" },
-      { title: "Stock price", message: "What is AAPL trading at?" },
-      { title: "Concentration risk", message: "Are any clients over-concentrated in one stock?" },
-    ],
-    available: "always",
-  }, []);
   return (
     <>
       {intelligencePortal}
