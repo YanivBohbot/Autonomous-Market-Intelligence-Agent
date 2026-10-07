@@ -14,14 +14,13 @@ export interface GeneratedReportOption {
   filename: string;
   generated_at: string;
   size_bytes: number;
+  client_name: string;
 }
 
 export async function getGeneratedReports(
-  recipient: string,
   base = API_BASE,
 ): Promise<GeneratedReportOption[]> {
-  const query = new URLSearchParams({ recipient });
-  const res = await fetch(`${base}/workspace/reports?${query.toString()}`);
+  const res = await fetch(`${base}/workspace/reports`);
   if (!res.ok) throw new Error(`report catalog ${res.status}`);
   const payload: { items: GeneratedReportOption[] } = await res.json();
   return payload.items;

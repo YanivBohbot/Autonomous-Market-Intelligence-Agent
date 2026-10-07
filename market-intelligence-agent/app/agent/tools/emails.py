@@ -70,7 +70,7 @@ def send_email_tool(
     report = None
     if attachment_filename:
         try:
-            report = resolve_generated_report(recipient, attachment_filename)
+            report = resolve_generated_report(attachment_filename)
         except ValueError as exc:
             logger.warning("SEND_EMAIL: blocked attachment — %s", exc)
             return f"Email blocked: {exc}"

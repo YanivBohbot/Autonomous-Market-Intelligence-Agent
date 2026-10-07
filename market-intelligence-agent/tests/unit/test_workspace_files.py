@@ -94,35 +94,31 @@ def test_a_file_outside_reports_is_not_served(tmp_path, monkeypatch):
     assert res.status_code == 404
 
 
-def test_lists_generated_reports_for_recipient(tmp_path, monkeypatch):
-    seen = []
+def test_lists_all_generated_reports(tmp_path, monkeypatch):
     items = [GeneratedReport(
         filename="margaret-collins-portfolio-brief-2026-10-06.xlsx",
         generated_at="2026-10-06T09:30:00+00:00",
         size_bytes=24832,
+        client_name="Margaret Collins",
     )]
     monkeypatch.setattr(
         "app.api.routers.workspace.list_generated_reports",
-        lambda recipient: seen.append(recipient) or items,
+        lambda: items,
     )
-    response = _client(tmp_path, monkeypatch).get(
-        "/workspace/reports?recipient=margaret%40example.com"
-    )
+    response = _client(tmp_path, monkeypatch).get("/workspace/reports")
     assert response.status_code == 200
     assert response.json() == {"items": [{
         "filename": items[0].filename,
         "generated_at": items[0].generated_at,
         "size_bytes": items[0].size_bytes,
+        "client_name": items[0].client_name,
     }]}
-    assert seen == ["margaret@example.com"]
 
 
-def test_unknown_recipient_report_catalog_is_empty(tmp_path, monkeypatch):
+def test_generated_report_catalog_can_be_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "app.api.routers.workspace.list_generated_reports", lambda recipient: []
+        "app.api.routers.workspace.list_generated_reports", lambda: []
     )
-    response = _client(tmp_path, monkeypatch).get(
-        "/workspace/reports?recipient=unknown%40example.com"
-    )
+    response = _client(tmp_path, monkeypatch).get("/workspace/reports")
     assert response.status_code == 200
     assert response.json() == {"items": []}

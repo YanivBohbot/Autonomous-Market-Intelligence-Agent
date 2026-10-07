@@ -128,7 +128,6 @@ function RequestCard({
 
       {request.name === "send_email" && (
         <EmailAttachmentSelector
-          recipient={values.recipient ?? ""}
           value={attachment}
           disabled={locked || !can("edit")}
           onChange={setAttachment}

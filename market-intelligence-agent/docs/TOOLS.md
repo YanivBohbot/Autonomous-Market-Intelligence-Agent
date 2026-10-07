@@ -40,7 +40,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 
 ### 1. `send_email`
 - **File:** `app/agent/tools/emails.py`
-- **What:** Sends plain messages through Amazon SES `send_email`. When the human selects a recipient-owned generated report during approval, the tool resolves that safe basename again, builds a MIME message, and uses SES `send_raw_email`. If `EMAIL_SENDER` is empty or a placeholder, it returns a simulation result without contacting SES.
+- **What:** Sends plain messages through Amazon SES `send_email`. When the human selects any generated client report during approval, the tool resolves that safe basename against the generated-report catalog, builds a MIME message, and uses SES `send_raw_email`. The selected report does not need to belong to the email recipient. If `EMAIL_SENDER` is empty or a placeholder, it returns a simulation result without contacting SES.
 - **Why:** It is the only native side-effect tool currently shipped. The LLM proposes the recipient, subject, and body; the human can optionally attach an existing generated report before approving. Revalidating the file at execution time keeps the HITL flow useful without trusting a browser-supplied path.
 
 ### 2. `read_query`

@@ -1,5 +1,7 @@
 # Research Email Report Attachments Implementation Plan
 
+> **Amendment (2026-10-07):** The recipient-owned catalog assumption in this historical plan was superseded by the approved design amendment in the linked specification. The implemented selector lists all generated client reports while recipient permission and file safety remain independently enforced.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove the persistent Research prompt shortcuts and let users manually attach one recipient-owned generated report from the `send_email` HITL card.

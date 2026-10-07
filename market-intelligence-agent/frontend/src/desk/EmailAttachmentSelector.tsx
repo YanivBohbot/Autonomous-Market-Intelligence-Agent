@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { getGeneratedReports, type GeneratedReportOption } from "../lib/api";
 
 interface EmailAttachmentSelectorProps {
-  recipient: string;
   value: string;
   disabled?: boolean;
   onChange: (filename: string) => void;
@@ -15,7 +14,6 @@ function formatGeneratedAt(value: string): string {
 }
 
 export function EmailAttachmentSelector({
-  recipient,
   value,
   disabled = false,
   onChange,
@@ -25,23 +23,18 @@ export function EmailAttachmentSelector({
   const [failed, setFailed] = useState(false);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
-  const previousRecipientRef = useRef(recipient);
 
   valueRef.current = value;
   onChangeRef.current = onChange;
 
   useEffect(() => {
     let active = true;
-    if (previousRecipientRef.current !== recipient) {
-      previousRecipientRef.current = recipient;
-      if (valueRef.current) onChangeRef.current("");
-    }
     setLoading(true);
     setFailed(false);
 
     const timer = window.setTimeout(async () => {
       try {
-        const nextReports = await getGeneratedReports(recipient);
+        const nextReports = await getGeneratedReports();
         if (!active) return;
         setReports(nextReports);
         if (
@@ -63,7 +56,7 @@ export function EmailAttachmentSelector({
       active = false;
       window.clearTimeout(timer);
     };
-  }, [recipient]);
+  }, []);
 
   return (
     <div className="approval-field">
@@ -77,7 +70,7 @@ export function EmailAttachmentSelector({
         <option value="">No attachment</option>
         {reports.map((report) => (
           <option key={report.filename} value={report.filename}>
-            {report.filename} · {formatGeneratedAt(report.generated_at)}
+            {report.client_name} · {report.filename} · {formatGeneratedAt(report.generated_at)}
           </option>
         ))}
       </select>

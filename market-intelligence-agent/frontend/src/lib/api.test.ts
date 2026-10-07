@@ -29,24 +29,23 @@ describe("uploadToWorkspace", () => {
 });
 
 describe("data section API", () => {
-  it("getGeneratedReports encodes the recipient and returns report metadata", async () => {
+  it("getGeneratedReports returns the complete generated-report catalog", async () => {
     const payload = { items: [{
       filename: "margaret-collins-portfolio-brief-2026-10-06.xlsx",
       generated_at: "2026-10-06T09:30:00+00:00",
       size_bytes: 24832,
+      client_name: "Margaret Collins",
     }] };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getGeneratedReports("margaret+vip@example.com")).resolves.toEqual(payload.items);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/workspace/reports?recipient=margaret%2Bvip%40example.com",
-    );
+    await expect(getGeneratedReports()).resolves.toEqual(payload.items);
+    expect(fetchMock).toHaveBeenCalledWith("/workspace/reports");
   });
 
   it("getGeneratedReports rejects a failed catalog response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503 }));
-    await expect(getGeneratedReports("margaret@example.com")).rejects.toThrow("report catalog 503");
+    await expect(getGeneratedReports()).rejects.toThrow("report catalog 503");
   });
 
   it("getMarketTicker fetches the independent shell feed", async () => {

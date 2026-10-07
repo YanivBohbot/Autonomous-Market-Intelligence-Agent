@@ -21,6 +21,7 @@ const REPORT = {
   filename: "margaret-collins-portfolio-brief-2026-10-06.xlsx",
   generated_at: "2026-10-06T09:30:00+00:00",
   size_bytes: 24832,
+  client_name: "Margaret Collins",
 };
 
 function setup(approval: PendingApproval) {
@@ -79,6 +80,26 @@ describe("ApprovalPanel", () => {
         args: { ...email.args, attachment_filename: REPORT.filename },
       },
     }]);
+  });
+
+  it("keeps a selected client report when the advisor recipient is edited", async () => {
+    const advisorEmail = {
+      ...email,
+      args: { ...email.args, recipient: "advisor@firm.com" },
+    };
+    const { user, onSubmit } = setup({ requests: [advisorEmail], allowed: [[...ALL]] });
+    await screen.findByRole("option", { name: /Margaret Collins/ });
+    await user.selectOptions(screen.getByRole("combobox"), REPORT.filename);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.clear(screen.getByLabelText("recipient"));
+    await user.type(screen.getByLabelText("recipient"), "other.advisor@firm.com");
+    await user.click(screen.getByRole("button", { name: "Send edited" }));
+
+    expect(onSubmit.mock.calls[0][0][0].edited_action.args).toMatchObject({
+      recipient: "other.advisor@firm.com",
+      attachment_filename: REPORT.filename,
+    });
+    expect(getGeneratedReportsMock).toHaveBeenCalledWith();
   });
 
   it("keeps the selected report when sending edited fields", async () => {

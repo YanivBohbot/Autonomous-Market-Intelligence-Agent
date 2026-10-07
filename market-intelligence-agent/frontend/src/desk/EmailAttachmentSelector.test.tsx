@@ -13,6 +13,7 @@ const REPORT = {
   filename: "margaret-collins-portfolio-brief-2026-10-06.xlsx",
   generated_at: "2026-10-06T09:30:00+00:00",
   size_bytes: 24832,
+  client_name: "Margaret Collins",
 };
 
 async function finishDebounce() {
@@ -34,21 +35,22 @@ describe("EmailAttachmentSelector", () => {
     vi.useRealTimers();
   });
 
-  it("loads recipient reports without selecting one", async () => {
+  it("loads every generated report without selecting one", async () => {
     getGeneratedReportsMock.mockResolvedValue([REPORT]);
-    render(<EmailAttachmentSelector recipient="margaret@example.com" value="" onChange={onChange} />);
+    render(<EmailAttachmentSelector value="" onChange={onChange} />);
 
     expect(screen.getByRole("status")).toHaveTextContent("Loading generated reports");
     await finishDebounce();
 
-    expect(screen.getByRole("option", { name: /margaret-collins/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Margaret Collins.*margaret-collins/ })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Attachment (optional)" })).toHaveValue("");
     expect(onChange).not.toHaveBeenCalled();
+    expect(getGeneratedReportsMock).toHaveBeenCalledWith();
   });
 
   it("shows an empty state without changing the selection", async () => {
     getGeneratedReportsMock.mockResolvedValue([]);
-    render(<EmailAttachmentSelector recipient="margaret@example.com" value="" onChange={onChange} />);
+    render(<EmailAttachmentSelector value="" onChange={onChange} />);
     await finishDebounce();
 
     expect(screen.getByText("No generated reports available")).toBeInTheDocument();
@@ -57,7 +59,7 @@ describe("EmailAttachmentSelector", () => {
 
   it("keeps no-attachment usable when loading fails", async () => {
     getGeneratedReportsMock.mockRejectedValue(new Error("503"));
-    render(<EmailAttachmentSelector recipient="margaret@example.com" value="" onChange={onChange} />);
+    render(<EmailAttachmentSelector value="" onChange={onChange} />);
     await finishDebounce();
 
     expect(screen.getByRole("alert")).toHaveTextContent("Generated reports unavailable");
@@ -67,54 +69,33 @@ describe("EmailAttachmentSelector", () => {
 
   it("returns a manually selected filename", async () => {
     getGeneratedReportsMock.mockResolvedValue([REPORT]);
-    render(<EmailAttachmentSelector recipient="margaret@example.com" value="" onChange={onChange} />);
+    render(<EmailAttachmentSelector value="" onChange={onChange} />);
     await finishDebounce();
 
     fireEvent.change(screen.getByRole("combobox"), { target: { value: REPORT.filename } });
     expect(onChange).toHaveBeenCalledWith(REPORT.filename);
   });
 
-  it("clears a stale selection after the recipient changes", async () => {
-    getGeneratedReportsMock
-      .mockResolvedValueOnce([REPORT])
-      .mockResolvedValueOnce([]);
+  it("keeps a selected report when the email recipient changes outside the selector", async () => {
+    getGeneratedReportsMock.mockResolvedValue([REPORT]);
     const { rerender } = render(
-      <EmailAttachmentSelector recipient="margaret@example.com" value={REPORT.filename} onChange={onChange} />,
+      <EmailAttachmentSelector value={REPORT.filename} onChange={onChange} />,
     );
     await finishDebounce();
     expect(onChange).not.toHaveBeenCalled();
 
     rerender(
-      <EmailAttachmentSelector recipient="jane@example.com" value={REPORT.filename} onChange={onChange} />,
+      <EmailAttachmentSelector value={REPORT.filename} onChange={onChange} />,
     );
-    await finishDebounce();
 
-    expect(onChange).toHaveBeenCalledWith("");
-  });
-
-  it("clears a stale selection on recipient change even when refresh fails", async () => {
-    getGeneratedReportsMock
-      .mockResolvedValueOnce([REPORT])
-      .mockRejectedValueOnce(new Error("503"));
-    const { rerender } = render(
-      <EmailAttachmentSelector recipient="margaret@example.com" value={REPORT.filename} onChange={onChange} />,
-    );
-    await finishDebounce();
     expect(onChange).not.toHaveBeenCalled();
-
-    rerender(
-      <EmailAttachmentSelector recipient="jane@example.com" value={REPORT.filename} onChange={onChange} />,
-    );
-    await finishDebounce();
-
-    expect(onChange).toHaveBeenCalledWith("");
-    expect(screen.getByRole("alert")).toHaveTextContent("Generated reports unavailable");
+    expect(getGeneratedReportsMock).toHaveBeenCalledTimes(1);
   });
 
   it("disables selection when edits are forbidden", async () => {
     getGeneratedReportsMock.mockResolvedValue([REPORT]);
     render(
-      <EmailAttachmentSelector recipient="margaret@example.com" value="" disabled onChange={onChange} />,
+      <EmailAttachmentSelector value="" disabled onChange={onChange} />,
     );
     await finishDebounce();
 

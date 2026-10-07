@@ -1,4 +1,4 @@
-"""Serve safe workspace artifacts and recipient-scoped report metadata."""
+"""Serve safe workspace artifacts and generated-report metadata."""
 
 from dataclasses import asdict
 from pathlib import Path
@@ -13,8 +13,8 @@ router = APIRouter(prefix="/workspace")
 
 
 @router.get("/reports")
-async def get_generated_reports(recipient: str) -> dict:
-    return {"items": [asdict(item) for item in list_generated_reports(recipient)]}
+async def get_generated_reports() -> dict:
+    return {"items": [asdict(item) for item in list_generated_reports()]}
 
 
 @router.get("/screenshots/{filename}")
