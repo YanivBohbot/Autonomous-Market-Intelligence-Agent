@@ -10,6 +10,23 @@ export interface MarketTickerItem {
   change_pct: number;
 }
 
+export interface GeneratedReportOption {
+  filename: string;
+  generated_at: string;
+  size_bytes: number;
+}
+
+export async function getGeneratedReports(
+  recipient: string,
+  base = API_BASE,
+): Promise<GeneratedReportOption[]> {
+  const query = new URLSearchParams({ recipient });
+  const res = await fetch(`${base}/workspace/reports?${query.toString()}`);
+  if (!res.ok) throw new Error(`report catalog ${res.status}`);
+  const payload: { items: GeneratedReportOption[] } = await res.json();
+  return payload.items;
+}
+
 export async function getMarketTicker(base = API_BASE): Promise<{ items: MarketTickerItem[] }> {
   const res = await fetch(`${base}/data/market-ticker`);
   if (!res.ok) throw new Error(`market ticker ${res.status}`);
