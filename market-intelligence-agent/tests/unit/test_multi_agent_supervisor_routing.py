@@ -1,6 +1,5 @@
 from unittest.mock import patch
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langgraph.graph import END
 
 from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import supervisor_node, RoutingDecision, MAX_AGENT_HOPS
@@ -36,7 +35,7 @@ def test_finishes_deterministically_after_specialist_returns_a_plain_answer_with
         result = supervisor_node(state)
 
     mock.invoke.assert_not_called()
-    assert result.goto == END
+    assert result.goto == "finalize_turn"
     assert result.update["next_agent"] is None
 
 
@@ -339,12 +338,12 @@ def test_routes_to_email_agent():
     assert result.goto == "email_agent"
 
 
-def test_finish_routes_to_end():
+def test_finish_routes_to_turn_finalizer():
     history = [HumanMessage(content="q"), AIMessage(content="the answer")]
     with patch.object(supervisor_mod, "_router") as mock:
         mock.invoke.return_value = RoutingDecision(next="FINISH", reasoning="already answered")
         result = supervisor_node(_state(messages=history))
-    assert result.goto == END
+    assert result.goto == "finalize_turn"
     assert result.update["next_agent"] is None
 
 
@@ -377,7 +376,7 @@ def test_finish_on_new_question_after_earlier_answer_falls_back_to_rag_agent():
 def test_hop_cap_short_circuits_without_calling_llm():
     with patch.object(supervisor_mod, "_router") as mock:
         result = supervisor_node(_state(agent_hops=MAX_AGENT_HOPS))
-    assert result.goto == END
+    assert result.goto == "finalize_turn"
     mock.invoke.assert_not_called()
 
 
@@ -407,7 +406,7 @@ def test_hops_still_cap_mid_turn_even_right_after_a_human_message_was_seen_earli
     history = [HumanMessage(content="q"), AIMessage(content="", tool_calls=[])]
     with patch.object(supervisor_mod, "_router") as mock:
         result = supervisor_node(_state(agent_hops=MAX_AGENT_HOPS, messages=history))
-    assert result.goto == END
+    assert result.goto == "finalize_turn"
     mock.invoke.assert_not_called()
 
 

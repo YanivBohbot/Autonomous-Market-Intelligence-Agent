@@ -24,14 +24,12 @@ SpecialistName = Literal[
     "browser_agent",
     "email_agent",
 ]
-# Where the supervisor can send control: a specialist, or END ("__end__").
-Route = Literal[SpecialistName, "__end__"]
+# Where the supervisor can send control: a specialist or the finalizer.
+Route = Literal[SpecialistName, "finalize_turn"]
 
 
 def _finish() -> Command[Route]:
-    # "__end__" is langgraph's END; spelled as a literal so the type checker
-    # keeps Command[Route] instead of widening to Command[str].
-    return Command(goto="__end__", update={"next_agent": None})
+    return Command(goto="finalize_turn", update={"next_agent": None})
 
 
 class RoutingDecision(BaseModel):

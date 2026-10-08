@@ -37,6 +37,10 @@ def _is_summary(message) -> bool:
     return getattr(message, "additional_kwargs", {}).get("lc_source") == "summarization"
 
 
+def _is_voice(message) -> bool:
+    return getattr(message, "additional_kwargs", {}).get("source") == "voice"
+
+
 class MarketDeskAgent(LangGraphAgent):
     """LangGraphAgent that keeps SummarizationMiddleware's summary (a
     HumanMessage in state, needed by the model) out of what the browser
@@ -46,7 +50,8 @@ class MarketDeskAgent(LangGraphAgent):
     test_summary_message_is_not_sent_to_the_chat)."""
 
     def _filter_orphan_tool_messages(self, messages: list) -> list:
-        return super()._filter_orphan_tool_messages([m for m in messages if not _is_summary(m)])
+        visible = [m for m in messages if not _is_summary(m) and not _is_voice(m)]
+        return super()._filter_orphan_tool_messages(visible)
 
     def _build_command_from_agui_resume(self, entries: list, *, open_interrupts=None) -> Command:
         """CopilotKit's cancel() resumes with status "cancelled", but every
@@ -115,7 +120,8 @@ async def market_desk_history(thread_id: str, request: Request) -> list[dict]:
     since CopilotKit itself never fetches history on its own; see
     docs/superpowers/specs/2026-10-04-clients-workspace-design.md's
     Known limitation note. Tool messages and summarization HumanMessages
-    (_is_summary) are left out -- this is for display, not model context."""
+    (_is_summary) and voice turns (_is_voice) are left out -- this is for
+    display, not model context."""
     agent: LangGraphAgent | None = getattr(request.app.state, "market_desk_agent", None)
     if agent is None:
         raise HTTPException(status_code=503, detail="Market Desk agent is not ready.")
@@ -128,6 +134,7 @@ async def market_desk_history(thread_id: str, request: Request) -> list[dict]:
         and isinstance(m.content, str)
         and m.content
         and not _is_summary(m)
+        and not _is_voice(m)
     ]
 
 

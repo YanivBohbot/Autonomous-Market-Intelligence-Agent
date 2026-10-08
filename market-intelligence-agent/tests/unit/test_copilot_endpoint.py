@@ -271,6 +271,56 @@ def test_history_excludes_the_internal_summarization_message(finance_client):
     assert not any("summary of the conversation" in m["content"] for m in resp.json())
 
 
+def test_history_and_snapshots_hide_voice_turns_but_checkpoint_retains_them(finance_client):
+    client, app = finance_client
+    graph = app.state.market_desk_agent.graph
+    cfg = {"configurable": {"thread_id": "voice-history"}}
+    messages = [
+        HumanMessage(content="typed question", id="typed-1"),
+        AIMessage(content="typed answer", id="typed-2"),
+        HumanMessage(
+            content="spoken question",
+            id="voice-1",
+            additional_kwargs={"source": "voice"},
+        ),
+        AIMessage(
+            content="spoken answer",
+            id="voice-2",
+            additional_kwargs={"source": "voice"},
+        ),
+        HumanMessage(content="typed follow-up", id="typed-3"),
+        AIMessage(content="typed follow-up answer", id="typed-4"),
+    ]
+    graph.update_state(cfg, {"messages": messages})
+
+    response = client.get(f"{PATH}/history", params={"thread_id": "voice-history"})
+
+    assert response.status_code == 200
+    assert [item["content"] for item in response.json()] == [
+        "typed question",
+        "typed answer",
+        "typed follow-up",
+        "typed follow-up answer",
+    ]
+    checkpoint = graph.get_state(cfg).values["messages"]
+    assert [message.content for message in checkpoint] == [
+        "typed question",
+        "typed answer",
+        "spoken question",
+        "spoken answer",
+        "typed follow-up",
+        "typed follow-up answer",
+    ]
+
+    filtered = app.state.market_desk_agent._filter_orphan_tool_messages(messages)
+    assert [message.content for message in filtered] == [
+        "typed question",
+        "typed answer",
+        "typed follow-up",
+        "typed follow-up answer",
+    ]
+
+
 def test_history_404s_when_agent_not_ready():
     app = FastAPI()
     app.include_router(router)

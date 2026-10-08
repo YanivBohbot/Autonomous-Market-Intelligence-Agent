@@ -1,4 +1,4 @@
-from typing import Annotated, List, Optional, TypedDict
+from typing import Annotated, List, Literal, Optional, TypedDict
 from langchain.agents import AgentState
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
@@ -18,6 +18,9 @@ class SupervisorState(TypedDict):
     # Set every turn by load_client_context, from the thread id -- see that
     # function's docstring. None on every thread except a client workspace's.
     client_context: Optional[str]
+    # Transport that originated the current turn. Voice messages remain in
+    # checkpoint state for context but are filtered from visual history.
+    turn_source: Literal["text", "voice"]
 
 
 class ClientContextState(AgentState):
