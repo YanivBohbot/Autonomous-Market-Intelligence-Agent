@@ -18,10 +18,7 @@ from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.store.base import BaseStore
 
-from app.agent.multi_agent import build_multi_agent_app
 from app.core.config import settings
 
 MARKET_DESK_AGENT_NAME = "market_desk"
@@ -74,12 +71,10 @@ def _pending_action_count(open_interrupts: list, interrupt_id: str) -> int:
     return 0
 
 
-def build_market_desk_agent(
-    checkpointer: BaseCheckpointSaver, store: BaseStore | None
-) -> LangGraphAgent:
+def build_market_desk_agent(graph) -> LangGraphAgent:
     return MarketDeskAgent(
         name=MARKET_DESK_AGENT_NAME,
-        graph=build_multi_agent_app(checkpointer, store),
+        graph=graph,
         emit_subagent_events=True,
         emit_interrupt_outcome=True,
         enable_legacy_on_interrupt_event=False,
@@ -87,10 +82,8 @@ def build_market_desk_agent(
     )
 
 
-def attach_market_desk(
-    app: FastAPI, checkpointer: BaseCheckpointSaver, store: BaseStore | None
-) -> None:
-    app.state.market_desk_agent = build_market_desk_agent(checkpointer, store)
+def attach_market_desk(app: FastAPI, graph) -> None:
+    app.state.market_desk_agent = build_market_desk_agent(graph)
 
 
 @router.post("/copilot/market-desk")

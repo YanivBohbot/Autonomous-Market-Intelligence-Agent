@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 
+from app.agent.multi_agent import build_multi_agent_app
 from app.agent.multi_agent import email_agent as email_mod
 from app.agent.multi_agent import finance_agent as finance_mod
 from app.agent.multi_agent import portfolio_agent as portfolio_mod
@@ -50,7 +51,8 @@ def _client_with(stack: ExitStack, route_to: str) -> tuple[TestClient, FastAPI]:
     router_mock.invoke.return_value = RoutingDecision(next=route_to, reasoning="test")
     app = FastAPI()
     app.include_router(router)
-    attach_market_desk(app, InMemorySaver(), None)
+    graph = build_multi_agent_app(InMemorySaver(), None)
+    attach_market_desk(app, graph)
     return TestClient(app), app
 
 

@@ -4,9 +4,9 @@ from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.agent.graph import build_agent_app
 from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
+from app.agent.multi_agent import build_multi_agent_app
 from app.api.routers.agentcore import router as agentcore_router
 from app.api.routers.approve import router as approve_router
 from app.api.routers.data import router as data_router
@@ -28,14 +28,14 @@ def _get_version() -> str:
         return "0.0.0"
 
 
-def setup_market_desk(app: FastAPI, checkpointer, store) -> None:
+def setup_market_desk(app: FastAPI, graph) -> None:
     """Market Desk (multi-agent over AG-UI) is opt-in: COPILOT_ENABLED."""
     if settings.COPILOT_ENABLED:
         # Imported lazily: ag-ui is a local-dev dependency, absent from the
         # AgentCore image (requirements.agentcore.txt).
         from app.api.routers.copilot import attach_market_desk
 
-        attach_market_desk(app, checkpointer, store)
+        attach_market_desk(app, graph)
 
 
 def include_market_desk_routes(app: FastAPI) -> None:
@@ -50,9 +50,10 @@ def include_market_desk_routes(app: FastAPI) -> None:
 async def lifespan(app: FastAPI):
     async with create_checkpointer() as checkpointer:
         store = create_store()
-        app.state.agent_app = build_agent_app(checkpointer, store)
+        agent_graph = build_multi_agent_app(checkpointer, store)
+        app.state.agent_app = agent_graph
         app.state.voice_agent_app = build_voice_agent_app(checkpointer, store)
-        setup_market_desk(app, checkpointer, store)
+        setup_market_desk(app, agent_graph)
         yield
 
 
