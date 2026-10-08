@@ -1,6 +1,6 @@
 # Multi-Agent Voice Mode for Research — Design
 
-**Status:** Conversational design approved by the user on 2026-10-08; written specification awaiting user review.
+**Status:** Written specification approved by the user on 2026-10-08; implementation plans prepared for review.
 
 ## Goal
 
