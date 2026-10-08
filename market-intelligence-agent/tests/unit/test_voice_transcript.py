@@ -27,6 +27,14 @@ def test_get_after_unknown_thread_returns_empty():
     assert transcript_store.get_after("voice-never-seen", 0) == []
 
 
+def test_classic_transcript_contract_remains_available():
+    thread_id = "classic-contract-thread"
+    transcript_store.append(thread_id, "assistant", "Classic voice remains available.")
+    assert transcript_store.get_after(thread_id, 0)[0]["content"] == (
+        "Classic voice remains available."
+    )
+
+
 def test_transcript_endpoint_returns_new_messages_and_advances_cursor():
     thread_id = "voice-test-thread-2"
     transcript_store.append(thread_id, "assistant", "Hi, I'm your market intelligence assistant.")

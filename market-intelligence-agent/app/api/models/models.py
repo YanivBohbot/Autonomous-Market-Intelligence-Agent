@@ -24,8 +24,9 @@ class HealthResponse(BaseModel):
 
 
 class GptLiveSessionRequest(BaseModel):
-    sdp: str
+    sdp: str = Field(min_length=1, max_length=200_000)
     thread_id: Optional[str] = None
+    surface: Literal["classic", "research"] = "classic"
 
 
 class GptLiveSessionResponse(BaseModel):

@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Voice mode (OpenAI GPT-Live). Reuses OPENAI_API_KEY above.
     OPENAI_LIVE_MODEL: str = "gpt-live-1"
     OPENAI_LIVE_VOICE: str = "marin"
+    VOICE_ALLOWED_ORIGINS: str = (
+        "http://127.0.0.1:5173,http://localhost:5173"
+    )
     LOG_LEVEL: str = "INFO"
     CHECKPOINTER_BACKEND: str = "sqlite"  # "sqlite" | "memory"
     CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
