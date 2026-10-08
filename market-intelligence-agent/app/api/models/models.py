@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Any, Literal, Optional
 
 
 class ChatResponse(BaseModel):
@@ -44,3 +44,56 @@ class VoiceTranscriptResponse(BaseModel):
     last_id: int
     paused: bool
     action: Optional[str] = None
+
+
+VoicePhase = Literal[
+    "connecting",
+    "listening",
+    "analyzing",
+    "speaking",
+    "approval_required",
+    "disconnected",
+    "error",
+]
+VoiceActivityKind = Literal[
+    "specialist_started",
+    "tool_started",
+    "tool_finished",
+    "approval_required",
+    "run_finished",
+    "run_error",
+]
+
+
+class VoiceActivityEventResponse(BaseModel):
+    sequence: int
+    run_id: str
+    kind: VoiceActivityKind
+    name: Optional[str] = None
+    tool_call_id: Optional[str] = None
+    duration_ms: Optional[int] = Field(default=None, ge=0)
+    message: Optional[str] = None
+
+
+class VoicePendingApprovalResponse(BaseModel):
+    interrupt_id: str
+    action_requests: list[dict[str, Any]]
+    review_configs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class VoiceStateResponse(BaseModel):
+    phase: VoicePhase
+    sequence: int
+    events: list[VoiceActivityEventResponse]
+    pending: Optional[VoicePendingApprovalResponse] = None
+    error: Optional[str] = None
+
+
+class VoiceDecisionRequest(BaseModel):
+    interrupt_id: str
+    decisions: list[dict[str, Any]] = Field(min_length=1)
+
+
+class VoiceDecisionResponse(BaseModel):
+    status: Literal["applied", "already_applied", "stale"]
+    response: Optional[str] = None

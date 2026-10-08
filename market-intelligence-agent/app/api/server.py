@@ -16,6 +16,7 @@ from app.api.routers.health import router as health_router
 from app.api.routers.stream import router as stream_router
 from app.api.routers.workspace import router as workspace_router
 from app.voice.graph import build_voice_agent_app
+from app.voice.activity_store import VoiceActivityStore
 from app.core.config import settings
 from app.core.logging import configure_logging
 
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
         agent_graph = build_multi_agent_app(checkpointer, store)
         app.state.agent_app = agent_graph
         app.state.turn_coordinator = ThreadTurnCoordinator()
+        app.state.voice_activity_store = VoiceActivityStore()
         app.state.voice_agent_app = build_voice_agent_app(checkpointer, store)
         setup_market_desk(app, agent_graph)
         yield
