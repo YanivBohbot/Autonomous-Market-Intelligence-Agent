@@ -9,9 +9,13 @@ from langchain_core.messages import AIMessageChunk, ToolMessage
 
 from app.agent.tools.mcp_clients.browser_client import SCREENSHOT_TOOL_NAME
 from app.api.models.models import StreamRequest
-from app.api.routers._helpers import get_action_description
+from app.api.routers._helpers import (
+    get_action_description,
+    pending_interrupt_from_snapshot,
+)
 
 _SCREENSHOT_LINK_RE = re.compile(r"\[Screenshot[^\]]*\]\(([^)]+)\)")
+_STREAMABLE_NODES = {"agent", "synthesize"}
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -98,8 +102,11 @@ async def stream_endpoint(
     inputs = {"question": payload.query}
 
     try:
-        async for mode, chunk in agent_app.astream(
-            inputs, config, stream_mode=["updates", "messages"]
+        async for _namespace, mode, chunk in agent_app.astream(
+            inputs,
+            config,
+            stream_mode=["updates", "messages"],
+            subgraphs=True,
         ):
             if mode == "updates":
                 for node_name, update in chunk.items():
@@ -121,7 +128,7 @@ async def stream_endpoint(
                 token, meta = chunk
                 if (
                     isinstance(token, AIMessageChunk)
-                    and meta.get("langgraph_node") == "generate"
+                    and meta.get("langgraph_node") in _STREAMABLE_NODES
                     and token.content
                     and not getattr(token, "tool_call_chunks", None)
                 ):
@@ -129,10 +136,12 @@ async def stream_endpoint(
                         data={"token": token.content}, event="token"
                     )
 
-        snapshot = await agent_app.aget_state(config)
-        if snapshot.next and "approval" in snapshot.next:
-            last_msg = snapshot.values["messages"][-1]
-            action = get_action_description(last_msg)
+        snapshot = await agent_app.aget_state(config, subgraphs=True)
+        pending = pending_interrupt_from_snapshot(snapshot)
+        if pending is not None:
+            requests = pending.value.get("action_requests")
+            action_request = requests[0] if isinstance(requests, list) and requests else None
+            action = get_action_description(pending.last_message, action_request)
             yield ServerSentEvent(
                 data={"action": action, "next_step": str(snapshot.next)},
                 event="interrupted",

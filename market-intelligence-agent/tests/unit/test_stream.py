@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
+from langgraph.types import Interrupt, PregelTask, StateSnapshot
 
 from app.api.server import app
 
@@ -28,37 +29,71 @@ def _parse_sse(body: str):
 class _FakeAgentApp:
     """Stand-in for agent_app with controllable multi-mode astream + get_state."""
 
-    def __init__(self, tokens, updates=(), next_after=(), state_messages=None):
-        # tokens: list[(AIMessageChunk, meta_dict)] -> emitted as ("messages", (tok, meta))
-        # updates: list[dict]                        -> emitted as ("updates", {node: state})
+    def __init__(self, tokens, updates=(), snapshot=None):
+        # tokens: list[(namespace, AIMessageChunk, meta_dict)]
+        # updates: list[(namespace, {node: state})]
         self._tokens = tokens
         self._updates = updates
-        self._next_after = next_after
-        self._state_messages = state_messages or []
+        self._snapshot = snapshot or _state_snapshot()
 
-    def astream(self, inputs, config, stream_mode):
+    def astream(self, inputs, config, stream_mode, subgraphs=False):
+        assert subgraphs is True
+
         async def gen():
-            for upd in self._updates:
-                yield "updates", upd
-            for tok, meta in self._tokens:
-                yield "messages", (tok, meta)
+            for namespace, update in self._updates:
+                yield namespace, "updates", update
+            for namespace, token, metadata in self._tokens:
+                yield namespace, "messages", (token, metadata)
 
         return gen()
 
-    async def aget_state(self, config):
-        return SimpleNamespace(
-            next=self._next_after,
-            values={"messages": self._state_messages},
-        )
+    async def aget_state(self, config, subgraphs=False):
+        assert subgraphs is True
+        return self._snapshot
+
+
+def _state_snapshot(*, messages=(), tasks=(), interrupts=()) -> StateSnapshot:
+    return StateSnapshot(
+        values={"messages": list(messages)},
+        next=(),
+        config={},
+        metadata=None,
+        created_at=None,
+        parent_config=None,
+        tasks=tuple(tasks),
+        interrupts=tuple(interrupts),
+    )
+
+
+def _parent_with_email_interrupt(pending_message: AIMessage) -> StateSnapshot:
+    child = _state_snapshot(
+        messages=(pending_message,),
+        interrupts=(
+            Interrupt(
+                id="interrupt-email-1",
+                value={
+                    "action_requests": [
+                        {
+                            "name": "send_email",
+                            "args": {"to": "vip@example.com", "subject": "Hi"},
+                        }
+                    ]
+                },
+            ),
+        ),
+    )
+    return _state_snapshot(
+        tasks=(PregelTask("task-1", "email_agent", ("email_agent",), state=child),),
+    )
 
 
 def test_stream_happy_path_yields_token_then_done():
     tokens = [
-        (AIMessageChunk(content="Hello"), {"langgraph_node": "generate"}),
-        (AIMessageChunk(content=" "), {"langgraph_node": "generate"}),
-        (AIMessageChunk(content="world"), {"langgraph_node": "generate"}),
+        ((), AIMessageChunk(content="Hello"), {"langgraph_node": "agent"}),
+        ((), AIMessageChunk(content=" "), {"langgraph_node": "agent"}),
+        ((), AIMessageChunk(content="world"), {"langgraph_node": "synthesize"}),
     ]
-    fake = _FakeAgentApp(tokens, next_after=())
+    fake = _FakeAgentApp(tokens)
 
     app.state.agent_app = fake
     client = TestClient(app)
@@ -78,7 +113,7 @@ def test_stream_happy_path_yields_token_then_done():
 
 def test_stream_emits_node_events_for_graph_updates():
     tokens = [
-        (AIMessageChunk(content="Hi"), {"langgraph_node": "generate"}),
+        ((), AIMessageChunk(content="Hi"), {"langgraph_node": "agent"}),
     ]
     tool_msg = AIMessage(
         content="",
@@ -87,10 +122,10 @@ def test_stream_emits_node_events_for_graph_updates():
         ],
     )
     updates = [
-        {"rag": {"messages": []}},
-        {"generate": {"messages": [tool_msg]}},
+        ((), {"rag": {"messages": []}}),
+        (("finance_agent:task",), {"generate": {"messages": [tool_msg]}}),
     ]
-    fake = _FakeAgentApp(tokens, updates=updates, next_after=())
+    fake = _FakeAgentApp(tokens, updates=updates)
 
     app.state.agent_app = fake
     client = TestClient(app)
@@ -107,7 +142,7 @@ def test_stream_emits_node_events_for_graph_updates():
 
 def test_stream_emits_interrupted_when_graph_pauses_at_approval():
     tokens = [
-        (AIMessageChunk(content="Sending"), {"langgraph_node": "generate"}),
+        ((), AIMessageChunk(content="Sending"), {"langgraph_node": "agent"}),
     ]
     pending_msg = AIMessage(
         content="",
@@ -123,8 +158,7 @@ def test_stream_emits_interrupted_when_graph_pauses_at_approval():
     # interrupt() was called from, and the one Command(resume=...) resumes.
     fake = _FakeAgentApp(
         tokens,
-        next_after=("approval",),
-        state_messages=[pending_msg],
+        snapshot=_parent_with_email_interrupt(pending_msg),
     )
 
     app.state.agent_app = fake
@@ -156,12 +190,11 @@ def test_stream_does_not_emit_interrupted_for_non_approval_pause():
     reason: both independently drive the same shared-thread awaiting_approval
     flag in Streamlit, and must agree."""
     tokens = [
-        (AIMessageChunk(content="Retrying"), {"langgraph_node": "generate"}),
+        ((), AIMessageChunk(content="Retrying"), {"langgraph_node": "agent"}),
     ]
     fake = _FakeAgentApp(
         tokens,
-        next_after=("tools",),
-        state_messages=[AIMessage(content="")],
+        snapshot=_state_snapshot(messages=(AIMessage(content=""),)),
     )
 
     app.state.agent_app = fake
@@ -187,7 +220,7 @@ def test_stream_emits_screenshot_event_for_playwright_mcp_result():
     [{'type': 'text', 'text': "### Result\\n- [Screenshot of viewport](./debug-test.png)\\n### Ran Playwright code\\n...", 'id': '...'}]
     """
     tokens = [
-        (AIMessageChunk(content="Here it is"), {"langgraph_node": "generate"}),
+        ((), AIMessageChunk(content="Here it is"), {"langgraph_node": "agent"}),
     ]
     shot_msg = ToolMessage(
         content=[
@@ -211,9 +244,9 @@ def test_stream_emits_screenshot_event_for_playwright_mcp_result():
         tool_call_id="call_0",
     )
     updates = [
-        {"tools": {"messages": [other_msg, shot_msg]}},
+        (("browser_agent:task",), {"tools": {"messages": [other_msg, shot_msg]}}),
     ]
-    fake = _FakeAgentApp(tokens, updates=updates, next_after=())
+    fake = _FakeAgentApp(tokens, updates=updates)
 
     app.state.agent_app = fake
     client = TestClient(app)
@@ -234,15 +267,15 @@ def test_stream_emits_screenshot_event_for_custom_agentcore_server_result():
     """The custom stdio server (app/mcp/browser/server.py, BROWSER_BACKEND=
     agentcore) returns a plain workspace-relative path string instead."""
     tokens = [
-        (AIMessageChunk(content="Here it is"), {"langgraph_node": "generate"}),
+        ((), AIMessageChunk(content="Here it is"), {"langgraph_node": "agent"}),
     ]
     shot_msg = ToolMessage(
         content="screenshots/evidence.png",
         name="browser_take_screenshot",
         tool_call_id="call_1",
     )
-    updates = [{"tools": {"messages": [shot_msg]}}]
-    fake = _FakeAgentApp(tokens, updates=updates, next_after=())
+    updates = [(("browser_agent:task",), {"tools": {"messages": [shot_msg]}})]
+    fake = _FakeAgentApp(tokens, updates=updates)
 
     app.state.agent_app = fake
     client = TestClient(app)
@@ -266,9 +299,9 @@ def test_stream_emits_pii_guard_warning_as_token():
 
     warning_msg = AIMessage(content=SENSITIVE_DATA_WARNING)
     updates = [
-        {"pii_guard": {"messages": [warning_msg]}},
+        ((), {"pii_guard": {"messages": [warning_msg]}}),
     ]
-    fake = _FakeAgentApp([], updates=updates, next_after=())
+    fake = _FakeAgentApp([], updates=updates)
 
     app.state.agent_app = fake
     client = TestClient(app)
@@ -291,14 +324,17 @@ class _ExplodingAgentApp:
     def __init__(self, error_message):
         self._error_message = error_message
 
-    def astream(self, inputs, config, stream_mode):
+    def astream(self, inputs, config, stream_mode, subgraphs=False):
+        assert subgraphs is True
+
         async def gen():
             raise RuntimeError(self._error_message)
             yield  # pragma: no cover - makes this an async generator
 
         return gen()
 
-    async def aget_state(self, config):
+    async def aget_state(self, config, subgraphs=False):
+        assert subgraphs is True
         return SimpleNamespace(next=(), values={"messages": []})
 
 
