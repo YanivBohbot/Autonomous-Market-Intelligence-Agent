@@ -2,6 +2,7 @@ import logging
 import re
 from collections.abc import AsyncIterable
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
@@ -100,6 +101,19 @@ async def stream_endpoint(
         }
     }
     inputs = {"question": payload.query}
+    coordinator = request.app.state.turn_coordinator
+    lease = await coordinator.try_acquire(
+        payload.thread_id, f"text:stream:{uuid4()}"
+    )
+    if lease is None:
+        owner = await coordinator.owner(payload.thread_id)
+        error = (
+            "Voice mode is active for this thread."
+            if owner and owner.startswith("voice:")
+            else "Another turn is active for this thread."
+        )
+        yield ServerSentEvent(data={"error": error}, event="error")
+        return
 
     try:
         async for _namespace, mode, chunk in agent_app.astream(
@@ -151,3 +165,5 @@ async def stream_endpoint(
     except Exception as exc:
         logger.exception("stream failed for thread %s", payload.thread_id)
         yield ServerSentEvent(data={"error": str(exc)}, event="error")
+    finally:
+        await coordinator.release(lease)

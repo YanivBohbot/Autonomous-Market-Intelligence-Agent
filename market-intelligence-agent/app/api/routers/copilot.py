@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
+from app.agent.turn_coordinator import TurnLease
 from app.core.config import settings
 
 MARKET_DESK_AGENT_NAME = "market_desk"
@@ -100,6 +101,23 @@ async def market_desk(input_data: RunAgentInput, request: Request):
     encoder = EventEncoder(accept=request.headers.get("accept"))
     # LangGraphAgent keeps per-run state on the instance: one clone per request.
     run_agent = agent.clone()
+    coordinator = getattr(request.app.state, "turn_coordinator", None)
+    if coordinator is None:
+        raise HTTPException(status_code=503, detail="Turn coordinator is not ready.")
+
+    lease: TurnLease | None = None
+    if not input_data.resume:
+        lease = await coordinator.try_acquire(
+            input_data.thread_id, f"text:{input_data.run_id}"
+        )
+        if lease is None:
+            owner = await coordinator.owner(input_data.thread_id)
+            detail = (
+                "Voice mode is active for this thread."
+                if owner and owner.startswith("voice:")
+                else "Another turn is active for this thread."
+            )
+            raise HTTPException(status_code=409, detail=detail)
 
     async def events():
         try:
@@ -108,6 +126,9 @@ async def market_desk(input_data: RunAgentInput, request: Request):
         except Exception as exc:  # the headers are sent: report in-band
             logger.exception("Market Desk run failed (thread %s)", input_data.thread_id)
             yield encoder.encode(RunErrorEvent(type=EventType.RUN_ERROR, message=str(exc)))
+        finally:
+            if lease is not None:
+                await coordinator.release(lease)
 
     return StreamingResponse(events(), media_type=encoder.get_content_type())
 

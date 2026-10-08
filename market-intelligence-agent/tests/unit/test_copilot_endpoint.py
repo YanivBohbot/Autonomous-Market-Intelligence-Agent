@@ -2,6 +2,7 @@
 Every LLM is faked; the router is exercised on a bare FastAPI app so the
 test doesn't depend on the COPILOT_ENABLED flag (see test_copilot_wiring)."""
 import json
+import asyncio
 from contextlib import ExitStack
 from unittest.mock import patch
 
@@ -18,6 +19,7 @@ from app.agent.multi_agent import finance_agent as finance_mod
 from app.agent.multi_agent import portfolio_agent as portfolio_mod
 from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import RoutingDecision
+from app.agent.turn_coordinator import ThreadTurnCoordinator
 from app.api.routers.copilot import attach_market_desk, router
 from tests.unit.fake_chat import FakeToolModel, StreamingFakeToolModel
 
@@ -53,6 +55,7 @@ def _client_with(stack: ExitStack, route_to: str) -> tuple[TestClient, FastAPI]:
     app.include_router(router)
     graph = build_multi_agent_app(InMemorySaver(), None)
     attach_market_desk(app, graph)
+    app.state.turn_coordinator = ThreadTurnCoordinator()
     return TestClient(app), app
 
 
@@ -173,13 +176,39 @@ def test_long_tool_loop_finishes():
 def test_graph_error_becomes_run_error_event():
     # A crash mid-run must reach the browser as RUN_ERROR, not a cut stream.
     with ExitStack() as stack:
-        client, _ = _client_with(stack, "finance_agent")
+        client, app = _client_with(stack, "finance_agent")
         supervisor_mod._router.invoke.side_effect = RuntimeError("router down")
         resp = client.post(PATH, json=_run_input("t5", "r1", [{"id": "u1", "role": "user", "content": "hi"}]))
     assert resp.status_code == 200
     last = _events(resp.text)[-1]
     assert last["type"] == "RUN_ERROR"
     assert "router down" in last["message"]
+    assert asyncio.run(app.state.turn_coordinator.owner("t5")) is None
+
+
+def test_typed_run_returns_409_without_running_when_voice_owns_thread(finance_client):
+    client, app = finance_client
+    coordinator = app.state.turn_coordinator
+    lease = asyncio.run(coordinator.try_acquire("voice-locked", "voice:test"))
+    assert lease is not None
+    try:
+        response = client.post(
+            PATH,
+            json=_run_input(
+                "voice-locked",
+                "typed-run",
+                [{"id": "u1", "role": "user", "content": "AAPL price?"}],
+            ),
+        )
+    finally:
+        asyncio.run(coordinator.release(lease))
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Voice mode is active for this thread."
+    snapshot = app.state.market_desk_agent.graph.get_state(
+        {"configurable": {"thread_id": "voice-locked"}}
+    )
+    assert not snapshot.values
 
 
 def _snapshot_texts(events: list[dict]) -> list[str]:

@@ -1,12 +1,21 @@
 """Smoke tests for the AgentCore Runtime contract endpoints (/ping, /invocations)."""
 
+import asyncio
+
+import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from langgraph.types import Interrupt, PregelTask, StateSnapshot
 
 from app.api.server import app
+from app.agent.turn_coordinator import ThreadTurnCoordinator
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_turn_coordinator():
+    app.state.turn_coordinator = ThreadTurnCoordinator()
 
 
 def _snapshot(*, messages=(), tasks=(), interrupts=()) -> StateSnapshot:
@@ -47,6 +56,7 @@ class _FakeGraph:
         self.final_state = final_state or {"messages": [AIMessage(content="Done")]}
         self.command = None
         self.state_calls = 0
+        self.invoke_calls = 0
 
     async def aget_state(self, config, subgraphs=False):
         assert subgraphs is True
@@ -54,6 +64,7 @@ class _FakeGraph:
         return next(self._snapshots)
 
     async def ainvoke(self, command, config):
+        self.invoke_calls += 1
         self.command = command
         return self.final_state
 
@@ -133,3 +144,40 @@ def test_invocations_describes_nested_interrupt_after_prompt():
     assert "send_email" in body["response"]
     assert body["pending_tool_calls"] == [action]
     assert fake.state_calls == 1
+
+
+def test_prompt_returns_409_without_invoking_graph_when_voice_owns_session():
+    fake = _FakeGraph([_snapshot()])
+    app.state.agent_app = fake
+    coordinator = app.state.turn_coordinator
+    lease = asyncio.run(coordinator.try_acquire("agentcore-locked", "voice:test"))
+    assert lease is not None
+    try:
+        response = client.post(
+            "/invocations",
+            json={"prompt": "Research markets", "session_id": "agentcore-locked"},
+        )
+    finally:
+        asyncio.run(coordinator.release(lease))
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Voice mode is active for this thread."
+    assert fake.invoke_calls == 0
+
+
+def test_prompt_failure_releases_typed_lease():
+    class FailingGraph(_FakeGraph):
+        async def ainvoke(self, command, config):
+            self.invoke_calls += 1
+            raise RuntimeError("graph failed")
+
+    app.state.agent_app = FailingGraph([])
+    response = TestClient(app, raise_server_exceptions=False).post(
+        "/invocations",
+        json={"prompt": "Research markets", "session_id": "agentcore-failure"},
+    )
+
+    assert response.status_code == 500
+    assert asyncio.run(
+        app.state.turn_coordinator.owner("agentcore-failure")
+    ) is None

@@ -2,6 +2,7 @@ import pytest
 from fastapi import FastAPI
 
 from app.api import server
+from app.agent.turn_coordinator import ThreadTurnCoordinator
 
 
 @pytest.mark.anyio
@@ -25,3 +26,4 @@ async def test_lifespan_shares_one_multi_agent_graph_across_transports(monkeypat
             "email_agent",
         } <= nodes
         assert test_app.state.market_desk_agent.graph is test_app.state.agent_app
+        assert isinstance(test_app.state.turn_coordinator, ThreadTurnCoordinator)

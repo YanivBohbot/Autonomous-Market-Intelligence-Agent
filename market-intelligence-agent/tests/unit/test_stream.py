@@ -1,11 +1,19 @@
 import json
+import asyncio
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.types import Interrupt, PregelTask, StateSnapshot
 
 from app.api.server import app
+from app.agent.turn_coordinator import ThreadTurnCoordinator
+
+
+@pytest.fixture(autouse=True)
+def _fresh_turn_coordinator():
+    app.state.turn_coordinator = ThreadTurnCoordinator()
 
 
 def _parse_sse(body: str):
@@ -35,9 +43,11 @@ class _FakeAgentApp:
         self._tokens = tokens
         self._updates = updates
         self._snapshot = snapshot or _state_snapshot()
+        self.stream_calls = 0
 
     def astream(self, inputs, config, stream_mode, subgraphs=False):
         assert subgraphs is True
+        self.stream_calls += 1
 
         async def gen():
             for namespace, update in self._updates:
@@ -374,3 +384,25 @@ def test_stream_emits_error_frame_when_astream_raises():
 
     done_events = [e for e, _ in events if e == "done"]
     assert done_events == []
+    assert asyncio.run(app.state.turn_coordinator.owner("t-test-3")) is None
+
+
+def test_stream_emits_conflict_without_invoking_graph_when_voice_owns_thread():
+    fake = _FakeAgentApp([])
+    app.state.agent_app = fake
+    coordinator = app.state.turn_coordinator
+    lease = asyncio.run(coordinator.try_acquire("stream-locked", "voice:test"))
+    assert lease is not None
+    try:
+        response = TestClient(app).post(
+            "/stream",
+            json={"query": "anything", "thread_id": "stream-locked"},
+        )
+    finally:
+        asyncio.run(coordinator.release(lease))
+
+    assert response.status_code == 200
+    assert _parse_sse(response.text) == [
+        ("error", {"error": "Voice mode is active for this thread."})
+    ]
+    assert fake.stream_calls == 0

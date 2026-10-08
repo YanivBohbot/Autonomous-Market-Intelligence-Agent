@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
 from app.agent.multi_agent import build_multi_agent_app
+from app.agent.turn_coordinator import ThreadTurnCoordinator
 from app.api.routers.agentcore import router as agentcore_router
 from app.api.routers.approve import router as approve_router
 from app.api.routers.data import router as data_router
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
         store = create_store()
         agent_graph = build_multi_agent_app(checkpointer, store)
         app.state.agent_app = agent_graph
+        app.state.turn_coordinator = ThreadTurnCoordinator()
         app.state.voice_agent_app = build_voice_agent_app(checkpointer, store)
         setup_market_desk(app, agent_graph)
         yield
