@@ -32,11 +32,34 @@ describe("App routing", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: "ok", version: "1.2.3" }),
+      vi.fn((request: RequestInfo | URL) => {
+        const url = String(request);
+        if (url.endsWith("/data/clients") || url.endsWith("/data/documents")) {
+          return Promise.resolve({ ok: true, json: async () => [] });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ status: "ok", version: "1.2.3" }) });
       }),
     );
+  });
+
+  it.each([
+    { path: "/briefing", testId: "briefing-page", heading: undefined, settledText: undefined },
+    { path: "/clients", testId: undefined, heading: "Clients", settledText: "No clients yet" },
+    { path: "/research", testId: "desk-view", heading: undefined, settledText: undefined },
+    { path: "/reports", testId: undefined, heading: "Reports", settledText: "No report clients yet" },
+    { path: "/data", testId: undefined, heading: "Data", settledText: "No documents ingested yet" },
+  ])("keeps the shared product shell visible on $path", async ({ path, testId, heading, settledText }) => {
+    renderAt(path);
+
+    expect(screen.getByText("Multi-Agent Finance Desk")).toBeInTheDocument();
+    expect(screen.getByTestId("global-market-ticker")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
+    for (const label of ["Briefing", "Clients", "Research", "Reports", "Data"]) {
+      expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
+    }
+    if (testId) expect(screen.getByTestId(testId)).toBeInTheDocument();
+    if (heading) expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    if (settledText) expect(await screen.findByText(settledText)).toBeInTheDocument();
   });
 
   it("/ redirects to /research", () => {
@@ -58,6 +81,9 @@ describe("App routing", () => {
 
   it("/classic has no AppLayout nav (it's outside the layout)", () => {
     renderAt("/classic");
+    expect(screen.getByPlaceholderText(/ask the agent/i)).toBeInTheDocument();
+    expect(screen.queryByText("Multi-Agent Finance Desk")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("global-market-ticker")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Research" })).not.toBeInTheDocument();
   });
 

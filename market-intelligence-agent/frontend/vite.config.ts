@@ -15,7 +15,7 @@ export default defineConfig({
       "/voice": { target: API_TARGET, changeOrigin: true },
       "/copilot": { target: API_TARGET, changeOrigin: true },
       "/workspace": { target: API_TARGET, changeOrigin: true },
-      "/data": { target: API_TARGET, changeOrigin: true },
+      "/data/": { target: API_TARGET, changeOrigin: true },
     },
   },
 });
