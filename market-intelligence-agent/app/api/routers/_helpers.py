@@ -41,6 +41,19 @@ def pending_action_count(pending: PendingGraphInterrupt) -> int:
     return len(requests) if isinstance(requests, list) and requests else 1
 
 
+def boolean_decisions(
+    pending: PendingGraphInterrupt, approved: bool
+) -> dict[str, list[dict[str, str]]]:
+    decision = (
+        {"type": "approve"}
+        if approved
+        else {"type": "reject", "message": "Rejected by user."}
+    )
+    return {
+        "decisions": [dict(decision) for _ in range(pending_action_count(pending))]
+    }
+
+
 def get_action_description(last_msg, action_request: dict[str, Any] | None = None) -> str:
     if last_msg is not None:
         action_desc = last_msg.content

@@ -4,7 +4,11 @@ from fastapi import APIRouter, Request
 from langgraph.types import Command
 
 from app.api.models.models import ApproveRequest, ChatResponse
-from app.api.routers._helpers import get_action_description
+from app.api.routers._helpers import (
+    boolean_decisions,
+    get_action_description,
+    pending_interrupt_from_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,23 +36,32 @@ async def approve_endpoint(request: Request, payload: ApproveRequest):
             "actor_id": "mia-agent",
         }
     }
-    snapshot = await agent_app.aget_state(config)
-    if not snapshot.next:
+    snapshot = await agent_app.aget_state(config, subgraphs=True)
+    pending = pending_interrupt_from_snapshot(snapshot)
+    if pending is None:
         return {
             "response": "⚠️ Session expirée ou terminée. Veuillez relancer votre demande.",
             "status": "completed",
             "next_step": None,
         }
 
-    decision = "approve" if payload.approved else "reject"
-    logger.info("HITL decision=%s for thread %s", decision, payload.thread_id)
-    final_state = await agent_app.ainvoke(Command(resume=decision), config)
+    decision_name = "approve" if payload.approved else "reject"
+    logger.info("HITL decision=%s for thread %s", decision_name, payload.thread_id)
+    final_state = await agent_app.ainvoke(
+        Command(resume=boolean_decisions(pending, payload.approved)),
+        config,
+    )
 
-    snapshot = await agent_app.aget_state(config)
-    if snapshot.next:
-        last = final_state["messages"][-1]
+    snapshot = await agent_app.aget_state(config, subgraphs=True)
+    next_pending = pending_interrupt_from_snapshot(snapshot)
+    if next_pending is not None:
+        requests = next_pending.value.get("action_requests")
+        action_request = requests[0] if isinstance(requests, list) and requests else None
         return {
-            "response": f"⏸️ NOUVELLE ACTION REQUISE : {get_action_description(last)}",
+            "response": (
+                "⏸️ NOUVELLE ACTION REQUISE : "
+                f"{get_action_description(next_pending.last_message, action_request)}"
+            ),
             "status": "interrupted",
             "next_step": str(snapshot.next),
         }
