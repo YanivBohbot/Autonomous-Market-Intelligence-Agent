@@ -25,4 +25,3 @@ async def test_lifespan_shares_one_multi_agent_graph_across_transports(monkeypat
             "email_agent",
         } <= nodes
         assert test_app.state.market_desk_agent.graph is test_app.state.agent_app
-

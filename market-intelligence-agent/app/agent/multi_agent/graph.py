@@ -84,6 +84,6 @@ def build_multi_agent_app(
 ):
     """Build and compile the multi-agent workflow. Specialists are built per
     call (not at import) so tests can patch each module's `specialist_model`.
-    NOT wired into the FastAPI lifespan or any router — build and invoke
-    directly (ainvoke/astream) in tests or scripts."""
+    FastAPI builds this graph once during lifespan and shares it across the
+    text, AgentCore, and Market Desk transports."""
     return _build_workflow().compile(checkpointer=checkpointer, store=store)
