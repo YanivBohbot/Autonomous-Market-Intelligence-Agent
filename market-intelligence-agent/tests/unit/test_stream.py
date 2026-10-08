@@ -111,6 +111,24 @@ def test_stream_happy_path_yields_token_then_done():
     assert events[-1][0] == "done"
 
 
+def test_stream_emits_token_from_installed_create_agent_model_node():
+    fake = _FakeAgentApp(
+        [((), AIMessageChunk(content="Visible live"), {"langgraph_node": "model"})]
+    )
+    app.state.agent_app = fake
+
+    response = TestClient(app).post(
+        "/stream",
+        json={"query": "research this", "thread_id": "t-model-node"},
+    )
+
+    events = _parse_sse(response.text)
+    assert [data["token"] for event, data in events if event == "token"] == [
+        "Visible live"
+    ]
+    assert events[-1][0] == "done"
+
+
 def test_stream_emits_node_events_for_graph_updates():
     tokens = [
         ((), AIMessageChunk(content="Hi"), {"langgraph_node": "agent"}),

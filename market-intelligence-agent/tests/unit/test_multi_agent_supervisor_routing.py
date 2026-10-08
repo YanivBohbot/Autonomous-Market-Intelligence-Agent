@@ -118,6 +118,20 @@ def test_routing_prompt_unchanged_when_no_active_client():
     assert invoked_messages[0].content == expected_prompt
 
 
+def test_routing_prompt_separates_open_ended_research_from_browser_navigation():
+    with patch.object(supervisor_mod, "_router") as mock:
+        mock.invoke.return_value = RoutingDecision(
+            next="rag_agent", reasoning="open-ended research"
+        )
+        supervisor_node(
+            _state(messages=[HumanMessage(content="What is moving markets today?")])
+        )
+
+    routing_prompt = mock.invoke.call_args[0][0][0].content
+    assert "open-ended" in routing_prompt
+    assert "concrete URL or named website" in routing_prompt
+
+
 def test_routes_to_finance_agent():
     with patch.object(supervisor_mod, "_router") as mock:
         mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="stock question")

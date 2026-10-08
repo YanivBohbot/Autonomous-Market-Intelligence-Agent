@@ -46,17 +46,13 @@ Important optional settings include `LOG_LEVEL`, `API_URL`, `YFINANCE_TIMEOUT_S`
 - `tests/unit/`: pytest suite. Frontend Vitest tests are colocated with components.
 - `docs/`: project documentation; `docs/TOOLS.md` is the tool catalog.
 
-## Single-Agent Architecture
+## Runtime Architecture
 
-`app/agent/graph.py` compiles a LangGraph workflow with a SQLite checkpointer at `data/checkpoints.db`. The control flow is:
+FastAPI compiles one multi-agent graph with the configured checkpointer and store. That same object is assigned to `app.state.agent_app` and wrapped by `app.state.market_desk_agent`; `/stream`, `/approve`, AgentCore `/invocations`, and opt-in `/copilot/market-desk` therefore share checkpoints and conversation state. The graph routes `load_client_context -> record_question -> supervisor -> specialist -> supervisor -> END` across RAG, finance, portfolio, browser, email, filesystem, and memory specialists.
 
-```
-START -> record_question -> pii_guard -> generate -> approval -> tools -> generate -> END
-```
+Side effects use `HumanInTheLoopMiddleware`. Legacy boolean approval is expanded into `Command(resume={"decisions": [...]})`, with one `approve` or `reject` decision per pending action. Nested specialist state must be inspected with `subgraphs=True` before describing or resuming an interrupt.
 
-`record_question` persists the human turn. `pii_guard` stops credit-card data before it reaches the model. `generate` loads the model and bound tools from `app/agent/prompts/system.py`. `approval` immediately permits calls on the `READ_ONLY_TOOLS` allowlist; otherwise it invokes LangGraph `interrupt()` before a side effect. The single-agent approval is atomic: rejecting any pending action cancels the whole tool-call batch. `tools` is LangGraph's `ToolNode`.
-
-The `/stream` route is an SSE, one-shot endpoint emitting node/token events and ending in `interrupted`, `done`, or `error`; there is no `/chat` endpoint. `POST /approve` resumes a single-agent interrupt using a global `approved` decision for the entire batch. Checkpoints are keyed by `thread_id` and survive restarts.
+`app/agent/graph.py` remains for shared helpers and the temporary Classic voice workflow. Do not delete it during multi-agent work.
 
 ## Tools and Safety Rules
 
@@ -74,15 +70,15 @@ When adding, renaming, or removing a tool, update `TOOLS` and `READ_ONLY_TOOLS` 
 
 ## Multi-Agent Mode
 
-`app/agent/multi_agent/` provides the opt-in Market Desk flow, available only through `POST /copilot/market-desk` when `COPILOT_ENABLED=true`. It is not used by `/stream`, Streamlit, or voice. The graph is `record_question -> supervisor -> specialist -> supervisor -> END` and delegates to dedicated RAG, finance, portfolio, browser, email, filesystem, and memory subgraphs.
+`app/agent/multi_agent/` is the primary text runtime used by `/stream`, `/approve`, AgentCore, and Market Desk. `COPILOT_ENABLED=true` only exposes the AG-UI `/copilot/market-desk` wrapper; it does not change which graph the other text transports use.
 
-Shared middleware lives in `app/agent/middleware.py`: sensitive-data checks, date prompting, message summarization, credit-card masking, call limits, optional Anthropic fallback, model retry, and tool-error conversion. Unlike the single-agent route, multi-agent HITL uses `HumanInTheLoopMiddleware` and supports one `approve`, `reject`, or `edit` decision per pending call.
+Shared middleware lives in `app/agent/middleware.py`: sensitive-data checks, date prompting, message summarization, credit-card masking, call limits, optional Anthropic fallback, model retry, and tool-error conversion. Multi-agent HITL supports one `approve`, `reject`, or `edit` decision per pending call.
 
 ## API and Voice
 
 Key routers are `health.py` (`/health`, AgentCore `/ping` and `/invocations`), `stream.py`, `approve.py`, `copilot.py`, `gptlive_session.py`, and `data.py`. The `/data/*` import and client endpoints are deterministic SQLite operations: they do not call an LLM and are not part of either agent graph.
 
-Voice mode uses OpenAI GPT-Live in client-delegation mode. The browser establishes WebRTC directly with OpenAI; FastAPI proxies SDP setup and starts a sideband worker. The worker invokes the same compiled voice LangGraph and HITL behavior as text, while `GET /voice/{thread_id}/transcript` exposes its transcript to Streamlit. See `docs/VOICE.md` before changing voice setup or Hebrew support.
+Classic voice uses OpenAI GPT-Live in client-delegation mode. The browser establishes WebRTC directly with OpenAI; FastAPI proxies SDP setup and starts a sideband worker. During the voice cutover, it remains on the separately compiled `app.state.voice_agent_app`; it does not yet use the shared text multi-agent graph. `GET /voice/{thread_id}/transcript` exposes its transcript to Streamlit. See `docs/VOICE.md` before changing voice setup or Hebrew support.
 
 ## Development and Test Conventions
 

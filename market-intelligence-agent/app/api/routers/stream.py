@@ -15,7 +15,7 @@ from app.api.routers._helpers import (
 )
 
 _SCREENSHOT_LINK_RE = re.compile(r"\[Screenshot[^\]]*\]\(([^)]+)\)")
-_STREAMABLE_NODES = {"agent", "synthesize"}
+_STREAMABLE_NODES = {"agent", "model", "synthesize"}
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

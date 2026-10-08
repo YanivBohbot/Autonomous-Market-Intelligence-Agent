@@ -56,9 +56,9 @@ The email tool falls back to a simulation (no real send) when `EMAIL_SENDER` sti
 
 ## Architecture
 
-### LangGraph state graph (`app/agent/graph.py`)
+### Legacy single-agent graph (`app/agent/graph.py`)
 
-Compiled with a **SQLite checkpointer** (`data/checkpoints.db`, see `app/agent/memory/checkpointer.py`). HITL uses the **dynamic `interrupt()` pattern** with `Command(resume=...)` — no `interrupt_before`. Flow:
+This graph is retained for shared node helpers and the temporary Classic voice workflow; the main text transports no longer compile it. Its HITL uses the dynamic `interrupt()` pattern with `Command(resume=...)` — no `interrupt_before`. Flow:
 
 ```
 START → record_question → pii_guard → (sensitive?) → END
@@ -105,25 +105,25 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 
 ### Human-in-the-Loop (HITL) flow
 
-1. `POST /stream` (in `app/api/routers/stream.py`) — SSE; streams `node`/`token` events as the graph runs, then a terminal `interrupted` event (`{action, next_step}`) when `interrupt()` fires, or `done` on normal completion. There is no non-streaming `/chat` endpoint.
-2. `POST /approve` (in `app/api/routers/approve.py`) — resumes via `Command(resume="approve")` or `Command(resume="reject")`. The decision is a single global verdict that `approval_node` broadcasts across every pending side-effect call in the batch. Per-call approve/reject is not currently supported by the router contract.
-3. Multiple side-effect calls in one batch share the single global decision; on reject, **all** tool calls in the batch (read-only included) are cancelled with `ToolMessage("Action cancelled by user.")`. Unknown / malformed resume payloads fail closed (cancel).
+1. `POST /stream` (in `app/api/routers/stream.py`) — SSE over the shared multi-agent graph; streams nested `node`/`token` events and ends with `interrupted`, `done`, or `error`. There is no non-streaming `/chat` endpoint.
+2. `POST /approve` (in `app/api/routers/approve.py`) — reads the nested specialist interrupt and translates its boolean request to `Command(resume={"decisions": [...]})`.
+3. The resume payload contains exactly one `approve` or `reject` decision per pending action. A subsequent nested interrupt is surfaced instead of being mistaken for completion.
 4. Session state persists across server restarts via the SQLite checkpointer keyed on `thread_id`.
 
 ### Multi-agent mode (`app/agent/multi_agent/`)
 
-Router pattern: `record_question → supervisor → <specialist> → supervisor → END`. Wired only to the opt-in Market Desk endpoint (`COPILOT_ENABLED`, React console); not to `/stream`, Streamlit or voice. Build with `build_multi_agent_app(checkpointer)` in tests/scripts.
+Router pattern: `load_client_context → record_question → supervisor → <specialist> → supervisor → END`. FastAPI compiles this graph once and assigns the same object to `app.state.agent_app` and `app.state.market_desk_agent.graph`. `/stream`, `/approve`, AgentCore `/invocations`, and the opt-in Market Desk endpoint therefore share state. Classic voice remains temporarily on `app.state.voice_agent_app`.
 
 The console uses `react-router-dom` (`/` Desk, `/classic` Classic chat, `/data` the Data section) — not a `localStorage`-persisted mode toggle.
 
 - One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
 - `app/agent/middleware.py` (shared with the single-agent graph, so it lives outside `multi_agent/`; named for its contents — middleware factories — rather than `common.py`): `specialist_model()` and `base_middleware(*, check_email=True)` = `SensitiveDataGuard(check_email=...)` (`app/agent/guardrails/`: blocks before any model call if the user's message contains a credit card, or — unless `check_email=False` — an email; see below), `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 50 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `model_fallback()` (`ModelFallbackMiddleware` to `claude-sonnet-5-5` — opt-in, only when `ANTHROPIC_API_KEY` is set; omitted otherwise), `model_retry()` (`ModelRetryMiddleware`, default 2 retries/exponential backoff — covers a transient OpenAI error during the model call itself, which `tool_errors_to_messages` below never sees), `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` call `base_middleware(check_email=False)` and keep addresses — they need a real one to work (`send_email`, or a report/fact tied to a client); the single-agent graph's `pii_guard` node does the same (hardcoded `check_email=False`) since it bundles `send_email` alongside everything else with no per-specialist split. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
-- HITL uses the official `HumanInTheLoopMiddleware` (email: `send_email`, filesystem: `write_file`, memory: `save_memory`). Resume with `Command(resume={"decisions": [{"type": "approve"} | {"type": "reject", "message": ...} | {"type": "edit", "edited_action": {...}}]})`, one decision per pending call — different from the single-agent `/approve` contract.
+- HITL uses the official `HumanInTheLoopMiddleware` (email: `send_email`, filesystem: `write_file`, memory: `save_memory`). Resume with `Command(resume={"decisions": [{"type": "approve"} | {"type": "reject", "message": ...} | {"type": "edit", "edited_action": {...}}]})`, one decision per pending call. Legacy boolean adapters expand their verdict to this same payload.
 
 ### API routers (`app/api/routers/`)
 
 - `health.py` — `/health` returns version + status (also `/ping` + `/invocations` for the AgentCore runtime contract).
-- `copilot.py` — `POST /copilot/market-desk` (AG-UI SSE over the multi-agent graph, agent id `market_desk`), included only when `COPILOT_ENABLED`; the agent is built in `lifespan`.
+- `copilot.py` — `POST /copilot/market-desk` (AG-UI SSE over the shared multi-agent graph, agent id `market_desk`), included only when `COPILOT_ENABLED`; the wrapper is attached in `lifespan` without compiling a second graph.
 - `stream.py` — `/stream` (SSE one-shot run; emits `node`, `token`, then `interrupted`/`done`/`error` events).
 - `approve.py` — `/approve` for HITL resume.
 - `gptlive_session.py` — `POST /gptlive/session` proxies the browser's WebRTC SDP offer to OpenAI (`client.live.create`) and spawns the voice delegation worker as a background task.
@@ -147,10 +147,10 @@ attaches to that session over a **sideband** WebSocket
 (`client.live.sideband.connect(session_id=...)`). GPT-Live handles audio I/O and
 transport entirely; the delegation worker only sees `session.delegation.created`
 events and the buffered `session.input_transcript.delta` text, and replies via
-`connection.session.commentary.append(...)`. It invokes the **same** compiled
-LangGraph voice workflow (`app.voice.graph.build_voice_agent_app`, built once in
-`server.py`'s lifespan alongside the text graph) — tools and HITL behave identically
-to text mode; only the transport differs.
+`connection.session.commentary.append(...)`. It invokes the separately compiled
+Classic voice workflow (`app.voice.graph.build_voice_agent_app`, stored as
+`app.state.voice_agent_app`). This remains distinct from the shared text
+multi-agent graph until the Research voice cutover is complete.
 
 - `app/voice/worker.py` — `run_delegation_worker(session_id, thread_id, agent_app)`: the sideband event loop.
 - `app/voice/session.py` — transport-agnostic helpers: `VOICE_INSTRUCTIONS`, `_ToolCallLogger`, `strip_binary_score_prefix`.

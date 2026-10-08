@@ -1,5 +1,7 @@
 # Multi-Agent API Cutover Implementation Plan
 
+> **Superseded:** Do not execute this historical plan. Its intent was reconciled onto the modernized product branch by `docs/superpowers/plans/2026-10-08-multi-agent-cutover-reconciliation.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Wire the already-built, already-live-QA'd `app/agent/multi_agent` supervisor+specialist graph into the real FastAPI `/stream` and `/approve` endpoints, replacing the old single-agent graph (`app/agent/graph.py`) as what the API actually serves.
