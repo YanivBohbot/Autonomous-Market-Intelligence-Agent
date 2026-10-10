@@ -119,4 +119,21 @@ describe("ResearchVoiceApproval", () => {
       { type: "approve" },
     ]);
   });
+
+  it("unlocks the approval card so a failed decision can be retried", async () => {
+    const submitDecision = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Decision service unavailable"))
+      .mockResolvedValueOnce({ status: "applied", response: null });
+    renderApproval(submitDecision);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve & send" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Decision service unavailable",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Approve & send" }));
+
+    await waitFor(() => expect(submitDecision).toHaveBeenCalledTimes(2));
+  });
 });

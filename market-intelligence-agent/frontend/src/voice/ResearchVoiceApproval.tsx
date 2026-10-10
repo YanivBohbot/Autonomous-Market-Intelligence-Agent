@@ -12,6 +12,7 @@ export function ResearchVoiceApproval({
   const voice = useResearchVoiceContext();
   const submitted = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const approval = readApproval({
     metadata: { langgraph: { raw: pending } },
   });
@@ -29,6 +30,7 @@ export function ResearchVoiceApproval({
       );
     } catch (decisionError) {
       submitted.current = false;
+      setAttempt((current) => current + 1);
       setError(
         decisionError instanceof Error
           ? decisionError.message
@@ -40,6 +42,7 @@ export function ResearchVoiceApproval({
   return (
     <div className="space-y-2">
       <ApprovalPanel
+        key={`${pending.interrupt_id}:${attempt}`}
         approval={approval}
         onSubmit={(decisions) => void submit(decisions)}
         onCancel={() => void submit([{ type: "reject" }])}
