@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAgent } from "@copilotkit/react-core/v2";
 import { Icon } from "../ui/Icon";
+import type { VoiceActivityEvent } from "../voice/types";
 import { MARKET_DESK_AGENT_ID } from "./constants";
 import {
   groupActivityRuns,
   humanizeToolName,
   reduceActivity,
+  voiceActivityToAgUi,
   type ActivityRun,
   type AgUiEvent,
   type DeskActivity,
@@ -143,9 +145,16 @@ function RunCard({ run, index, count }: { run: ActivityRun; index: number; count
 // Same agent instance CopilotChat drives (useAgent({agentId}) without a
 // threadId; a threadId would create a private, thread-scoped copy). DeskView is
 // remounted per thread, so the list never mixes sessions.
-export function DeskActivityRail() {
+const NO_VOICE_EVENTS: VoiceActivityEvent[] = [];
+
+export function DeskActivityRail({
+  voiceEvents = NO_VOICE_EVENTS,
+}: {
+  voiceEvents?: VoiceActivityEvent[];
+}) {
   const { agent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
   const [items, setItems] = useState<DeskActivity[]>([]);
+  const lastVoiceSequence = useRef(0);
   const runs = groupActivityRuns(items);
 
   useEffect(() => {
@@ -161,6 +170,22 @@ export function DeskActivityRail() {
     });
     return () => subscription.unsubscribe();
   }, [agent]);
+
+  useEffect(() => {
+    const fresh = voiceEvents
+      .filter((event) => event.sequence > lastVoiceSequence.current)
+      .sort((left, right) => left.sequence - right.sequence);
+    if (fresh.length === 0) return;
+
+    setItems((previous) =>
+      fresh.reduce(
+        (next, event) =>
+          reduceActivity(next, voiceActivityToAgUi(event), Date.now()),
+        previous,
+      ),
+    );
+    lastVoiceSequence.current = fresh[fresh.length - 1].sequence;
+  }, [voiceEvents]);
 
   return (
     <section aria-label="Agent activity timeline" className="flex h-full min-h-0 flex-col bg-surface-soft">

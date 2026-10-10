@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { groupActivityRuns, humanizeToolName, reduceActivity, type AgUiEvent, type DeskActivity } from "./activity";
+import {
+  groupActivityRuns,
+  humanizeToolName,
+  reduceActivity,
+  voiceActivityToAgUi,
+  type AgUiEvent,
+  type DeskActivity,
+} from "./activity";
+import type { VoiceActivityEvent } from "../voice/types";
 
 function run(events: AgUiEvent[], start = 1000, step = 100): DeskActivity[] {
   return events.reduce<DeskActivity[]>((acc, e, i) => reduceActivity(acc, e, start + i * step), []);
@@ -135,5 +143,49 @@ describe("humanizeToolName", () => {
     expect(humanizeToolName("yfinance_ticker_info")).toBe("Ticker info");
     expect(humanizeToolName("portfolio_metrics")).toBe("Portfolio metrics");
     expect(humanizeToolName("sendEmail")).toBe("Send email");
+  });
+});
+
+describe("voiceActivityToAgUi", () => {
+  const event = (
+    kind: VoiceActivityEvent["kind"],
+    overrides: Partial<VoiceActivityEvent> = {},
+  ): VoiceActivityEvent => ({
+    sequence: 1,
+    run_id: "voice-run-1",
+    kind,
+    name: null,
+    tool_call_id: null,
+    duration_ms: null,
+    message: null,
+    ...overrides,
+  });
+
+  it.each([
+    [event("specialist_started", { name: "finance_agent" }), { type: "STEP_STARTED", stepName: "finance_agent" }],
+    [event("tool_started", { name: "portfolio_metrics", tool_call_id: "call-1" }), { type: "TOOL_CALL_START", toolCallId: "call-1", toolCallName: "portfolio_metrics" }],
+    [event("tool_finished", { name: "portfolio_metrics", tool_call_id: "call-1", duration_ms: 1250 }), { type: "TOOL_CALL_RESULT", toolCallId: "call-1", durationMs: 1250 }],
+    [event("approval_required"), { type: "RUN_FINISHED", outcome: { type: "interrupt" } }],
+    [event("run_finished"), { type: "RUN_FINISHED" }],
+    [event("run_error", { message: "Voice processing failed" }), { type: "RUN_ERROR", message: "Voice processing failed" }],
+  ])("maps %s into the existing reducer contract", (voiceEvent, expected) => {
+    expect(voiceActivityToAgUi(voiceEvent as VoiceActivityEvent)).toMatchObject(expected);
+  });
+
+  it("uses the server duration when completing a voice tool", () => {
+    const rows = [
+      event("tool_started", { name: "portfolio_metrics", tool_call_id: "call-1" }),
+      event("tool_finished", { name: "portfolio_metrics", tool_call_id: "call-1", duration_ms: 1250 }),
+    ].reduce<DeskActivity[]>(
+      (items, voiceEvent, index) =>
+        reduceActivity(items, voiceActivityToAgUi(voiceEvent), 1000 + index),
+      [],
+    );
+
+    expect(rows[0]).toMatchObject({
+      kind: "tool",
+      status: "done",
+      durationMs: 1250,
+    });
   });
 });

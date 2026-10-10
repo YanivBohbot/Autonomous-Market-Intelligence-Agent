@@ -1,5 +1,7 @@
 // Pure AG-UI event → activity-row reducer for the Market Desk rail.
 
+import type { VoiceActivityEvent } from "../voice/types";
+
 export type SpecialistLabel = "SUPERVISOR" | "RAG" | "FINANCE" | "PORTFOLIO" | "BROWSER" | "EMAIL" | "FILES" | "MEMORY";
 
 export type DeskActivity =
@@ -12,6 +14,31 @@ export type DeskActivity =
 export interface AgUiEvent {
   type: string;
   [key: string]: unknown;
+}
+
+export function voiceActivityToAgUi(event: VoiceActivityEvent): AgUiEvent {
+  switch (event.kind) {
+    case "specialist_started":
+      return { type: "STEP_STARTED", stepName: event.name ?? "" };
+    case "tool_started":
+      return {
+        type: "TOOL_CALL_START",
+        toolCallId: event.tool_call_id ?? `${event.run_id}:${event.sequence}`,
+        toolCallName: event.name ?? "tool",
+      };
+    case "tool_finished":
+      return {
+        type: "TOOL_CALL_RESULT",
+        toolCallId: event.tool_call_id ?? `${event.run_id}:${event.sequence}`,
+        durationMs: event.duration_ms,
+      };
+    case "approval_required":
+      return { type: "RUN_FINISHED", outcome: { type: "interrupt" } };
+    case "run_finished":
+      return { type: "RUN_FINISHED" };
+    case "run_error":
+      return { type: "RUN_ERROR", message: event.message ?? "Voice processing failed" };
+  }
 }
 
 export interface ActivityRun {
@@ -120,7 +147,14 @@ export function reduceActivity(items: DeskActivity[], event: AgUiEvent, now: num
     case "TOOL_CALL_RESULT":
       return items.map((it) =>
         it.kind === "tool" && it.toolCallId === event.toolCallId && it.status === "running"
-          ? { ...it, status: "done", durationMs: now - it.ts }
+          ? {
+              ...it,
+              status: "done",
+              durationMs:
+                typeof event.durationMs === "number"
+                  ? event.durationMs
+                  : now - it.ts,
+            }
           : it,
       );
     case "RUN_FINISHED": {

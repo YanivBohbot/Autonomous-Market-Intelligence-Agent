@@ -6,6 +6,7 @@ const providerProps: Record<string, unknown>[] = [];
 const suggestionConfigs: Record<string, unknown>[] = [];
 const portalContents: React.ReactNode[] = [];
 const createdAgents: { setMessages: ReturnType<typeof vi.fn> }[] = [];
+const activityRailProps: Record<string, unknown>[] = [];
 let voiceHookState: Record<string, unknown>;
 
 vi.mock("@copilotkit/react-core/v2", () => ({
@@ -51,7 +52,17 @@ vi.mock("../voice/useResearchVoice", () => ({
 }));
 vi.mock("./useDeskInterrupt", () => ({ useDeskInterrupt: () => undefined }));
 vi.mock("./displays/useToolDisplay", () => ({ useToolDisplay: () => undefined }));
-vi.mock("./DeskActivityRail", () => ({ DeskActivityRail: () => <div data-testid="desk-activity-rail" /> }));
+vi.mock("./DeskActivityRail", () => ({
+  DeskActivityRail: (props: Record<string, unknown>) => {
+    activityRailProps.push(props);
+    return <div data-testid="desk-activity-rail" />;
+  },
+}));
+vi.mock("../voice/ResearchVoiceApproval", () => ({
+  ResearchVoiceApproval: ({ pending }: { pending: { interrupt_id: string } }) => (
+    <div data-testid="voice-approval">{pending.interrupt_id}</div>
+  ),
+}));
 vi.mock("../layout/IntelligenceSlot", () => ({
   useIntelligenceSlot: (content: React.ReactNode) => {
     portalContents.push(content);
@@ -69,6 +80,7 @@ describe("DeskView", () => {
     suggestionConfigs.length = 0;
     portalContents.length = 0;
     createdAgents.length = 0;
+    activityRailProps.length = 0;
     voiceHookState = {
       phase: "disconnected",
       active: false,
@@ -137,6 +149,39 @@ describe("DeskView", () => {
 
     expect(screen.queryByRole("textbox", { name: "Research message" })).not.toBeInTheDocument();
     expect(screen.getByText("Listening…")).toBeInTheDocument();
+  });
+
+  it("keeps voice activity and a disconnected pending approval in the existing workspace UI", () => {
+    const events = [
+      {
+        sequence: 1,
+        run_id: "voice-1",
+        kind: "specialist_started",
+        name: "finance_agent",
+        tool_call_id: null,
+        duration_ms: null,
+        message: null,
+      },
+    ];
+    voiceHookState = {
+      ...voiceHookState,
+      phase: "disconnected",
+      active: false,
+      events,
+      pending: {
+        interrupt_id: "voice-interrupt-1",
+        action_requests: [],
+        review_configs: [],
+      },
+    };
+
+    render(<DeskView threadId="research_19" voiceEnabled />);
+
+    expect(activityRailProps[activityRailProps.length - 1].voiceEvents).toBe(events);
+    expect(screen.getByTestId("voice-approval")).toHaveTextContent(
+      "voice-interrupt-1",
+    );
+    expect(screen.getByRole("textbox", { name: "Research message" })).toBeInTheDocument();
   });
 
   it("does not register persistent prompt suggestions", () => {

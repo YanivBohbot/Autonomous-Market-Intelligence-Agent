@@ -8,7 +8,8 @@ import { useDeskInterrupt } from "./useDeskInterrupt";
 import { useToolDisplay } from "./displays/useToolDisplay";
 import { getThreadHistory, uploadToWorkspace } from "../lib/api";
 import { useIntelligenceSlot } from "../layout/IntelligenceSlot";
-import { ResearchVoiceProvider } from "../voice/ResearchVoiceContext";
+import { ResearchVoiceApproval } from "../voice/ResearchVoiceApproval";
+import { ResearchVoiceProvider, useResearchVoiceContext } from "../voice/ResearchVoiceContext";
 import { ResearchComposer } from "./ResearchComposer";
 
 export type DeskViewProps = {
@@ -65,7 +66,8 @@ export function DeskView({ threadId, voiceEnabled = false }: DeskViewProps) {
 }
 
 function DeskBody({ threadId }: { threadId: string }) {
-  useDeskInterrupt();
+  const voice = useResearchVoiceContext();
+  useDeskInterrupt(voice?.setTypedApprovalPending);
   useToolDisplay();
   // Portaled into AppLayout's Intelligence column instead of rendered as a
   // direct sibling -- DeskActivityRail itself is unchanged, only where its
@@ -73,7 +75,9 @@ function DeskBody({ threadId }: { threadId: string }) {
   // subtree (hence rendering the returned portal right here, not lifting
   // it through plain state) since DeskActivityRail calls useAgent, which
   // needs that provider's context.
-  const intelligencePortal = useIntelligenceSlot(<DeskActivityRail />);
+  const intelligencePortal = useIntelligenceSlot(
+    <DeskActivityRail voiceEvents={voice?.events} />,
+  );
   return (
     <>
       {intelligencePortal}
@@ -98,6 +102,11 @@ function DeskBody({ threadId }: { threadId: string }) {
         <div className="pointer-events-none absolute inset-x-4 bottom-20 z-50 flex">
           <ThinkingIndicator />
         </div>
+        {voice?.pending && (
+          <div className="absolute inset-x-4 bottom-24 z-40 max-h-[65%] overflow-y-auto rounded-2xl shadow-xl">
+            <ResearchVoiceApproval pending={voice.pending} />
+          </div>
+        )}
         <CopilotChat
           agentId={MARKET_DESK_AGENT_ID}
           threadId={threadId}
