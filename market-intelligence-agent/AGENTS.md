@@ -52,7 +52,7 @@ FastAPI compiles one multi-agent graph with the configured checkpointer and stor
 
 Side effects use `HumanInTheLoopMiddleware`. Legacy boolean approval is expanded into `Command(resume={"decisions": [...]})`, with one `approve` or `reject` decision per pending action. Nested specialist state must be inspected with `subgraphs=True` before describing or resuming an interrupt.
 
-`app/agent/graph.py` remains for shared helpers and the temporary Classic voice workflow. Do not delete it during multi-agent work.
+`app/agent/graph.py` remains for shared helpers and the Classic voice workflow. Do not delete it during multi-agent work.
 
 ## Tools and Safety Rules
 
@@ -78,7 +78,7 @@ Shared middleware lives in `app/agent/middleware.py`: sensitive-data checks, dat
 
 Key routers are `health.py` (`/health`, AgentCore `/ping` and `/invocations`), `stream.py`, `approve.py`, `copilot.py`, `gptlive_session.py`, and `data.py`. The `/data/*` import and client endpoints are deterministic SQLite operations: they do not call an LLM and are not part of either agent graph.
 
-Classic voice uses OpenAI GPT-Live in client-delegation mode. The browser establishes WebRTC directly with OpenAI; FastAPI proxies SDP setup and starts a sideband worker. During the voice cutover, it remains on the separately compiled `app.state.voice_agent_app`; it does not yet use the shared text multi-agent graph. `GET /voice/{thread_id}/transcript` exposes its transcript to Streamlit. See `docs/VOICE.md` before changing voice setup or Hebrew support.
+OpenAI GPT-Live uses browser-to-OpenAI WebRTC with a FastAPI sideband worker. React `/research` voice runs on the same `app.state.agent_app`, thread/checkpoint, activity rail, and visual HITL cards as typed Research; text entry is locked while its continuous voice session is active. `GET /voice/{thread_id}/state` and `POST /voice/{thread_id}/decision` are Research-only. Classic Streamlit voice remains on `app.state.voice_agent_app` and keeps `GET /voice/{thread_id}/transcript` plus verbal yes/no HITL. See `docs/VOICE.md` before changing either surface or Hebrew support.
 
 ## Development and Test Conventions
 

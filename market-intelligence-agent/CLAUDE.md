@@ -112,7 +112,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 
 ### Multi-agent mode (`app/agent/multi_agent/`)
 
-Router pattern: `load_client_context → record_question → supervisor → <specialist> → supervisor → END`. FastAPI compiles this graph once and assigns the same object to `app.state.agent_app` and `app.state.market_desk_agent.graph`. `/stream`, `/approve`, AgentCore `/invocations`, and the opt-in Market Desk endpoint therefore share state. Classic voice remains temporarily on `app.state.voice_agent_app`.
+Router pattern: `load_client_context → record_question → supervisor → <specialist> → supervisor → END`. FastAPI compiles this graph once and assigns the same object to `app.state.agent_app` and `app.state.market_desk_agent.graph`. `/stream`, `/approve`, AgentCore `/invocations`, the opt-in Market Desk endpoint, and React Research voice therefore share state. Classic voice remains on `app.state.voice_agent_app`.
 
 The console uses `react-router-dom` (`/` Desk, `/classic` Classic chat, `/data` the Data section) — not a `localStorage`-persisted mode toggle.
 
@@ -126,7 +126,7 @@ The console uses `react-router-dom` (`/` Desk, `/classic` Classic chat, `/data` 
 - `copilot.py` — `POST /copilot/market-desk` (AG-UI SSE over the shared multi-agent graph, agent id `market_desk`), included only when `COPILOT_ENABLED`; the wrapper is attached in `lifespan` without compiling a second graph.
 - `stream.py` — `/stream` (SSE one-shot run; emits `node`, `token`, then `interrupted`/`done`/`error` events).
 - `approve.py` — `/approve` for HITL resume.
-- `gptlive_session.py` — `POST /gptlive/session` proxies the browser's WebRTC SDP offer to OpenAI (`client.live.create`) and spawns the voice delegation worker as a background task.
+- `gptlive_session.py` — `POST /gptlive/session` proxies the browser's WebRTC SDP offer to OpenAI (`client.live.create`) and spawns the voice delegation worker as a background task. `surface="research"` acquires a per-thread turn lease and uses the shared multi-agent graph; omitted/`classic` preserves the legacy path. Research activity and visual HITL use `GET /voice/{thread_id}/state` and `POST /voice/{thread_id}/decision`.
 - `data.py` — `/data/clients` (GET), `/data/documents` (GET), `/data/import/pdf` (POST), `/data/import/preview` (POST), `/data/import/confirm` (POST). Deterministic, non-agentic CRUD + import for the React console's `/data` section — no LLM, not wired into either graph. Direct sqlite3 access to `customers.db` (bare relative path, same convention as `create_db.py` and the MCP sqlite server), not the MCP indirection the agent uses. See `docs/superpowers/specs/2026-10-03-data-import-and-view-design.md`.
 - `_helpers.py` — shared graph-invocation utilities.
 
@@ -137,7 +137,7 @@ The console uses `react-router-dom` (`/` Desk, `/classic` Classic chat, `/data` 
 - `ApproveRequest`: `thread_id: str`, `approved: bool` (single global verdict for the whole interrupted batch).
 - `HealthResponse`, `GptLiveSessionRequest`/`GptLiveSessionResponse` round out the schema.
 
-### Voice mode (`app/voice/` + Streamlit panel)
+### Voice mode (`app/voice/`, React Research, and Streamlit Classic)
 
 OpenAI **GPT-Live** in client-delegation mode. There is no separate worker process:
 the browser opens a WebRTC session directly with OpenAI (offer/answer proxied through
@@ -147,15 +147,29 @@ attaches to that session over a **sideband** WebSocket
 (`client.live.sideband.connect(session_id=...)`). GPT-Live handles audio I/O and
 transport entirely; the delegation worker only sees `session.delegation.created`
 events and the buffered `session.input_transcript.delta` text, and replies via
-`connection.session.commentary.append(...)`. It invokes the separately compiled
-Classic voice workflow (`app.voice.graph.build_voice_agent_app`, stored as
-`app.state.voice_agent_app`). This remains distinct from the shared text
-multi-agent graph until the Research voice cutover is complete.
+`connection.session.commentary.append(...)`.
+
+React `/research` passes `surface="research"` and invokes the shared multi-agent
+graph (`app.state.agent_app`) with the same thread/checkpoint as typed Research.
+Only one text or voice turn may own a thread at a time. The composer locks text
+while voice is active and shows Connecting, Listening, Analyzing, Speaking, or
+Approval required. Activity is polled incrementally from
+`GET /voice/{thread_id}/state?after=<sequence>` and merged into the normal activity
+rail. Pending side effects use the same visual HITL cards and generated-report
+selector; decisions are idempotently submitted to
+`POST /voice/{thread_id}/decision`, and remain actionable after disconnect.
+
+Classic Streamlit voice invokes the separately compiled workflow
+(`app.voice.graph.build_voice_agent_app`, stored as `app.state.voice_agent_app`).
+It keeps verbal English/Hebrew yes/no HITL and transcript mirroring for backward
+compatibility.
 
 - `app/voice/worker.py` — `run_delegation_worker(session_id, thread_id, agent_app)`: the sideband event loop.
 - `app/voice/session.py` — transport-agnostic helpers: `VOICE_INSTRUCTIONS`, `_ToolCallLogger`, `strip_binary_score_prefix`.
 - `app/voice/hitl.py` — verbalizes interrupts and maps yes/no (English or Hebrew כן/לא) to `Command(resume=…)`.
-- `app/api/routers/gptlive_session.py` — `POST /gptlive/session` bootstraps the session.
+- `app/voice/research_runtime.py` and `activity_store.py` — multi-agent Research turns, incremental activity, stable interrupts, and first-decision-wins handling.
+- `app/api/routers/gptlive_session.py` — bootstraps both surfaces and exposes Research state/decision endpoints.
+- `frontend/src/voice/` — continuous Research WebRTC lifecycle, phase UI, activity adapter, and visual approval bridge.
 - `app/ui/voice_panel.py` — `render_voice_panel()` embeds the browser-side WebRTC client
   (`RTCPeerConnection` + `getUserMedia`) via `st.components.v1.html`. Activated by the
   `🎤 Enable voice` sidebar toggle in `app/ui/app.py`. Voice and text share the
