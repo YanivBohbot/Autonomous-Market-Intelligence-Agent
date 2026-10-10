@@ -48,7 +48,16 @@ def test_create_session_forwards_caller_supplied_thread_id():
         assert body["session_id"] == "sess-abc"
         assert body["sdp"] == "fake-answer-sdp"
 
-        mock_worker.assert_called_once_with("sess-abc", "web_session_test123", mock_agent_app)
+        mock_worker.assert_called_once_with(
+            "sess-abc",
+            "web_session_test123",
+            mock_agent_app,
+            surface="classic",
+            research_runtime=None,
+            activity_store=None,
+            lease=None,
+            turn_coordinator=None,
+        )
     finally:
         if hasattr(app.state, "voice_agent_app"):
             delattr(app.state, "voice_agent_app")
@@ -77,7 +86,16 @@ def test_create_session_falls_back_to_voice_prefixed_thread_id_when_absent():
         body = response.json()
         assert body["session_id"] == "sess-xyz"
 
-        mock_worker.assert_called_once_with("sess-xyz", "voice-sess-xyz", mock_agent_app)
+        mock_worker.assert_called_once_with(
+            "sess-xyz",
+            "voice-sess-xyz",
+            mock_agent_app,
+            surface="classic",
+            research_runtime=None,
+            activity_store=None,
+            lease=None,
+            turn_coordinator=None,
+        )
     finally:
         if hasattr(app.state, "voice_agent_app"):
             delattr(app.state, "voice_agent_app")
