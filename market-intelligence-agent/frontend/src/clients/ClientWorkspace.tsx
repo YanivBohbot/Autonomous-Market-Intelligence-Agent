@@ -154,7 +154,7 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
           <PortfolioMetrics summary={summary} />
         </div>
       </div>
-      <DeskView threadId={`clients_${clientId}`} />
+      <DeskView threadId={`clients_${clientId}`} voiceEnabled={false} />
     </div>
   );
 }

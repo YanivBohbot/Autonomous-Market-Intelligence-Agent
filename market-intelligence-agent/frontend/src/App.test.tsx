@@ -3,7 +3,11 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 vi.mock("./desk/DeskView", () => ({
-  DeskView: ({ threadId }: { threadId: string }) => <div data-testid="desk-view">{threadId}</div>,
+  DeskView: ({ threadId, voiceEnabled }: { threadId: string; voiceEnabled?: boolean }) => (
+    <div data-testid="desk-view" data-voice-enabled={String(Boolean(voiceEnabled))}>
+      {threadId}
+    </div>
+  ),
 }));
 vi.mock("./clients/ClientWorkspace", () => ({
   ClientWorkspace: () => <div data-testid="client-workspace" />,
@@ -69,7 +73,7 @@ describe("App routing", () => {
 
   it("/research renders Market Desk", () => {
     renderAt("/research");
-    expect(screen.getByTestId("desk-view")).toBeInTheDocument();
+    expect(screen.getByTestId("desk-view")).toHaveAttribute("data-voice-enabled", "true");
     expect(screen.queryByPlaceholderText(/ask the agent/i)).not.toBeInTheDocument();
   });
 

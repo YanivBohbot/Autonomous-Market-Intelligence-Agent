@@ -125,6 +125,7 @@ describe("ClientWorkspace", () => {
 
     await screen.findByTestId("desk-view-mock");
     expect(deskViewProps[deskViewProps.length - 1].threadId).toBe("clients_12");
+    expect(deskViewProps[deskViewProps.length - 1].voiceEnabled).toBe(false);
   });
 
   it("remounts with a fresh fetch and thread when navigating between clients", async () => {

@@ -53,8 +53,10 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const pollRef = useRef<ReturnType<typeof window.setInterval> | null>(null);
-  const forceCloseRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  // These timers are created by the browser Window API. Using its numeric
+  // handle avoids Node's Timeout type leaking in through frontend tooling.
+  const pollRef = useRef<number | null>(null);
+  const forceCloseRef = useRef<number | null>(null);
   const afterRef = useRef(0);
   const activeRef = useRef(false);
   const cleanedRef = useRef(true);

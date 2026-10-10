@@ -6,6 +6,7 @@ const providerProps: Record<string, unknown>[] = [];
 const suggestionConfigs: Record<string, unknown>[] = [];
 const portalContents: React.ReactNode[] = [];
 const createdAgents: { setMessages: ReturnType<typeof vi.fn> }[] = [];
+let voiceHookState: Record<string, unknown>;
 
 vi.mock("@copilotkit/react-core/v2", () => ({
   CopilotKitProvider: (props: Record<string, unknown> & { children: React.ReactNode }) => {
@@ -14,8 +15,25 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   },
   CopilotChat: (props: Record<string, unknown>) => {
     chatProps.push(props);
-    return <div data-testid="copilot-chat" />;
+    const Input = typeof props.input === "function"
+      ? (props.input as React.ComponentType<Record<string, unknown>>)
+      : null;
+    return (
+      <div data-testid="copilot-chat">
+        {Input && <Input isRunning={false} onSubmitMessage={vi.fn()} />}
+      </div>
+    );
   },
+  CopilotChatInput: ({
+    startTranscribeButton: StartTranscribeButton,
+  }: {
+    startTranscribeButton?: React.ComponentType<React.ButtonHTMLAttributes<HTMLButtonElement>>;
+  }) => (
+    <div>
+      <textarea aria-label="Research message" />
+      {StartTranscribeButton && <StartTranscribeButton />}
+    </div>
+  ),
   HttpAgent: class {
     setMessages = vi.fn();
     constructor() {
@@ -27,6 +45,9 @@ vi.mock("@copilotkit/react-core/v2", () => ({
     suggestionConfigs.push(config);
   },
   useAgent: () => ({ agent: { subscribe: () => ({ unsubscribe: () => undefined }) } }),
+}));
+vi.mock("../voice/useResearchVoice", () => ({
+  useResearchVoice: () => voiceHookState,
 }));
 vi.mock("./useDeskInterrupt", () => ({ useDeskInterrupt: () => undefined }));
 vi.mock("./displays/useToolDisplay", () => ({ useToolDisplay: () => undefined }));
@@ -48,6 +69,16 @@ describe("DeskView", () => {
     suggestionConfigs.length = 0;
     portalContents.length = 0;
     createdAgents.length = 0;
+    voiceHookState = {
+      phase: "disconnected",
+      active: false,
+      events: [],
+      pending: null,
+      error: null,
+      start: vi.fn(),
+      end: vi.fn(),
+      submitDecision: vi.fn(),
+    };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
   });
 
@@ -71,11 +102,10 @@ describe("DeskView", () => {
     expect(props.enableInspector).toBe(false);
   });
 
-  it("keeps the exact thread, attachment contract, static composer, and modern root class", () => {
+  it("keeps the exact thread, attachment contract, custom composer, and modern root class", () => {
     render(<DeskView threadId="clients_17" />);
     const props = chatProps[chatProps.length - 1];
     const attachments = props.attachments as { enabled: boolean; maxSize: number; onUpload: unknown };
-    const input = props.input as { positioning: string; className: string; textArea: string; sendButton: string };
 
     expect(props.agentId).toBe(MARKET_DESK_AGENT_ID);
     expect(props.threadId).toBe("clients_17");
@@ -83,10 +113,30 @@ describe("DeskView", () => {
     expect(attachments.enabled).toBe(true);
     expect(attachments.maxSize).toBe(20 * 1024 * 1024);
     expect(typeof attachments.onUpload).toBe("function");
-    expect(input.positioning).toBe("static");
-    expect(input.className).toContain("border-t");
-    expect(input.textArea).toContain("focus:border-terminal-accent");
-    expect(input.sendButton).toContain("bg-terminal-accent");
+    expect(typeof props.input).toBe("function");
+  });
+
+  it("renders the microphone only when the Research capability is enabled", () => {
+    const client = render(<DeskView threadId="clients_17" voiceEnabled={false} />);
+    expect(screen.getByRole("textbox", { name: "Research message" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start voice mode" })).not.toBeInTheDocument();
+    client.unmount();
+
+    render(<DeskView threadId="research_17" voiceEnabled />);
+    expect(screen.getByRole("button", { name: "Start voice mode" })).toBeInTheDocument();
+  });
+
+  it("structurally replaces the textbox while Research voice is active", () => {
+    voiceHookState = {
+      ...voiceHookState,
+      phase: "listening",
+      active: true,
+    };
+
+    render(<DeskView threadId="research_18" voiceEnabled />);
+
+    expect(screen.queryByRole("textbox", { name: "Research message" })).not.toBeInTheDocument();
+    expect(screen.getByText("Listening…")).toBeInTheDocument();
   });
 
   it("does not register persistent prompt suggestions", () => {

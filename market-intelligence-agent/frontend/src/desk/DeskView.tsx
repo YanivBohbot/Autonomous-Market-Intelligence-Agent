@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { CopilotChat, CopilotKitProvider, HttpAgent } from "@copilotkit/react-core/v2";
+import { CopilotChat, CopilotChatInput, CopilotKitProvider, HttpAgent } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
 import { DeskActivityRail } from "./DeskActivityRail";
@@ -8,10 +8,17 @@ import { useDeskInterrupt } from "./useDeskInterrupt";
 import { useToolDisplay } from "./displays/useToolDisplay";
 import { getThreadHistory, uploadToWorkspace } from "../lib/api";
 import { useIntelligenceSlot } from "../layout/IntelligenceSlot";
+import { ResearchVoiceProvider } from "../voice/ResearchVoiceContext";
+import { ResearchComposer } from "./ResearchComposer";
+
+export type DeskViewProps = {
+  threadId: string;
+  voiceEnabled?: boolean;
+};
 
 // Market Desk: CopilotKit v2 talking AG-UI straight to FastAPI (no runtime).
 // Remounted per thread by App (key={threadId}), so New session starts clean.
-export function DeskView({ threadId }: { threadId: string }) {
+export function DeskView({ threadId, voiceEnabled = false }: DeskViewProps) {
   const agent = useMemo(() => new HttpAgent({ url: MARKET_DESK_URL }), []);
 
   // CopilotChat never fetches a thread's prior messages on its own --
@@ -46,7 +53,13 @@ export function DeskView({ threadId }: { threadId: string }) {
       showDevConsole={false}
       enableInspector={false}
     >
-      <DeskBody threadId={threadId} />
+      {voiceEnabled ? (
+        <ResearchVoiceProvider threadId={threadId} enabled>
+          <DeskBody threadId={threadId} />
+        </ResearchVoiceProvider>
+      ) : (
+        <DeskBody threadId={threadId} />
+      )}
     </CopilotKitProvider>
   );
 }
@@ -89,18 +102,9 @@ function DeskBody({ threadId }: { threadId: string }) {
           agentId={MARKET_DESK_AGENT_ID}
           threadId={threadId}
           className="finance-desk-chat h-full min-h-0"
-          // Same composer bar as Classic (App.tsx): a static bottom bar
-          // with a top border and panel background, not a floating pill --
-          // CopilotKit's own light-mode styling here was unreadable against
-          // a white page, and the two chats should look like one product.
-          input={{
-            positioning: "static",
-            className: "border-t border-terminal-border bg-terminal-panel px-3 py-3",
-            textArea:
-              "rounded-xl border border-terminal-border bg-terminal-bg px-3.5 py-2.5 font-mono text-sm text-terminal-text placeholder-terminal-muted outline-none transition-colors focus:border-terminal-accent/60",
-            sendButton:
-              "rounded-xl bg-terminal-accent px-4 py-2.5 font-mono text-sm font-semibold text-terminal-bg shadow-glow-green transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none",
-          }}
+          // CopilotKit's runtime accepts any compatible input component, but
+          // its 1.74 type also requires the default component's static slots.
+          input={ResearchComposer as typeof CopilotChatInput}
           attachments={{
             enabled: true,
             maxSize: 20 * 1024 * 1024,
