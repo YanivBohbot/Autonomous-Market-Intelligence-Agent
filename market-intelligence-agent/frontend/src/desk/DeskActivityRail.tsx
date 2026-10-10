@@ -172,6 +172,11 @@ export function DeskActivityRail({
   }, [agent]);
 
   useEffect(() => {
+    if (voiceEvents.length === 0) {
+      lastVoiceSequence.current = 0;
+      return;
+    }
+
     const fresh = voiceEvents
       .filter((event) => event.sequence > lastVoiceSequence.current)
       .sort((left, right) => left.sequence - right.sequence);

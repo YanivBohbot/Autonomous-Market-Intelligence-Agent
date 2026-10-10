@@ -137,4 +137,27 @@ describe("DeskActivityRail", () => {
     expect(screen.getByText("Voice processing failed")).toBeInTheDocument();
     expect(screen.getAllByTestId("activity-run")).toHaveLength(3);
   });
+
+  it("accepts restarted sequence numbers after a new voice session", () => {
+    const view = render(
+      <DeskActivityRail
+        voiceEvents={[
+          { sequence: 1, run_id: "voice-1", kind: "specialist_started", name: "finance_agent", tool_call_id: null, duration_ms: null, message: null },
+          { sequence: 2, run_id: "voice-1", kind: "run_finished", name: null, tool_call_id: null, duration_ms: null, message: null },
+        ]}
+      />,
+    );
+
+    view.rerender(<DeskActivityRail voiceEvents={[]} />);
+    view.rerender(
+      <DeskActivityRail
+        voiceEvents={[
+          { sequence: 1, run_id: "voice-2", kind: "specialist_started", name: "rag_agent", tool_call_id: null, duration_ms: null, message: null },
+          { sequence: 2, run_id: "voice-2", kind: "run_finished", name: null, tool_call_id: null, duration_ms: null, message: null },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("RAG")).toBeInTheDocument();
+  });
 });
