@@ -38,20 +38,21 @@ def _is_summary(message) -> bool:
     return getattr(message, "additional_kwargs", {}).get("lc_source") == "summarization"
 
 
-def _is_voice(message) -> bool:
-    return getattr(message, "additional_kwargs", {}).get("source") == "voice"
+def _source(message) -> str:
+    return "voice" if getattr(message, "additional_kwargs", {}).get("source") == "voice" else "text"
 
 
 class MarketDeskAgent(LangGraphAgent):
     """LangGraphAgent that keeps SummarizationMiddleware's summary (a
     HumanMessage in state, needed by the model) out of what the browser
     renders — otherwise it shows up in the chat as if the user typed it.
+    Voice turns are shown too (tagged `source: "voice"`, 2026-10-11 spec).
 
     Hooks ag-ui-langgraph's snapshot filter (a private method, pinned by
     test_summary_message_is_not_sent_to_the_chat)."""
 
     def _filter_orphan_tool_messages(self, messages: list) -> list:
-        visible = [m for m in messages if not _is_summary(m) and not _is_voice(m)]
+        visible = [m for m in messages if not _is_summary(m)]
         return super()._filter_orphan_tool_messages(visible)
 
     def _build_command_from_agui_resume(self, entries: list, *, open_interrupts=None) -> Command:
@@ -141,21 +142,26 @@ async def market_desk_history(thread_id: str, request: Request) -> list[dict]:
     since CopilotKit itself never fetches history on its own; see
     docs/superpowers/specs/2026-10-04-clients-workspace-design.md's
     Known limitation note. Tool messages and summarization HumanMessages
-    (_is_summary) and voice turns (_is_voice) are left out -- this is for
-    display, not model context."""
+    (_is_summary) is left out. Voice turns are included and tagged
+    `source: "voice"` (2026-10-11 spec); typed turns are `source: "text"`.
+    This is for display, not model context."""
     agent: LangGraphAgent | None = getattr(request.app.state, "market_desk_agent", None)
     if agent is None:
         raise HTTPException(status_code=503, detail="Market Desk agent is not ready.")
     snapshot = await agent.graph.aget_state({"configurable": {"thread_id": thread_id}})
     messages = snapshot.values.get("messages", []) if snapshot.values else []
     return [
-        {"id": m.id, "role": "user" if isinstance(m, HumanMessage) else "assistant", "content": m.content}
+        {
+            "id": m.id,
+            "role": "user" if isinstance(m, HumanMessage) else "assistant",
+            "content": m.content,
+            "source": _source(m),
+        }
         for m in messages
         if isinstance(m, (HumanMessage, AIMessage))
         and isinstance(m.content, str)
         and m.content
         and not _is_summary(m)
-        and not _is_voice(m)
     ]
 
 
