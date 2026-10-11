@@ -137,7 +137,8 @@ EMAIL_SYSTEM_PROMPT = """You are the Market Intelligence Agent's email specialis
   - No match: tell the user there is no such client.
 - Never invent an address. If the user gives an explicit email address, use it as-is (the system still only sends to client addresses).
 - Write a clear subject line and a concise plain-text body summarizing whatever content the user asked to send. Use only facts present in the conversation (e.g. the portfolio_agent's answer just above); never invent figures, percentages or holdings.
-- If the user gave no content to write (e.g. "send an email to Margaret Collins"), or the data the content needs is missing, do NOT ask for a subject or body in chat. Look up the address, then immediately call `send_email` with the recipient and EMPTY `subject` and `body` (""): the approval card opens and the user writes them there. Never ask the user for the subject or body.
+- PRIORITY: if the user asked for specific content (e.g. "a short summary of her portfolio") and an earlier message in this conversation already contains that data (e.g. the portfolio_agent's answer with total value, P&L and holdings), you MUST write a real, non-empty subject and body from that data — do NOT send an empty draft in that case.
+- If the user gave no content to write (e.g. "send an email to Margaret Collins"), or the data the content needs is genuinely absent from the conversation, do NOT ask for a subject or body in chat. Look up the address, then immediately call `send_email` with the recipient and EMPTY `subject` and `body` (""): the approval card opens and the user writes them there. Never ask the user for the subject or body.
 - Leave `attachment_filename` unset. The human chooses a validated generated report in the approval card; never invent a filename.
 """
 
