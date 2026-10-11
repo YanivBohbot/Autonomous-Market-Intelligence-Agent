@@ -5,7 +5,7 @@ expose only the 3 needed for the read+write workspace use case. Sandboxing is
 enforced by the server itself via the allowed-root argument set in registry.py.
 
 Public symbols: fs_read_file_tool (read-only), fs_list_dir_tool (read-only),
-fs_write_file_tool (gated by approval_node).
+fs_write_file_tool (gated by HumanInTheLoopMiddleware in filesystem_agent).
 
 Storage backend
 ---------------

@@ -1,14 +1,11 @@
 import pytest
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.graph import END
 
 from app.agent.guardrails import (
     SENSITIVE_DATA_WARNING,
     SensitiveDataGuard,
     contains_sensitive_data,
-    pii_guard_node,
-    route_after_pii_guard,
 )
 from app.agent.guardrails.detection import contains_credit_card, contains_email
 from tests.unit.fake_chat import FakeToolModel
@@ -46,36 +43,9 @@ def test_contains_credit_card_and_contains_email_are_independent():
 # --- single-agent node ---
 
 
-def test_pii_guard_node_blocks_on_credit_card():
-    state = {"messages": [HumanMessage("my card is 4111 1111 1111 1111")], "question": "q"}
-    result = pii_guard_node(state)
-    assert len(result["messages"]) == 1
-    warning = result["messages"][0]
-    assert isinstance(warning, AIMessage)
-    assert warning.content == SENSITIVE_DATA_WARNING
 
 
-def test_pii_guard_node_passes_through_clean_message():
-    state = {"messages": [HumanMessage("what is my portfolio value?")], "question": "q"}
-    assert pii_guard_node(state) == {}
 
-
-def test_pii_guard_node_does_not_block_email_since_this_graph_needs_send_email_to_work():
-    state = {"messages": [HumanMessage("send an email to jane.doe@example.com please")], "question": "q"}
-    assert pii_guard_node(state) == {}
-
-
-def test_route_after_pii_guard_ends_when_blocked():
-    state = {"messages": [HumanMessage("x"), AIMessage(SENSITIVE_DATA_WARNING)], "question": "q"}
-    assert route_after_pii_guard(state) == END
-
-
-def test_route_after_pii_guard_continues_to_generate_when_clean():
-    state = {"messages": [HumanMessage("what is my portfolio value?")], "question": "q"}
-    assert route_after_pii_guard(state) == "generate"
-
-
-# --- multi-agent middleware ---
 
 
 @pytest.mark.anyio

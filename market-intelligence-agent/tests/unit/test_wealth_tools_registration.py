@@ -47,8 +47,8 @@ def test_save_portfolio_report_is_registered_but_not_read_only():
     # tool this replaces) WAS read-only, since it never wrote anything
     # itself. save_portfolio_report DOES write to disk now -- if it were
     # ever added to READ_ONLY_TOOLS (by habit, copying the old entry), the
-    # single-agent graph's approval_node would skip the HITL interrupt
-    # entirely and the tool would execute with no approval gate at all.
+    # registry would wrongly classify a disk-writing tool as a safe read
+    # (HITL is enforced by portfolio_agent's HumanInTheLoopMiddleware).
     assert "save_portfolio_report" in _names()
     assert "save_portfolio_report" not in READ_ONLY_TOOLS
     assert not is_read_only("save_portfolio_report")

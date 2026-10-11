@@ -4,11 +4,10 @@ render a table/chart/card instead of a plain-text tool card.
 
 Scoped to the multi-agent graph only, via MarketDeskDisplayMiddleware, wired
 per-specialist in portfolio_agent.py / finance_agent.py / rag_agent.py /
-browser_agent.py. Never imported by app/agent/graph.py (single-agent): the two
-tools this touches that ARE shared instances with the single-agent graph
-(search_knowledge_base_tool, browser_screenshot_tool) must keep their own
-return value untouched for Streamlit/voice — this middleware only ever
-rewrites the copy of ToolMessage.content that flows through this graph.
+browser_agent.py. The tool instances it touches (search_knowledge_base_tool,
+browser_screenshot_tool) keep their own return value untouched -- this
+middleware only ever rewrites the copy of ToolMessage.content that flows
+through this graph.
 
 The `summary` field is always the original tool text, verbatim — never a
 normalizer's own rewrite — so the LLM's next-turn reasoning is provably

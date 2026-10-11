@@ -94,8 +94,9 @@ def _base_name(name: str) -> str:
 
 def is_read_only(tool_name: str) -> bool:
     """READ_ONLY_TOOLS membership check that tolerates the Gateway's
-    `<target>___<tool>` prefixed names. Used by the approval node in
-    graph.py to skip the HITL interrupt for read-only tool calls."""
+    `<target>___<tool>` prefixed names. READ_ONLY_TOOLS is the documented
+    read-only/side-effect classification of every tool (see docs/TOOLS.md);
+    HITL itself is enforced per specialist by HumanInTheLoopMiddleware."""
     return _base_name(tool_name) in READ_ONLY_TOOLS
 
 

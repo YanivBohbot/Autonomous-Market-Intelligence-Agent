@@ -53,24 +53,9 @@ The email tool falls back to a simulation (no real send) when `EMAIL_SENDER` sti
 
 ## Architecture
 
-### Legacy single-agent graph (`app/agent/graph.py`)
+### Agent graph
 
-This graph is retained for shared node helpers (no runtime caller remains; removal is a tracked follow-up); the main text transports no longer compile it. Its HITL uses the dynamic `interrupt()` pattern with `Command(resume=...)` — no `interrupt_before`. Flow:
-
-```
-START → record_question → pii_guard → (sensitive?) → END
-                              ↓ no
-                           generate → (tool_calls?) → approval → [tools | generate]
-tools → generate → … → END
-```
-
-- **record_question**: persists the user's turn as a `HumanMessage` so it shows up in checkpointed history.
-- **pii_guard** (`app/agent/guardrails/node.py`): if the last `HumanMessage` contains a credit card, short-circuits straight to `END` with a warning `AIMessage` — `generate` never runs, no user data reaches the LLM. Email is NOT checked here (this graph needs `send_email` to work — see `app/agent/middleware.py` below). Shared detection logic lives in `app/agent/guardrails/` (named for the official LangChain "guardrails" concept `PIIMiddleware` itself belongs to, not narrowed to "pii" since more guardrails can land here later).
-- **generate**: LLM (with `TOOLS` bound) loaded from `app/agent/prompts/system.py` (`SYSTEM_PROMPT`, `ERROR_RECOVERY_PROMPT`). Decides whether to call a tool or emit a final answer.
-- **approval**: inspects the last `AIMessage`'s `tool_calls`. If every call is in `READ_ONLY_TOOLS`, returns immediately. Otherwise calls `interrupt(requests)` surfacing only side-effect calls. **Atomic batch rule**: any reject cancels the entire batch via `ToolMessage`s.
-- **tools** (LangGraph `ToolNode`): runs whatever the LLM called.
-
-Note: retrieval (`search_knowledge_base`) and web search (`web_search`) are **not** separate graph nodes — they're tools the LLM calls from within the `generate`/`tools` loop, same as any other tool, and are gated by the same `READ_ONLY_TOOLS`/`approval` logic.
+There is a single agent graph: the multi-agent supervisor graph in `app/agent/multi_agent/` (see "Multi-agent mode" below). The former single-agent graph (`app/agent/graph.py`, `nodes/generate.py`, `state.py`, the `pii_guard` node, `prompts/system.py`) was removed on 2026-10-12 once no runtime caller remained. Its credit-card guard lives on as the `SensitiveDataGuard` middleware, and its HITL as `HumanInTheLoopMiddleware` per specialist.
 
 ### Tools (`app/agent/tools/__init__.py`)
 
@@ -88,17 +73,17 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | `yfinance_get_ticker_news` | same | read-only | `get_ticker_news(ticker, limit=5)`. |
 | `read_text_file` | `app/agent/tools/mcp_clients/filesystem_client.py` | read-only | MCP stdio client → `@modelcontextprotocol/server-filesystem` → `read_text_file(path)` inside `data/workspace/`. |
 | `list_directory` | same | read-only | `list_directory(path)` inside `data/workspace/`. |
-| `write_file` | same | side-effect | `write_file(path, content)` inside `data/workspace/`. Gated by `approval_node`. |
+| `write_file` | same | side-effect | `write_file(path, content)` inside `data/workspace/`. Gated by `HumanInTheLoopMiddleware` (HITL). |
 | `browser_navigate` | `app/agent/tools/mcp_clients/browser_client.py` | read-only | MCP stdio client → `@playwright/mcp` → `browser_navigate(url)` (headless Chromium). Locally the 3 browser tools share ONE long-lived session per event loop (`browser_session.py`) so navigate/snapshot/screenshot act on the same page; the server runs in `data/workspace/screenshots/`. |
 | `browser_snapshot` | same | read-only | Returns the current page as an accessibility tree (LLM-friendly structured text). |
 | `browser_take_screenshot` | same | read-only | Saves a PNG into `data/workspace/screenshots/`. |
 | `recall_memory` | `app/agent/tools/memory.py` | read-only | Look up a user fact in LangGraph's BaseStore by key. |
 | `list_memories` | same | read-only | Return every user fact in memory as `key = value` strings. |
-| `save_memory` | same | side-effect | Persist `{key: value}` under namespace `("user_facts",)`. Gated by `approval_node`. |
+| `save_memory` | same | side-effect | Persist `{key: value}` under namespace `("user_facts",)`. Gated by `HumanInTheLoopMiddleware` (HITL). |
 | `search_knowledge_base` | `app/agent/tools/knowledge_base.py` | read-only | Semantic search over ingested company reports/PDFs through `app/rag/retriever.build_kb_retriever` — a `RerankingRetriever(BaseRetriever)` over `PineconeVectorStore.as_retriever(similarity_score_threshold, k=20, relevance ≥ 0.675 ≡ cosine 0.35)` + `PineconeRerank(bge-reranker-v2-m3)`; no `langchain-classic`. Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. |
 | `web_search` | `app/agent/tools/knowledge_base.py` | read-only | Live web search (Tavily), top 3 results, advanced depth. Fallback/supplement when the knowledge base has nothing relevant. |
 
-`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the documented read-only classification of every tool (HITL itself is enforced per specialist by `HumanInTheLoopMiddleware`).
 
 ### Human-in-the-Loop (HITL) flow
 
@@ -114,7 +99,7 @@ Router pattern: `load_client_context → record_question → supervisor → <spe
 The console uses `react-router-dom` (`/research`, `/briefing`, `/clients`, `/reports`, `/data`) — not a `localStorage`-persisted mode toggle.
 
 - One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
-- `app/agent/middleware.py` (shared with the single-agent graph, so it lives outside `multi_agent/`; named for its contents — middleware factories — rather than `common.py`): `specialist_model()` and `base_middleware(*, check_email=True)` = `SensitiveDataGuard(check_email=...)` (`app/agent/guardrails/`: blocks before any model call if the user's message contains a credit card, or — unless `check_email=False` — an email; see below), `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 50 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `model_fallback()` (`ModelFallbackMiddleware` to `claude-sonnet-5-5` — opt-in, only when `ANTHROPIC_API_KEY` is set; omitted otherwise), `model_retry()` (`ModelRetryMiddleware`, default 2 retries/exponential backoff — covers a transient OpenAI error during the model call itself, which `tool_errors_to_messages` below never sees), `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` call `base_middleware(check_email=False)` and keep addresses — they need a real one to work (`send_email`, or a report/fact tied to a client); the single-agent graph's `pii_guard` node does the same (hardcoded `check_email=False`) since it bundles `send_email` alongside everything else with no per-specialist split. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
+- `app/agent/middleware.py` (outside `multi_agent/`; named for its contents — middleware factories — rather than `common.py`): `specialist_model()` and `base_middleware(*, check_email=True)` = `SensitiveDataGuard(check_email=...)` (`app/agent/guardrails/`: blocks before any model call if the user's message contains a credit card, or — unless `check_email=False` — an email; see below), `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 50 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `model_fallback()` (`ModelFallbackMiddleware` to `claude-sonnet-5-5` — opt-in, only when `ANTHROPIC_API_KEY` is set; omitted otherwise), `model_retry()` (`ModelRetryMiddleware`, default 2 retries/exponential backoff — covers a transient OpenAI error during the model call itself, which `tool_errors_to_messages` below never sees), `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` call `base_middleware(check_email=False)` and keep addresses — they need a real one to work (`send_email`, or a report/fact tied to a client). `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
 - HITL uses the official `HumanInTheLoopMiddleware` (email: `send_email`, filesystem: `write_file`, memory: `save_memory`). Resume with `Command(resume={"decisions": [{"type": "approve"} | {"type": "reject", "message": ...} | {"type": "edit", "edited_action": {...}}]})`, one decision per pending call. Legacy boolean adapters expand their verdict to this same payload.
 
 ### API routers (`app/api/routers/`)

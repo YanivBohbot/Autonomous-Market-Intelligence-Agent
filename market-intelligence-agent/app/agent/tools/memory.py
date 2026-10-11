@@ -1,7 +1,7 @@
 """Long-term user-facts memory — three native LangChain tools backed by the
 LangGraph `BaseStore` injected at graph compile time.
 
-`save_memory` is a side-effect (gated by approval_node). `recall_memory` and
+`save_memory` is a side-effect (gated by HumanInTheLoopMiddleware in memory_agent). `recall_memory` and
 `list_memories` are read-only and slot into READ_ONLY_TOOLS. All three are
 async and operate on the single namespace `("user_facts",)`. The single-bucket
 choice fits the single-user portfolio agent; multi-tenant namespacing is a

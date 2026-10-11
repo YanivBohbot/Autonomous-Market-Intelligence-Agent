@@ -34,7 +34,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 22 | `client_portfolio` | read-only | Native (`client_portfolio.py`) — loads data via `read_query` + `yfinance_get_ticker_info` | client_name (full or partial) | Resolves the named client, reads their holdings + sector from the DB and live prices itself, then returns the same market value / cost basis / P&L / weights / sector-allocation shape as `portfolio_metrics`. Returns `{error: ...}` on zero or multiple client matches instead of guessing. | Live QA showed gpt-4o-mini skip the documented recipe for a plain "what's this client's portfolio worth" question and write its own `SUM(shares * avg_cost)` SQL — cost basis, not market value — giving a wrong total. Same fix as `concentration_screen`: nothing left for the LLM to shortcut. |
 | 23 | `save_portfolio_report` | side-effect | Native (`portfolio_report.py`) -- loads data via `read_query` + `yfinance_get_ticker_info`, writes the file itself | client_name (full or partial) | Resolves the named client, loads holdings + live prices itself, builds a downloadable Excel portfolio brief (positions table + a native pie chart of position weights), and writes it directly to `reports/` -- no separate write step. Gated by HITL approval. | An advisor-facing deliverable for a client meeting, generated and saved in one atomic, deterministic step so nothing an LLM might mistype ever reaches the file. |
 
-`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "client_portfolio", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the allowlist consulted by `approval_node` to skip the HITL interrupt for safe reads.
+`READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "client_portfolio", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the documented read-only classification of every tool (HITL is enforced per specialist by `HumanInTheLoopMiddleware`).
 
 ## Per-tool details
 
@@ -76,7 +76,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 ### 8. `write_file`
 - **File:** same as `read_text_file`
 - **What:** Writes UTF-8 content to `data/workspace/<path>`. Creates parent directories if missing. Last-write-wins.
-- **Why:** The output channel of the workspace. The agent's synthesis usually lives only in the message history; this lets it persist briefs and snapshots that survive the session. Gated by `approval_node` — the user sees the path and content in the Streamlit Approve/Refuse modal before any disk write.
+- **Why:** The output channel of the workspace. The agent's synthesis usually lives only in the message history; this lets it persist briefs and snapshots that survive the session. Gated by `HumanInTheLoopMiddleware` — the user sees the path and content in the approval card before anything is written.
 
 ### 9. `browser_navigate`
 - **File:** `app/agent/tools/mcp_clients/browser_client.py` (selects from registry)
@@ -108,7 +108,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 
 ### 14. `save_memory`
 - **File:** same as `recall_memory`
-- **What:** Persists `{key: value}` under namespace `("user_facts",)` via `store.aput(...)`. Last-write-wins for collisions. Gated by `approval_node`.
+- **What:** Persists `{key: value}` under namespace `("user_facts",)` via `store.aput(...)`. Last-write-wins for collisions. Gated by `HumanInTheLoopMiddleware` (HITL).
 - **Why:** The write side of cross-thread memory. Saves the user from re-stating facts every session. Gated because creating durable knowledge *about* the user is a side-effect users should consent to — same trust posture as `send_email` and `write_file`. The Streamlit modal surfaces the proposed `{key, value}` pair before any disk write.
 
 ### 15. `search_knowledge_base`

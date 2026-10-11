@@ -37,7 +37,7 @@ Important optional settings include `LOG_LEVEL`, `API_URL`, `YFINANCE_TIMEOUT_S`
 ## Project Layout
 
 - `app/api/`: FastAPI server, request models, and routers.
-- `app/agent/`: single-agent LangGraph flow, multi-agent mode, prompts, guardrails, memory, and tools.
+- `app/agent/`: multi-agent LangGraph graph (supervisor + specialists), prompts, guardrails, memory, and tools.
 - `app/voice/`: GPT-Live delegation worker, shared voice graph, and HITL handling.
 - `app/data_import/`: deterministic, non-agentic SQLite/PDF import logic.
 - `frontend/src/`: React console features such as Desk, Clients, Data, Reports, and Briefing.
@@ -50,7 +50,7 @@ FastAPI compiles one multi-agent graph with the configured checkpointer and stor
 
 Side effects use `HumanInTheLoopMiddleware`. Legacy boolean approval is expanded into `Command(resume={"decisions": [...]})`, with one `approve` or `reject` decision per pending action. Nested specialist state must be inspected with `subgraphs=True` before describing or resuming an interrupt.
 
-`app/agent/graph.py` remains for shared helpers (no runtime caller remains; removal is a tracked follow-up). Do not delete it during multi-agent work.
+The former single-agent graph (`app/agent/graph.py` and `app/agent/nodes/`) was removed on 2026-10-12; the multi-agent graph is the only graph.
 
 ## Tools and Safety Rules
 

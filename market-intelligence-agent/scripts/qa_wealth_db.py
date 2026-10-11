@@ -13,7 +13,6 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 
 import create_db as seed
-from app.agent.graph import build_agent_app
 from app.agent.multi_agent import build_multi_agent_app
 
 if not seed.DB_PATH.exists():
@@ -125,50 +124,6 @@ def expected_w3_concentration(prices):
     return expected
 
 
-async def single():
-    app = build_agent_app(InMemorySaver(), InMemoryStore())
-
-    async def ask(q):
-        cfg = {"configurable": {"thread_id": str(uuid.uuid4()), "actor_id": "qa"}, "recursion_limit": 60}
-        return (await app.ainvoke({"question": q}, cfg))["messages"]
-
-    msgs = await ask("Which clients currently hold NVDA? List their full names.")
-    a, expected = answer(msgs), holders("NVDA")
-    missing = {n for n in expected if n not in a}
-    extra = {n for n in all_client_names() - expected if n in a}
-    record("W1 NVDA holders", not missing and not extra, f"expected={len(expected)} missing={missing} extra={extra}")
-
-    msgs = await ask("How is Martin Levy's portfolio performing? Give the total market value and unrealized P&L.")
-    a = answer(msgs)
-    pm = tool_outputs(msgs, "portfolio_metrics")
-    ok = bool(pm)
-    if ok:
-        totals = json.loads(pm[-1])["totals"] if pm[-1].startswith("{") else {}
-        db_pos = {(t, s, c) for t, s, c in DB.execute(
-            "SELECT h.ticker, h.shares, h.avg_cost FROM holdings h JOIN clients c USING (client_id) WHERE c.name = 'Martin Levy'")}
-        sent = [tc["args"]["positions"] for tc in calls(msgs) if tc["name"].endswith("portfolio_metrics")][-1]
-        sent_pos = {(p["ticker"], float(p["shares"]), float(p["avg_cost"])) for p in sent}
-        ok = sent_pos == {(t, float(s), float(c)) for t, s, c in db_pos} and bool(totals) and \
-            any(v in a.replace("$", "") for v in money_variants(totals["market_value"]))
-    record("W2 Martin Levy portfolio grounded", ok, f"answer={a[:160]!r}")
-
-    msgs = await ask("Which conservative clients have more than 30% of their portfolio in a single stock?")
-    a = answer(msgs)
-    prices = prices_from_ticker_info(msgs)
-    expected_w3 = expected_w3_concentration(prices)
-    conservative_names = {r[0] for r in DB.execute("SELECT name FROM clients WHERE risk_profile = 'conservative'")}
-    found_w3 = {name for name in conservative_names if name in a}
-    missing_w3 = expected_w3 - found_w3
-    extra_w3 = found_w3 - expected_w3
-    record("W3 concentration fixture", not missing_w3 and not extra_w3,
-           f"expected={sorted(expected_w3)} found={sorted(found_w3)} missing={missing_w3} extra={extra_w3} prices_used={prices}")
-
-    msgs = await ask("Tesla published its Q2 2026 update. Which of our clients hold TSLA, and how many vehicles did Tesla deliver in Q2 2026?")
-    a, c = answer(msgs), {tc["name"].rsplit("___", 1)[-1] for tc in calls(msgs)}
-    missing = {n for n in holders("TSLA") if n not in a}
-    record("W4 RAG + SQL chain", {"search_knowledge_base", "read_query"} <= c and not missing and re.search(r"480[,.\s]?126", a) is not None,
-           f"tools={sorted(c)} missing={missing}")
-
 
 async def multi():
     app = build_multi_agent_app(InMemorySaver(), InMemoryStore())
@@ -188,7 +143,6 @@ async def multi():
 
 
 async def main():
-    await single()
     await multi()
     print(f"\nSUMMARY {sum(ok for _, ok in RESULTS)}/{len(RESULTS)} passed")
 

@@ -68,19 +68,3 @@ def test_handle_tool_errors_true_converts_failure_to_tool_message():
     assert tool_msg.status == "error"
     assert "simulated MCP tool failure" in tool_msg.content
 
-
-def test_graph_tools_node_configured_to_never_reraise():
-    """Production wiring check: app/agent/graph.py's underlying ToolNode must
-    not use the default error handler, or any real tool failure will poison
-    the thread's checkpoint the same way. The graph's "tools" node is a thin
-    async wrapper (`run_tools`) around this ToolNode — it also strips image
-    content off tool results before they re-enter checkpointed state — so
-    inspect the wrapped node directly rather than `workflow.nodes["tools"]`."""
-    from app.agent.graph import _tool_node
-
-    # ToolNode's own default (the callable `_default_handle_tool_errors`) is
-    # truthy but still re-raises real tool exceptions — only its internal
-    # ToolInvocationError is caught. Must be explicitly overridden to True
-    # (or an equivalent catch-all) so every tool failure becomes a
-    # ToolMessage instead of poisoning the checkpoint.
-    assert _tool_node._handle_tool_errors is True
