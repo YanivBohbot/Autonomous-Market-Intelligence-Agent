@@ -1,71 +1,110 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from langchain_core.documents import Document
+from langchain_core.documents.compressor import BaseDocumentCompressor
+from langchain_core.retrievers import BaseRetriever
 
 from app.agent.tools import knowledge_base as kb_mod
 from app.agent.tools.knowledge_base import search_knowledge_base_tool, web_search_tool
+from app.rag import retriever as rag_retriever
+
+
+class _FakeStore:
+    """Mimics PineconeVectorStore.as_retriever(similarity_score_threshold):
+    keeps the top-k candidates whose relevance (cos + 1) / 2 passes the
+    threshold, exactly as langchain_pinecone maps cosine scores."""
+
+    def __init__(self, results_with_cosine=None, error=None):
+        self.results = results_with_cosine or []
+        self.error = error
+        self.search_kwargs = None
+
+    def as_retriever(self, search_type, search_kwargs):
+        assert search_type == "similarity_score_threshold"
+        self.search_kwargs = search_kwargs
+        store = self
+
+        class _R(BaseRetriever):
+            def _get_relevant_documents(self, query, *, run_manager):
+                if store.error:
+                    raise store.error
+                threshold = search_kwargs["score_threshold"]
+                return [d for d, cos in store.results[: search_kwargs["k"]] if (cos + 1) / 2 >= threshold]
+
+        return _R()
+
+
+class _Reranker(BaseDocumentCompressor):
+    top_n: int = 4
+    order: list[int] | None = None
+    error: object = None  # an Exception instance to raise, if set
+    seen: list[str] | None = None
+
+    def compress_documents(self, documents, query, callbacks=None):
+        object.__setattr__(self, "seen", [d.page_content for d in documents])
+        if self.error:
+            raise self.error
+        idx = self.order if self.order is not None else list(range(len(documents)))
+        return [documents[i] for i in idx][: self.top_n]
 
 
 @pytest.fixture(autouse=True)
-def _identity_reranker():
-    """Keep tests offline: the reranker returns candidates in vector order
-    unless a test installs its own ordering."""
-    pc = MagicMock()
-    pc.inference.rerank.side_effect = lambda **kw: SimpleNamespace(
-        data=[SimpleNamespace(index=i) for i in range(min(kw["top_n"], len(kw["documents"])))]
-    )
-    with patch.object(kb_mod, "_get_pinecone", return_value=pc):
-        yield pc
+def rag():
+    """Offline seams on app.rag.retriever: a configurable fake vector store and
+    a reranker that keeps vector order unless a test sets `order`/`error`."""
+    state = SimpleNamespace(store=_FakeStore(), reranker=None, rerank_kwargs=None, order=None, error=None)
+
+    def fake_rerank(**kw):
+        state.rerank_kwargs = kw
+        state.reranker = _Reranker(top_n=kw["top_n"], order=state.order, error=state.error)
+        return state.reranker
+
+    rag_retriever._reranker_for.cache_clear()
+    with (
+        patch.object(rag_retriever, "get_vectorstore", side_effect=lambda: state.store),
+        patch.object(rag_retriever, "PineconeRerank", side_effect=fake_rerank),
+    ):
+        yield state
+    rag_retriever._reranker_for.cache_clear()
 
 
-def _mock_vectorstore(results_with_scores):
-    vectorstore = MagicMock()
-    vectorstore.similarity_search_with_score.return_value = results_with_scores
-    return vectorstore
-
-
-def test_search_returns_formatted_chunks_with_source_and_page():
-    docs = [
+def test_search_returns_formatted_chunks_with_source_and_page(rag):
+    rag.store = _FakeStore([
         (Document(page_content="Revenue was $100M", metadata={"source": "data/Amazon-2024-Annual-Report.pdf", "page": 12}), 0.62),
-    ]
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "revenue"})
+    ])
+    result = search_knowledge_base_tool.invoke({"query": "revenue"})
     assert "[Source: Amazon-2024-Annual-Report.pdf, page 13]" in result
     assert "Revenue was $100M" in result
 
 
-def test_search_cites_float_page_metadata_as_one_based_integer():
+def test_search_cites_float_page_metadata_as_one_based_integer(rag):
     """Pinecone returns numeric metadata as floats (35.0) and PyPDFLoader
     pages are 0-based — cite the page number a reader sees in the PDF."""
-    docs = [
+    rag.store = _FakeStore([
         (Document(page_content="Net sales $637,959M", metadata={"filename": "Amazon-2024-Annual-Report.pdf", "page": 35.0}), 0.62),
-    ]
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "net sales"})
+    ])
+    result = search_knowledge_base_tool.invoke({"query": "net sales"})
     assert "[Source: Amazon-2024-Annual-Report.pdf, page 36]" in result
 
 
-def test_search_cites_unknown_page_when_metadata_missing():
-    docs = [(Document(page_content="text", metadata={"filename": "annual-report.pdf"}), 0.62)]
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "q"})
+def test_search_cites_unknown_page_when_metadata_missing(rag):
+    rag.store = _FakeStore([(Document(page_content="text", metadata={"filename": "annual-report.pdf"}), 0.62)])
+    result = search_knowledge_base_tool.invoke({"query": "q"})
     assert "[Source: annual-report.pdf, page ?]" in result
 
 
-def test_search_returns_explicit_message_on_empty_results():
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore([])):
-        result = search_knowledge_base_tool.invoke({"query": "nonexistent topic"})
+def test_search_returns_explicit_message_on_empty_results(rag):
+    rag.store = _FakeStore([])
+    result = search_knowledge_base_tool.invoke({"query": "nonexistent topic"})
     assert result == "No relevant results found in the knowledge base for this query."
 
 
-def test_search_returns_explicit_message_on_vectorstore_error():
-    vectorstore = MagicMock()
-    vectorstore.similarity_search_with_score.side_effect = RuntimeError("Pinecone unreachable")
-    with patch.object(kb_mod, "_get_vectorstore", return_value=vectorstore):
-        result = search_knowledge_base_tool.invoke({"query": "revenue"})
+def test_search_returns_explicit_message_on_vectorstore_error(rag):
+    rag.store = _FakeStore(error=RuntimeError("Pinecone unreachable"))
+    result = search_knowledge_base_tool.invoke({"query": "revenue"})
     assert "Knowledge base search failed" in result
     assert "Pinecone unreachable" in result
 
@@ -78,39 +117,37 @@ def test_search_with_unmatched_source_filter_lists_available_docs():
     assert "TSLA-Q2-2026-Update.pdf" in result
 
 
-def test_search_with_matched_source_filter_builds_pinecone_filter():
-    docs = [(Document(page_content="Tesla delivered 500k vehicles", metadata={"source": "data/TSLA-Q2-2026-Update.pdf", "page": 3, "filename": "TSLA-Q2-2026-Update.pdf"}), 0.6)]
-    vectorstore = _mock_vectorstore(docs)
-    with patch.object(kb_mod, "_get_vectorstore", return_value=vectorstore), \
-         patch.object(kb_mod, "_list_ingested_pdfs", return_value=["Amazon-2024-Annual-Report.pdf", "TSLA-Q2-2026-Update.pdf"]):
+def test_search_with_matched_source_filter_builds_pinecone_filter(rag):
+    rag.store = _FakeStore([(Document(page_content="Tesla delivered 500k vehicles", metadata={"source": "data/TSLA-Q2-2026-Update.pdf", "page": 3, "filename": "TSLA-Q2-2026-Update.pdf"}), 0.6)])
+    with patch.object(kb_mod, "_list_ingested_pdfs", return_value=["Amazon-2024-Annual-Report.pdf", "TSLA-Q2-2026-Update.pdf"]):
         result = search_knowledge_base_tool.invoke({"query": "deliveries", "source_filter": "TSLA"})
-    vectorstore.similarity_search_with_score.assert_called_once_with(
-        "deliveries", k=kb_mod._RERANK_CANDIDATES, filter={"filename": {"$in": ["TSLA-Q2-2026-Update.pdf"]}}
-    )
+    assert rag.store.search_kwargs == {
+        "k": 20,
+        "score_threshold": rag_retriever.RELEVANCE_SCORE_THRESHOLD,
+        "filter": {"filename": {"$in": ["TSLA-Q2-2026-Update.pdf"]}},
+    }
     assert "Tesla delivered 500k vehicles" in result
 
 
-def test_search_filters_out_low_relevance_chunks():
-    """Calibrated empirically (see _RELEVANCE_THRESHOLD docstring): on-topic
-    real queries scored 0.53-0.66, off-topic scored 0.13-0.14 against this
+def test_search_filters_out_low_relevance_chunks(rag):
+    """Calibrated empirically (see RELEVANCE_THRESHOLD_COSINE): on-topic real
+    queries scored 0.53-0.66, off-topic scored 0.13-0.14 against this
     project's real index."""
-    docs = [
+    rag.store = _FakeStore([
         (Document(page_content="Amazon 2024 revenue was $638B", metadata={"filename": "Amazon-2024-Annual-Report.pdf", "page": 1}), 0.66),
         (Document(page_content="unrelated cybercab production note", metadata={"filename": "TSLA-Q2-2026-Update.pdf", "page": 16}), 0.14),
-    ]
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "Amazon revenue"})
+    ])
+    result = search_knowledge_base_tool.invoke({"query": "Amazon revenue"})
     assert "Amazon 2024 revenue was $638B" in result
     assert "unrelated cybercab production note" not in result
 
 
-def test_search_returns_no_results_message_when_all_below_threshold():
-    docs = [
+def test_search_returns_no_results_message_when_all_below_threshold(rag):
+    rag.store = _FakeStore([
         (Document(page_content="irrelevant chunk one", metadata={"filename": "TSLA-Q2-2026-Update.pdf", "page": 16}), 0.14),
         (Document(page_content="irrelevant chunk two", metadata={"filename": "annual-report.pdf", "page": 44}), 0.13),
-    ]
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "best chocolate cake recipe"})
+    ])
+    result = search_knowledge_base_tool.invoke({"query": "best chocolate cake recipe"})
     assert result == "No relevant results found in the knowledge base for this query."
 
 
@@ -149,45 +186,38 @@ def _doc(text, score, page=1):
     return (Document(page_content=text, metadata={"filename": "Tesla-TSLA-Q2-2026-Update.pdf", "page": page}), score)
 
 
-def test_search_returns_top_k_in_reranker_order(_identity_reranker):
+def test_search_returns_top_k_in_reranker_order(rag):
     """Regression: the Tesla revenue table ("Total revenues ... 22,387 28,236")
     ranked #8-9 by vector similarity, outside the top 4, so the agent never
     saw it. bge-reranker-v2-m3 moved it to #1 in live measurements."""
-    docs = [_doc(f"narrative chunk {i}", 0.60 - i * 0.01, page=i) for i in range(7)] + [_doc("Total revenues 22,387 28,236", 0.55, page=27)]
-    _identity_reranker.inference.rerank.side_effect = lambda **kw: SimpleNamespace(
-        data=[SimpleNamespace(index=7), SimpleNamespace(index=0), SimpleNamespace(index=1), SimpleNamespace(index=2)]
-    )
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "Tesla total revenue Q1 2026", "k": 4})
+    rag.store = _FakeStore([_doc(f"narrative chunk {i}", 0.60 - i * 0.01, page=i) for i in range(7)] + [_doc("Total revenues 22,387 28,236", 0.55, page=27)])
+    rag.order = [7, 0, 1, 2]
+    result = search_knowledge_base_tool.invoke({"query": "Tesla total revenue Q1 2026", "k": 4})
     chunks = result.split("\n\n")
     assert len(chunks) == 4
     assert "Total revenues 22,387 28,236" in chunks[0]
     assert "page 28" in chunks[0]
-    kwargs = _identity_reranker.inference.rerank.call_args.kwargs
-    assert kwargs["model"] == "bge-reranker-v2-m3"
-    assert kwargs["top_n"] == 4
+    assert rag.rerank_kwargs["model"] == "bge-reranker-v2-m3"
+    assert rag.rerank_kwargs["top_n"] == 4
 
 
-def test_search_falls_back_to_vector_order_when_rerank_fails(_identity_reranker):
-    docs = [_doc("first by vector", 0.6), _doc("second by vector", 0.5)]
-    _identity_reranker.inference.rerank.side_effect = RuntimeError("rerank quota exceeded")
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "q", "k": 1})
+def test_search_falls_back_to_vector_order_when_rerank_fails(rag):
+    rag.store = _FakeStore([_doc("first by vector", 0.6), _doc("second by vector", 0.5)])
+    rag.error = RuntimeError("rerank quota exceeded")
+    result = search_knowledge_base_tool.invoke({"query": "q", "k": 1})
     assert "first by vector" in result
     assert "second by vector" not in result
 
 
-def test_rerank_only_sees_chunks_above_relevance_threshold(_identity_reranker):
-    docs = [_doc("on topic", 0.6), _doc("off topic noise", 0.14)]
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "q"})
-    assert _identity_reranker.inference.rerank.call_args.kwargs["documents"] == ["on topic"]
+def test_rerank_only_sees_chunks_above_relevance_threshold(rag):
+    rag.store = _FakeStore([_doc("on topic", 0.6), _doc("off topic noise", 0.14)])
+    result = search_knowledge_base_tool.invoke({"query": "q"})
+    assert rag.reranker.seen == ["on topic"]
     assert "off topic noise" not in result
 
 
-def test_rerank_skipped_when_nothing_passes_threshold(_identity_reranker):
-    docs = [_doc("noise", 0.1)]
-    with patch.object(kb_mod, "_get_vectorstore", return_value=_mock_vectorstore(docs)):
-        result = search_knowledge_base_tool.invoke({"query": "q"})
-    _identity_reranker.inference.rerank.assert_not_called()
+def test_rerank_skipped_when_nothing_passes_threshold(rag):
+    rag.store = _FakeStore([_doc("noise", 0.1)])
+    result = search_knowledge_base_tool.invoke({"query": "q"})
+    assert rag.reranker is None or rag.reranker.seen is None
     assert result == "No relevant results found in the knowledge base for this query."
