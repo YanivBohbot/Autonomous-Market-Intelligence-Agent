@@ -90,8 +90,8 @@ def test_build_kb_retriever_configures_threshold_candidates_filter_and_rerank(mo
         "search_kwargs": {"k": 20, "score_threshold": r.RELEVANCE_SCORE_THRESHOLD, "filter": {"filename": {"$in": ["a.pdf"]}}},
     }
     assert built["kw"]["model"] == "bge-reranker-v2-m3"
-    assert built["kw"]["top_n"] == 4
-    assert rr.top_n == 4
+    assert built["kw"]["top_n"] == r.RERANK_TOP_N
+    assert rr.top_n == 2  # k=4 asked, capped at MAX_SOURCES
 
 
 def test_build_kb_retriever_omits_filter_when_none(monkeypatch):
@@ -115,14 +115,14 @@ def test_build_kb_retriever_falls_back_to_vector_order_when_reranker_cannot_be_b
     assert [d.page_content for d in r.build_kb_retriever(2, None).invoke("q")] == ["a", "b"]
 
 
-def test_reranker_is_built_once_per_top_n(monkeypatch):
+def test_reranker_is_built_once_and_reused(monkeypatch):
     monkeypatch.setattr(r, "get_vectorstore", lambda: _FakeStore())
     built = []
     monkeypatch.setattr(r, "CappedPineconeRerank", lambda **kw: built.append(kw) or _ReverseReranker(top_n=kw["top_n"]))
     r.build_kb_retriever(4, None)
-    r.build_kb_retriever(4, None)
     r.build_kb_retriever(2, None)
-    assert [kw["top_n"] for kw in built] == [4, 2]
+    r.build_kb_retriever(1, None)
+    assert [kw["top_n"] for kw in built] == [r.RERANK_TOP_N]
 
 
 class _FakeStoreWith:
@@ -206,3 +206,20 @@ def test_reranking_retriever_drops_duplicate_chunks_before_reranking():
     out = rr.invoke("q")
     assert reranker.seen == ["Net sales $637,959M", "AWS grew 19%"]
     assert out[0].metadata["source"] == "Amazon.pdf"
+
+
+def test_max_sources_is_two():
+    assert r.MAX_SOURCES == 2
+
+
+def test_reranking_retriever_keeps_one_chunk_per_page():
+    """A page is split into several chunks; two of them can both rank high.
+    The user wants an answer with its page, not the same page twice."""
+    docs = [
+        Document(page_content="Net sales table", metadata={"filename": "A.pdf", "page": 35}),
+        Document(page_content="AWS 13 19 table", metadata={"filename": "A.pdf", "page": 35}),
+        Document(page_content="AWS sales increased 19%", metadata={"filename": "A.pdf", "page": 36}),
+    ]
+    rr = r.RerankingRetriever(base_retriever=_ListRetriever(docs=docs), reranker=_RecordingReranker(), top_n=2)
+    out = rr.invoke("q")
+    assert [(d.metadata["page"], d.page_content) for d in out] == [(35, "Net sales table"), (36, "AWS sales increased 19%")]

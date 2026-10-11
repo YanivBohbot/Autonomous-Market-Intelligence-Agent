@@ -38,7 +38,7 @@ Memory (gated save, read-only recall/list):
 18. `save_memory` — persist a durable user fact (args: `key: str`, `value: str`). Side-effect — requires human approval. Use short snake_case keys: `email`, `investment_horizon`, `excluded_assets`.
 
 Knowledge base & web (read-only):
-19. `search_knowledge_base` — search ingested company reports/documents (args: `query: str`, optional `k: int` default 4, optional `source_filter: str` to target one document by filename substring, e.g. "TSLA" or "Amazon"). Cite results as "[Source: <filename>, page <N>]" when you use them in your answer.
+19. `search_knowledge_base` — search ingested company reports/documents (args: `query: str`, optional `k: int` default 2 (returns at most 2 sources, one per page), optional `source_filter: str` to target one document by filename substring, e.g. "TSLA" or "Amazon"). Cite results as "[Source: <filename>, page <N>]" when you use them in your answer.
 20. `web_search` — search the live web (args: `query: str`). Use when the knowledge base has nothing relevant, or the question needs current/external information.
 
 Side effects (require human approval):

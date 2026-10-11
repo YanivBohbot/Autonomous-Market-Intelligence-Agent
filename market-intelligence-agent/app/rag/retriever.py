@@ -33,6 +33,14 @@ RELEVANCE_SCORE_THRESHOLD = (RELEVANCE_THRESHOLD_COSINE + 1) / 2
 # that table to #1 (pinecone-rerank-v0 did slightly worse on Amazon).
 RERANK_CANDIDATES = 20
 RERANK_MODEL = "bge-reranker-v2-m3"
+# The user wants an answer with its page, not a wall of excerpts: return at
+# most MAX_SOURCES sources, each from a different page. The reranker keeps a
+# few more (RERANK_TOP_N) so that collapsing same-page chunks still leaves
+# MAX_SOURCES distinct pages. No absolute rerank-score floor: measured live,
+# the correct passage can score 0.05 on one query and 0.99 on another, so a
+# fixed cut-off would drop good answers.
+MAX_SOURCES = 2
+RERANK_TOP_N = 4
 
 
 def _drop_duplicate_chunks(docs: list[Document]) -> list[Document]:
@@ -49,6 +57,18 @@ def _drop_duplicate_chunks(docs: list[Document]) -> list[Document]:
             seen.add(key)
             unique.append(doc)
     return unique
+
+
+def _one_per_page(docs: list[Document]) -> list[Document]:
+    """Keep the first (best-ranked) chunk of each (filename, page)."""
+    seen: set[tuple] = set()
+    kept = []
+    for doc in docs:
+        key = (doc.metadata.get("filename"), doc.metadata.get("page"))
+        if key not in seen:
+            seen.add(key)
+            kept.append(doc)
+    return kept
 
 
 class RerankingRetriever(BaseRetriever):
@@ -73,13 +93,13 @@ class RerankingRetriever(BaseRetriever):
             ranked = list(self.reranker.compress_documents(docs, query))
         except Exception as exc:
             logger.warning("KB_SEARCH: rerank failed, using vector order (%s)", exc)
-            return docs[: self.top_n]
+            return _one_per_page(docs)[: self.top_n]
         if not ranked:
             # Non-empty candidates can't legitimately rerank to nothing --
             # treat it as a reranker failure, not as "no relevant results".
             logger.warning("KB_SEARCH: rerank returned nothing, using vector order")
-            return docs[: self.top_n]
-        return ranked
+            return _one_per_page(docs)[: self.top_n]
+        return _one_per_page(ranked)[: self.top_n]
 
 
 class CappedPineconeRerank(PineconeRerank):
@@ -123,11 +143,11 @@ class _VectorOrder(BaseDocumentCompressor):
         return list(documents)[: self.top_n]
 
 
-@lru_cache(maxsize=16)
-def _reranker_for(top_n: int) -> BaseDocumentCompressor:
+@lru_cache(maxsize=1)
+def _reranker_for() -> BaseDocumentCompressor:
     # CappedPineconeRerank (a PineconeRerank) validates the model with a network call at construction
-    # -- build it once per top_n (k is 1..10), not on every search.
-    return CappedPineconeRerank(model=RERANK_MODEL, top_n=top_n, pinecone_api_key=settings.PINECONE_API_KEY)
+    # -- build it once, not on every search.
+    return CappedPineconeRerank(model=RERANK_MODEL, top_n=RERANK_TOP_N, pinecone_api_key=settings.PINECONE_API_KEY)
 
 
 def build_kb_retriever(k: int, metadata_filter: dict | None) -> RerankingRetriever:
@@ -140,8 +160,8 @@ def build_kb_retriever(k: int, metadata_filter: dict | None) -> RerankingRetriev
         search_type="similarity_score_threshold", search_kwargs=search_kwargs
     )
     try:
-        reranker = _reranker_for(k)
+        reranker = _reranker_for()
     except Exception as exc:
         logger.warning("KB_SEARCH: reranker unavailable, using vector order (%s)", exc)
-        reranker = _VectorOrder(top_n=k)
-    return RerankingRetriever(base_retriever=base, reranker=reranker, top_n=k)
+        reranker = _VectorOrder(top_n=RERANK_TOP_N)
+    return RerankingRetriever(base_retriever=base, reranker=reranker, top_n=min(k, MAX_SOURCES))

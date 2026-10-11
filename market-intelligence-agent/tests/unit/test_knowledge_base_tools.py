@@ -194,11 +194,11 @@ def test_search_returns_top_k_in_reranker_order(rag):
     rag.order = [7, 0, 1, 2]
     result = search_knowledge_base_tool.invoke({"query": "Tesla total revenue Q1 2026", "k": 4})
     chunks = result.split("\n\n")
-    assert len(chunks) == 4
+    assert len(chunks) == 2  # at most MAX_SOURCES sources, even if k=4 is asked
     assert "Total revenues 22,387 28,236" in chunks[0]
     assert "page 28" in chunks[0]
     assert rag.rerank_kwargs["model"] == "bge-reranker-v2-m3"
-    assert rag.rerank_kwargs["top_n"] == 4
+    assert rag.rerank_kwargs["top_n"] == rag_retriever.RERANK_TOP_N
 
 
 def test_search_falls_back_to_vector_order_when_rerank_fails(rag):
@@ -221,3 +221,9 @@ def test_rerank_skipped_when_nothing_passes_threshold(rag):
     result = search_knowledge_base_tool.invoke({"query": "q"})
     assert rag.reranker is None or rag.reranker.seen is None
     assert result == "No relevant results found in the knowledge base for this query."
+
+
+def test_search_returns_at_most_two_sources_by_default(rag):
+    rag.store = _FakeStore([_doc(f"chunk {i}", 0.6 - i * 0.01, page=i) for i in range(6)])
+    result = search_knowledge_base_tool.invoke({"query": "q"})
+    assert len(result.split("\n\n")) == 2

@@ -44,7 +44,7 @@ def _resolve_source_filter(source_filter: str) -> list[str] | None:
 
 class KBSearchInput(BaseModel):
     query: str = Field(description="The search query against the internal knowledge base.")
-    k: int = Field(default=4, ge=1, le=10, description="Number of chunks to retrieve.")
+    k: int = Field(default=2, ge=1, le=10, description="Number of sources to return (at most 2 are returned, each from a different page).")
     source_filter: str | None = Field(
         default=None,
         description=(
