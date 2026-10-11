@@ -1,67 +1,47 @@
-"""Sensitive-data detection shared by the single-agent and multi-agent guards.
-
-Reuses `PIIMiddleware` itself in `block` mode: its public `before_model` hook
-raises `PIIDetectionError` the moment it finds a match, so detection (and
-content-shape handling — str or content-block list) stays in sync with
-`mask_credit_cards()` / `redact_emails()` in `app/agent/common.py` without
-duplicating any regex or message-parsing logic.
-"""
+"""Sensitive-data detection built on LangChain's documented PII detectors
+(`langchain.agents.middleware.pii`), the same ones PIIMiddleware uses."""
 
 from typing import Any
 
-from langchain.agents.middleware import PIIDetectionError, PIIMiddleware
-from langchain_core.messages import HumanMessage
+from langchain.agents.middleware.pii import detect_credit_card, detect_email
 
 SENSITIVE_DATA_WARNING = (
-    "This message appears to contain sensitive personal data (a credit card "
-    "number or an email address). Sharing this kind of information in chat "
-    "is not allowed, so I can't process this request — please resend your "
-    "question without it."
+    "This message appears to contain a credit card number. Sharing this kind "
+    "of information in chat is not allowed, so I can't process this request "
+    "— please resend your question without it."
 )
-
-_CREDIT_CARD_GUARD = PIIMiddleware("credit_card", strategy="block")
-_EMAIL_GUARD = PIIMiddleware("email", strategy="block")
 
 Content = str | list[str | dict[str, Any]] | None
 
 
-def _trips(guard: PIIMiddleware, content: Content) -> bool:
+def _text(content: Content) -> str:
+    """Flatten a message's content (a string or a content-block list) to its text."""
     if not content:
-        return False
-    # Calling before_model directly, outside a real create_agent run, isn't a
-    # documented usage of PIIMiddleware -- it works only because its
-    # implementation never actually touches the `runtime` argument today, so
-    # passing None here doesn't break anything. Nothing guarantees that stays
-    # true in a future langchain release; if this starts failing, check
-    # whether before_model started using `runtime` and fall back to calling
-    # guard.detector(text) + apply_strategy directly instead.
-    try:
-        guard.before_model({"messages": [HumanMessage(content=content)]}, None)
-    except PIIDetectionError:
-        return True
-    return False
+        return ""
+    if isinstance(content, str):
+        return content
+    parts = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict) and block.get("type") == "text":
+            parts.append(str(block.get("text", "")))
+    return " ".join(parts)
 
 
 def contains_credit_card(content: Content) -> bool:
-    """True if `content` contains a credit card number."""
-    return _trips(_CREDIT_CARD_GUARD, content)
+    """True if `content` contains a Luhn-valid credit card number."""
+    return bool(detect_credit_card(_text(content)))
 
 
 def contains_email(content: Content) -> bool:
     """True if `content` contains an email address."""
-    return _trips(_EMAIL_GUARD, content)
+    return bool(detect_email(_text(content)))
 
 
 def contains_sensitive_data(content: Content, *, check_email: bool = True) -> bool:
     """True if `content` contains a credit card number, or — when
-    `check_email` — an email address.
-
-    `check_email=False` for graphs/specialists that need a real address to
-    work (send_email, and anything that saves a report/fact tied to a
-    client): mirrors `redact_emails()`'s existing scoping in
-    `app/agent/common.py`, which is never applied to `email`/`portfolio`/
-    `memory`/`filesystem` either, for the same reason.
-    """
+    `check_email` — an email address."""
     if contains_credit_card(content):
         return True
     return check_email and contains_email(content)

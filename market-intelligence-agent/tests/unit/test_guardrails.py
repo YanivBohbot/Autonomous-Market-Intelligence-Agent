@@ -1,14 +1,11 @@
-import pytest
-from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage
+from unittest.mock import patch
 
-from app.agent.guardrails import (
-    SENSITIVE_DATA_WARNING,
-    SensitiveDataGuard,
-    contains_sensitive_data,
-)
+import pytest
+
+from langgraph.checkpoint.memory import InMemorySaver
+
+from app.agent.guardrails import SENSITIVE_DATA_WARNING, contains_sensitive_data
 from app.agent.guardrails.detection import contains_credit_card, contains_email
-from tests.unit.fake_chat import FakeToolModel
 
 
 def test_contains_sensitive_data_detects_credit_card():
@@ -40,56 +37,57 @@ def test_contains_credit_card_and_contains_email_are_independent():
     assert contains_email("my card is 4111 1111 1111 1111") is False
 
 
-# --- single-agent node ---
+def test_detection_handles_content_block_lists():
+    content = [{"type": "text", "text": "my card is 4111 1111 1111 1111"}]
+    assert contains_credit_card(content) is True
+    assert contains_credit_card([{"type": "image_url", "image_url": {"url": "x"}}]) is False
 
 
+def test_detection_does_not_call_pii_middleware_hooks():
+    import inspect
+    import app.agent.guardrails.detection as detection
+    assert "before_model" not in inspect.getsource(detection)
 
 
+class _RouterReached(Exception):
+    """Raised by the mocked supervisor router: proves the LLM router was
+    reached without running any specialist (which would call a real model)."""
 
 
+def _graph():
+    from app.agent.multi_agent import build_multi_agent_app
+    return build_multi_agent_app(InMemorySaver())
 
-@pytest.mark.anyio
-async def test_sensitive_data_guard_blocks_before_the_model_is_ever_called():
-    model = FakeToolModel([AIMessage(content="should never be reached")])
-    agent = create_agent(
-        model=model, tools=[], system_prompt="S", middleware=[SensitiveDataGuard()]
-    )
-    result = await agent.ainvoke(
-        {"messages": [HumanMessage("contact jane.doe@example.com please")]}
-    )
-    assert model.seen == []
+
+def _ask(graph, question: str, thread_id: str):
+    return graph.invoke({"question": question}, {"configurable": {"thread_id": thread_id}})
+
+
+def test_input_guard_blocks_card_before_the_supervisor_llm_is_called():
+    import app.agent.multi_agent.supervisor as supervisor_mod
+    with patch.object(supervisor_mod, "_router") as router_mock:
+        router_mock.invoke.side_effect = _RouterReached
+        result = _ask(_graph(), "my card is 4111 1111 1111 1111", "t-guard-1")
+    router_mock.invoke.assert_not_called()
     assert result["messages"][-1].content == SENSITIVE_DATA_WARNING
 
 
-@pytest.mark.anyio
-async def test_sensitive_data_guard_lets_clean_messages_through():
-    model = FakeToolModel([AIMessage(content="42")])
-    agent = create_agent(
-        model=model, tools=[], system_prompt="S", middleware=[SensitiveDataGuard()]
-    )
-    result = await agent.ainvoke({"messages": [HumanMessage("what is my portfolio value?")]})
-    assert len(model.seen) == 1
-    assert result["messages"][-1].content == "42"
+def test_input_guard_lets_clean_questions_reach_the_supervisor():
+    import app.agent.multi_agent.supervisor as supervisor_mod
+    with patch.object(supervisor_mod, "_router") as router_mock:
+        router_mock.invoke.side_effect = _RouterReached
+        with pytest.raises(_RouterReached):
+            _ask(_graph(), "what is the price of AAPL?", "t-guard-2")
+    assert router_mock.invoke.called  # RetryPolicy re-runs supervisor on error
 
 
-@pytest.mark.anyio
-async def test_sensitive_data_guard_check_email_false_lets_email_through_but_still_blocks_credit_card():
-    model = FakeToolModel([AIMessage(content="sent")])
-    agent = create_agent(
-        model=model, tools=[], system_prompt="S", middleware=[SensitiveDataGuard(check_email=False)]
-    )
-    result = await agent.ainvoke(
-        {"messages": [HumanMessage("send an email to jane.doe@example.com please")]}
-    )
-    assert len(model.seen) == 1
-    assert result["messages"][-1].content == "sent"
-
-    model2 = FakeToolModel([AIMessage(content="should never be reached")])
-    agent2 = create_agent(
-        model=model2, tools=[], system_prompt="S", middleware=[SensitiveDataGuard(check_email=False)]
-    )
-    result2 = await agent2.ainvoke(
-        {"messages": [HumanMessage("my card is 4111 1111 1111 1111")]}
-    )
-    assert model2.seen == []
-    assert result2["messages"][-1].content == SENSITIVE_DATA_WARNING
+def test_clean_turn_after_blocked_turn_reaches_supervisor():
+    import app.agent.multi_agent.supervisor as supervisor_mod
+    with patch.object(supervisor_mod, "_router") as router_mock:
+        router_mock.invoke.side_effect = _RouterReached
+        graph = _graph()
+        _ask(graph, "my card is 4111 1111 1111 1111", "t-guard-3")
+        router_mock.invoke.assert_not_called()
+        with pytest.raises(_RouterReached):
+            _ask(graph, "what is the price of AAPL?", "t-guard-3")
+    assert router_mock.invoke.called  # RetryPolicy re-runs supervisor on error

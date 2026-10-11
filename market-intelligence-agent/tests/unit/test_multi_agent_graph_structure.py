@@ -16,6 +16,7 @@ def test_graph_has_supervisor_and_specialist_nodes():
     for name in (
         "load_client_context",
         "record_question",
+        "input_guard",
         "supervisor",
         "rag_agent",
         "finance_agent",
@@ -47,3 +48,11 @@ def test_supervisor_node_has_a_retry_policy():
     # retrying it -- RetryPolicy is the only available safety net here.
     app = _build()
     assert app.builder.nodes["supervisor"].retry_policy is not None
+
+
+def test_input_guard_sits_between_record_question_and_supervisor():
+    edges = {(e.source, e.target) for e in _build().get_graph().edges}
+    assert ("record_question", "input_guard") in edges
+    assert ("record_question", "supervisor") not in edges
+    assert ("input_guard", "supervisor") in edges
+    assert ("input_guard", "finalize_turn") in edges
