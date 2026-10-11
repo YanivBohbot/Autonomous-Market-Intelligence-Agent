@@ -104,6 +104,36 @@ Each item is deleted only once nothing outside the removed surface still uses it
 **Live QA (once, at the end)**
 Restart the backend, open `/research` in Chrome, enable voice, and ask "Which clients have more than 30 percent of their portfolio in one stock?". Verify the live caption, then the user message, then the assistant message plus audio, then the history after reload. Then run one email request and say "no" at the approval, to check that the approval still works and no email is sent.
 
+## Regression Safety (requested by the user)
+
+Nothing already built may break. Concretely:
+
+1. **Baseline first.** Before any code change, run the full backend (`uv run pytest tests/ -q`) and frontend (`npm test -- --run`, `npm run build`) suites on the branch and record pass/fail counts and any pre-existing failures. A pre-existing failure is reported, not silently "fixed" as part of this work.
+2. **After every task**, re-run the full suites, not only the new tests. The only allowed drop in test count is from deliberately deleted tests of removed code, listed by name in the commit message.
+3. **Final gate.** The suites are green with counts equal to baseline minus the deleted tests plus the new ones, the frontend build is clean, and `grep` finds no remaining import of a removed module (`app.ui`, `transcript_store`, `app.voice.graph`, `VoicePanel`, `ChatPane`, `ClassicChat`).
+4. **Code review** of the full diff (requesting-code-review) before the QA pass.
+
+## Live QA Matrix (requested by the user)
+
+Run once at the end against a freshly restarted backend and the React console in Chrome, on fresh thread ids (never reuse real client threads). Each check is grounded: it is verified against real tool output or the UI, not just "the request completed".
+
+| # | Area | Check |
+|---|---|---|
+| 1 | Voice transcript (new) | Live caption grows while speaking, then becomes a user message. The answer appears as an assistant message plus audio. Both survive a reload. |
+| 2 | Voice HITL | An email request by voice shows the approval card. Rejecting sends nothing and the chat records the cancellation. |
+| 3 | Research text chat | A typed concentration question routes to `concentration_screen` and the answer names real clients from `customers.db`. |
+| 4 | RAG | "What does Amazon's 2024 annual report say about AI?" answers with a `[Source: …, page N]` citation. |
+| 5 | Market data | A ticker price question returns a live yfinance value. |
+| 6 | Text HITL | A typed email or write_file request pauses for approval, and approving executes it (SES simulation or a workspace file). |
+| 7 | Text and voice continuity | After a voice turn, the typed follow-up "summarize that" uses the voice context. |
+| 8 | Briefing page | `/briefing` loads indices, movers, news and client alerts with no console errors. |
+| 9 | Clients and Reports | The client list and a client workspace load, and a report generates. |
+| 10 | Data page | The documents and clients lists load (no import performed). |
+| 11 | Removed surfaces | `/classic` no longer shows the old chat, `GET /voice/x/transcript` returns 404, and nothing is listening on port 8080. |
+| 12 | Backend API | `/health` is ok, and `/stream` plus `/approve` still complete an end-to-end run, since AgentCore depends on them. |
+
+Any failure found in QA gets a root-cause fix plus a regression test, then that QA check is re-run. QA is not repeated just to chase normal LLM wording variance.
+
 ## Out of Scope
 
 - Streaming the assistant answer token by token.
