@@ -53,6 +53,7 @@ function renderApproval(submitDecision = vi.fn().mockResolvedValue({
     events: [],
     pending,
     error: null,
+    liveCaption: "",
     typedApprovalPending: false,
     start: vi.fn(),
     end: vi.fn(),

@@ -35,6 +35,7 @@ function voiceValue(
     events: [],
     pending: null,
     error: null,
+    liveCaption: "",
     typedApprovalPending: false,
     start: vi.fn(),
     end: vi.fn(),

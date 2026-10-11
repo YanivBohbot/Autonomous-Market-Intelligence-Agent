@@ -48,6 +48,7 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
   const [events, setEvents] = useState<VoiceActivityEvent[]>([]);
   const [pending, setPending] = useState<VoicePendingApproval | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [liveCaption, setLiveCaption] = useState("");
 
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RTCDataChannel | null>(null);
@@ -105,6 +106,7 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
       finalizingRef.current = false;
       activeRef.current = false;
       setActive(false);
+      setLiveCaption("");
       setPhase(nextPhase);
       if (nextError !== undefined) setError(nextError);
     },
@@ -152,6 +154,7 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
     setEvents([]);
     setPending(null);
     setError(null);
+    setLiveCaption("");
     setPhase("connecting");
     activeRef.current = true;
     setActive(true);
@@ -176,7 +179,7 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
       const channel = peer.createDataChannel("oai-events");
       channelRef.current = channel;
       channel.onmessage = (event) => {
-        let message: { type?: string };
+        let message: { type?: string; delta?: string };
         try {
           message = JSON.parse(String(event.data));
         } catch {
@@ -185,6 +188,11 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
         if (message.type === "session.started") {
           setPhase("listening");
           startPolling();
+        } else if (message.type === "session.input_transcript.delta") {
+          const delta = message.delta;
+          if (delta) setLiveCaption((current) => current + delta);
+        } else if (message.type === "session.delegation.created") {
+          setLiveCaption("");
         } else if (message.type === "session.closed") {
           cleanup("disconnected");
         } else if (message.type === "error") {
@@ -269,6 +277,7 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
     events,
     pending,
     error,
+    liveCaption,
     start,
     end,
     submitDecision,

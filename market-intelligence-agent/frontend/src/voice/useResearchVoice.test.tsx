@@ -293,4 +293,37 @@ describe("useResearchVoice", () => {
     unmount();
     expect(peers[0].channel.closed).toBe(true);
   });
+
+  it("accumulates input transcript deltas into liveCaption and clears on delegation", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ session_id: "s1", sdp: "answer-sdp" }));
+    const { result } = renderHook(() => useResearchVoice("thread-1", true));
+    await act(async () => result.current.start());
+
+    act(() => peers[0].channel.emit({ type: "session.input_transcript.delta", delta: "Which clients " }));
+    act(() => peers[0].channel.emit({ type: "session.input_transcript.delta", delta: "are concentrated?" }));
+    expect(result.current.liveCaption).toBe("Which clients are concentrated?");
+
+    act(() => peers[0].channel.emit({ type: "session.delegation.created" }));
+    expect(result.current.liveCaption).toBe("");
+  });
+
+  it("ignores empty deltas", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ session_id: "s1", sdp: "answer-sdp" }));
+    const { result } = renderHook(() => useResearchVoice("thread-1", true));
+    await act(async () => result.current.start());
+
+    act(() => peers[0].channel.emit({ type: "session.input_transcript.delta", delta: "" }));
+    act(() => peers[0].channel.emit({ type: "session.input_transcript.delta" }));
+    expect(result.current.liveCaption).toBe("");
+  });
+
+  it("clears caption on cleanup", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ session_id: "s1", sdp: "answer-sdp" }));
+    const { result } = renderHook(() => useResearchVoice("thread-1", true));
+    await act(async () => result.current.start());
+    act(() => peers[0].channel.emit({ type: "session.input_transcript.delta", delta: "half a sent" }));
+
+    act(() => peers[0].channel.emit({ type: "session.closed" }));
+    expect(result.current.liveCaption).toBe("");
+  });
 });
