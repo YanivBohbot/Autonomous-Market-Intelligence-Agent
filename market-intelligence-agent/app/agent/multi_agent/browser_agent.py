@@ -14,6 +14,6 @@ def build_browser_agent():
         tools=_TOOLS,
         system_prompt=BROWSER_SYSTEM_PROMPT,
         # Page content and URLs go to the web: no addresses.
-        middleware=[*base_middleware(), redact_emails(), market_desk_display, strip_tool_images],
+        middleware=[*base_middleware(_TOOLS), redact_emails(), market_desk_display, strip_tool_images],
         name="browser_agent",
     )

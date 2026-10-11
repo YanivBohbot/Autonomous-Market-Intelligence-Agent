@@ -4,7 +4,6 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import email_agent as mod
 from app.agent.middleware import base_middleware
-from app.agent.guardrails import SensitiveDataGuard
 
 
 def _kwargs():
@@ -39,7 +38,7 @@ def test_create_agent_call_with_hitl_on_send_email():
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "email_agent"
     mw = kw["middleware"]
-    base = base_middleware()
+    base = base_middleware(mod._TOOLS)
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
     assert isinstance(mw[len(base)], HumanInTheLoopMiddleware)
     assert set(mw[len(base)].interrupt_on) == {"send_email"}
@@ -56,8 +55,6 @@ def test_builds_a_real_agent_with_hitl_node():
 def test_keeps_email_addresses_it_needs_to_work():
     kw = _kwargs()
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
-    guard = next(m for m in kw["middleware"] if isinstance(m, SensitiveDataGuard))
-    assert guard.check_email is False
 
 
 def test_prompt_opens_empty_draft_instead_of_asking_for_content():

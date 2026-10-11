@@ -14,7 +14,7 @@ def build_memory_agent():
         tools=_TOOLS,
         system_prompt=MEMORY_SYSTEM_PROMPT,
         middleware=[
-            *base_middleware(check_email=False),
+            *base_middleware(_TOOLS),
             HumanInTheLoopMiddleware(interrupt_on={"save_memory": True}),
         ],
         name="memory_agent",

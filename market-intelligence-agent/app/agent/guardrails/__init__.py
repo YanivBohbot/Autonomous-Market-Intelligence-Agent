@@ -6,11 +6,9 @@ Specialists add LangChain's prebuilt PIIMiddleware / OpenAIModerationMiddleware
 
 from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING, contains_sensitive_data
 from app.agent.guardrails.input_guard import input_guard
-from app.agent.guardrails.middleware import SensitiveDataGuard
 
 __all__ = [
     "SENSITIVE_DATA_WARNING",
-    "SensitiveDataGuard",
     "contains_sensitive_data",
     "input_guard",
 ]

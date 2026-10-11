@@ -19,6 +19,8 @@ os.environ.setdefault("EMAIL_SENDER", "test@example.com")
 os.environ.setdefault("EMAIL_PASSWORD", "test-password")
 os.environ.setdefault("EMAIL_SMTP_SERVER", "smtp.example.com")
 os.environ.setdefault("EMAIL_SMTP_PORT", "587")
+# Unit tests must never call the OpenAI moderation API.
+os.environ.setdefault("MODERATION_ENABLED", "false")
 
 
 @pytest.fixture

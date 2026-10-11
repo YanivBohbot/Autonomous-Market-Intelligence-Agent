@@ -27,7 +27,7 @@ def test_create_agent_call():
     assert kw["name"] == "finance_agent"
     assert kw["state_schema"] is ClientContextState
     mw = kw["middleware"]
-    base = base_middleware()
+    base = base_middleware(mod._TOOLS)
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
     # Queries go to third parties (Tavily / Yahoo): emails are redacted first.
     assert (mw[len(base)].pii_type, mw[len(base)].strategy) == ("email", "redact")

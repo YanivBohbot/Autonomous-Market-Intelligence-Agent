@@ -6,7 +6,10 @@ from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
+    ToolCallLimitMiddleware,
+    ToolRetryMiddleware,
 )
+from langchain_openai.middleware import OpenAIModerationMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
@@ -27,7 +30,6 @@ from app.agent.middleware import (
 )
 from app.agent.multi_agent.state import ClientContextState
 from app.agent.prompts.specialist_agent_prompts import INGESTED_DOCUMENTS_PLACEHOLDER
-from app.agent.guardrails import SensitiveDataGuard
 from tests.unit.fake_chat import FakeToolModel
 
 
@@ -65,48 +67,10 @@ def test_model_fallback_targets_claude_when_a_key_is_configured(monkeypatch):
     assert isinstance(fb, ModelFallbackMiddleware)
 
 
-def test_base_middleware_order(monkeypatch):
-    import app.agent.middleware as mod
-    monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "")
-    mw = base_middleware()
-    assert isinstance(mw[0], SensitiveDataGuard)
-    assert mw[0].check_email is True
-    assert mw[1] is today_prompt
-    assert isinstance(mw[2], SummarizationMiddleware)
-    assert isinstance(mw[3], PIIMiddleware) and mw[3].pii_type == "credit_card"
-    assert isinstance(mw[4], ModelCallLimitMiddleware)
-    assert isinstance(mw[5], ModelRetryMiddleware)
-    assert mw[6] is tool_errors_to_messages
-    assert len(mw) == 7
-
-
-def test_base_middleware_includes_fallback_before_retry_when_key_configured(monkeypatch):
-    import app.agent.middleware as mod
-    monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "sk-ant-test")
-    mw = base_middleware()
-    assert isinstance(mw[5], ModelFallbackMiddleware)
-    assert isinstance(mw[6], ModelRetryMiddleware)
-    assert mw[7] is tool_errors_to_messages
-    assert len(mw) == 8
-
-
-def test_base_middleware_check_email_false_for_specialists_that_need_real_addresses():
-    mw = base_middleware(check_email=False)
-    assert isinstance(mw[0], SensitiveDataGuard)
-    assert mw[0].check_email is False
-
-
 def test_summarization_triggers_at_6000_tokens_and_keeps_last_50_messages():
     m = summarization()
     assert m.trigger == ("tokens", 6000)
     assert m.keep == ("messages", 50)
-
-
-def test_mask_credit_cards_and_redact_emails_configuration():
-    cards = mask_credit_cards()
-    assert (cards.pii_type, cards.strategy) == ("credit_card", "mask")
-    emails = redact_emails()
-    assert (emails.pii_type, emails.strategy) == ("email", "redact")
 
 
 @pytest.mark.anyio
@@ -256,3 +220,140 @@ def test_summary_model_output_is_hidden_from_ag_ui_streams():
     metadata = summarization().model.metadata
     assert metadata["emit-messages"] is False
     assert metadata["emit-tool-calls"] is False
+
+
+@tool
+def read_query(sql: str) -> str:
+    """Read-only test tool."""
+    return "rows"
+
+
+@tool
+def send_email(recipient: str, subject: str, body: str) -> str:
+    """Side-effect test tool."""
+    return "sent"
+
+
+def test_base_middleware_order(monkeypatch):
+    import app.agent.middleware as mod
+    monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(mod.settings, "MODERATION_ENABLED", True)
+    mw = base_middleware([read_query, send_email])
+    assert isinstance(mw[0], PIIMiddleware) and mw[0].pii_type == "credit_card"
+    assert isinstance(mw[1], OpenAIModerationMiddleware)
+    assert mw[2] is today_prompt
+    assert isinstance(mw[3], SummarizationMiddleware)
+    assert isinstance(mw[4], ModelCallLimitMiddleware)
+    assert isinstance(mw[5], ModelRetryMiddleware)
+    assert mw[6] is tool_errors_to_messages
+    assert isinstance(mw[7], ToolRetryMiddleware)  # inside ToolErrorMiddleware
+    assert len(mw) == 8
+
+
+def test_base_middleware_includes_fallback_before_retry_when_key_configured(monkeypatch):
+    import app.agent.middleware as mod
+    monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(mod.settings, "MODERATION_ENABLED", False)
+    mw = base_middleware([read_query])
+    assert isinstance(mw[4], ModelFallbackMiddleware)
+    assert isinstance(mw[5], ModelRetryMiddleware)
+    assert mw[6] is tool_errors_to_messages
+    assert isinstance(mw[7], ToolRetryMiddleware)
+    assert len(mw) == 8
+
+
+def test_moderation_is_omitted_when_disabled(monkeypatch):
+    import app.agent.middleware as mod
+    monkeypatch.setattr(mod.settings, "MODERATION_ENABLED", False)
+    assert mod.moderation() is None
+    assert not any(isinstance(m, OpenAIModerationMiddleware) for m in base_middleware([read_query]))
+
+
+def test_moderation_configuration(monkeypatch):
+    import app.agent.middleware as mod
+    monkeypatch.setattr(mod.settings, "MODERATION_ENABLED", True)
+    m = mod.moderation()
+    assert m.model == "omni-moderation-latest"
+    assert (m.check_input, m.check_output, m.exit_behavior) == (True, True, "end")
+    assert m.violation_message == mod.MODERATION_VIOLATION_MESSAGE
+
+
+def test_no_sensitive_data_guard_left():
+    import app.agent.guardrails as guardrails
+    assert not hasattr(guardrails, "SensitiveDataGuard")
+
+
+def test_pii_middleware_configuration():
+    cards = mask_credit_cards()
+    assert (cards.pii_type, cards.strategy) == ("credit_card", "mask")
+    assert (cards.apply_to_input, cards.apply_to_output, cards.apply_to_tool_results) == (True, True, True)
+    emails = redact_emails()
+    assert (emails.pii_type, emails.strategy) == ("email", "redact")
+    assert (emails.apply_to_input, emails.apply_to_output) == (True, True)
+
+
+def test_tool_retry_covers_only_read_only_tools():
+    from app.agent.middleware import tool_retry
+    m = tool_retry([read_query, send_email])
+    assert m._tool_filter == ["read_query"]
+    assert m.max_retries == 2
+
+
+def test_tool_retry_is_omitted_when_no_read_only_tools():
+    from app.agent.middleware import tool_retry
+    assert tool_retry([send_email]) is None
+
+
+@pytest.mark.anyio
+async def test_side_effect_tool_is_never_retried():
+    from app.agent.middleware import tool_retry
+    calls = {"n": 0}
+
+    @tool("send_email")
+    def flaky_send(recipient: str) -> str:
+        """Side-effect tool that always fails."""
+        calls["n"] += 1
+        raise RuntimeError("smtp down")
+
+    model = FakeToolModel([
+        AIMessage(content="", tool_calls=[{"name": "send_email", "args": {"recipient": "a@b.c"}, "id": "c1"}]),
+        AIMessage(content="done"),
+    ])
+    retry = tool_retry([flaky_send, read_query])
+    agent = create_agent(model=model, tools=[flaky_send], system_prompt="S",
+                         middleware=[tool_errors_to_messages, retry])
+    await agent.ainvoke({"messages": [HumanMessage("send it")]})
+    assert calls["n"] == 1
+
+
+@pytest.mark.anyio
+async def test_read_only_tool_is_retried_after_a_transient_failure():
+    from app.agent.middleware import tool_retry
+    calls = {"n": 0}
+
+    @tool("read_query")
+    def flaky_read(sql: str) -> str:
+        """Read-only tool that fails once."""
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("mcp hiccup")
+        return "rows"
+
+    model = FakeToolModel([
+        AIMessage(content="", tool_calls=[{"name": "read_query", "args": {"sql": "x"}, "id": "c1"}]),
+        AIMessage(content="done"),
+    ])
+    agent = create_agent(model=model, tools=[flaky_read], system_prompt="S",
+                         middleware=[tool_errors_to_messages, tool_retry([flaky_read])])
+    result = await agent.ainvoke({"messages": [HumanMessage("query")]})
+    assert calls["n"] == 2
+    tool_msgs = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert tool_msgs[-1].content == "rows"
+
+
+@pytest.mark.anyio
+async def test_email_redacted_in_model_output():
+    model = FakeToolModel([AIMessage(content="write to jane.doe@example.com")])
+    agent = create_agent(model=model, tools=[], system_prompt="S", middleware=[redact_emails()])
+    result = await agent.ainvoke({"messages": [HumanMessage("who?")]})
+    assert "jane.doe@example.com" not in result["messages"][-1].content

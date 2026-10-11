@@ -5,7 +5,7 @@ this module only holds what would otherwise be copied 7 times: the model
 factory and the middleware every specialist gets.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from langchain.agents.middleware import (
@@ -17,15 +17,18 @@ from langchain.agents.middleware import (
     PIIMiddleware,
     SummarizationMiddleware,
     ToolErrorMiddleware,
+    ToolRetryMiddleware,
     dynamic_prompt,
 )
 from langchain_core.messages import ToolMessage
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
+from langchain_openai.middleware import OpenAIModerationMiddleware
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
-from app.agent.guardrails import SensitiveDataGuard
 from app.agent.prompts import with_today
+from app.agent.tools import is_read_only
 from app.agent.prompts.specialist_agent_prompts import (
     INGESTED_DOCUMENTS_PLACEHOLDER,
     ingested_documents_list,
@@ -136,17 +139,59 @@ def summarization() -> SummarizationMiddleware:
     )
 
 
+MODERATION_VIOLATION_MESSAGE = (
+    "This request was flagged by our content-safety check, so I can't help "
+    "with it. Please rephrase your question."
+)
+
+
 def mask_credit_cards() -> PIIMiddleware:
-    """No specialist needs a card number: mask it (last 4 digits kept)
-    before it reaches OpenAI."""
-    return PIIMiddleware("credit_card", strategy="mask")
+    """No specialist needs a card number: mask it (last 4 digits kept) in
+    user input, in tool results and in the model's own answer. Defense in
+    depth behind the graph-level input_guard, which blocks cards in the
+    user's message before the supervisor."""
+    return PIIMiddleware(
+        "credit_card",
+        strategy="mask",
+        apply_to_input=True,
+        apply_to_output=True,
+        apply_to_tool_results=True,
+    )
 
 
 def redact_emails() -> PIIMiddleware:
     """For specialists that send queries to third parties (Tavily, Yahoo,
-    web pages) and never need an address. NOT for email/portfolio/memory/
-    filesystem, which need real addresses to work."""
-    return PIIMiddleware("email", strategy="redact")
+    web pages) and never need an address: redacted in input and output.
+    NOT for email/portfolio/memory/filesystem -- apply_to_output also
+    rewrites tool-call arguments, which would erase send_email's recipient."""
+    return PIIMiddleware("email", strategy="redact", apply_to_input=True, apply_to_output=True)
+
+
+def moderation() -> OpenAIModerationMiddleware | None:
+    """Model-based guardrail (OpenAI moderation) on user input and model
+    output; a violation ends the run with MODERATION_VIOLATION_MESSAGE.
+    `None` (omitted) when MODERATION_ENABLED is false, e.g. in unit tests."""
+    if not settings.MODERATION_ENABLED:
+        return None
+    return OpenAIModerationMiddleware(
+        model="omni-moderation-latest",
+        check_input=True,
+        check_output=True,
+        exit_behavior="end",
+        violation_message=MODERATION_VIOLATION_MESSAGE,
+    )
+
+
+def tool_retry(tools: Sequence[BaseTool]) -> ToolRetryMiddleware | None:
+    """Retries flaky network tools (yfinance, MCP, Tavily) before the error
+    reaches tool_errors_to_messages. Read-only tools only: retrying
+    send_email/write_file/save_memory could repeat a side effect. `None`
+    when the specialist has no read-only tool (`tools=None` would mean
+    "retry everything", so an empty filter is never passed)."""
+    names = [t.name for t in tools if is_read_only(t.name)]
+    if not names:
+        return None
+    return ToolRetryMiddleware(max_retries=2, tools=names, on_failure="error")
 
 
 def _tool_error_content(exc: Exception, request: ToolCallRequest) -> str:
@@ -192,21 +237,24 @@ class StripToolImages(AgentMiddleware):
 strip_tool_images = StripToolImages()
 
 
-def base_middleware(*, check_email: bool = True) -> list[AgentMiddleware[Any, Any, Any]]:
-    """`check_email=False` for specialists that need a real address to work
-    (send_email, or anything that saves a report/fact tied to a client) —
-    same exemption `redact_emails()` already makes, see its docstring."""
-    middleware: list[AgentMiddleware[Any, Any, Any]] = [
-        SensitiveDataGuard(check_email=check_email),
-        today_prompt,
-        summarization(),
-        mask_credit_cards(),
-        call_limit(),
-    ]
+def base_middleware(tools: Sequence[BaseTool]) -> list[AgentMiddleware[Any, Any, Any]]:
+    """Middleware every specialist gets. `tools` is the specialist's own tool
+    list, used to scope tool_retry() to its read-only tools."""
+    middleware: list[AgentMiddleware[Any, Any, Any]] = [mask_credit_cards()]
+    moderation_mw = moderation()
+    if moderation_mw is not None:
+        # After the card mask, so the moderation API never sees a card number.
+        middleware.append(moderation_mw)
+    middleware += [today_prompt, summarization(), call_limit()]
     fallback = model_fallback()
     if fallback is not None:
-        # Must precede model_retry() — see model_fallback()'s docstring.
+        # Must precede model_retry() -- see model_fallback()'s docstring.
         middleware.append(fallback)
     middleware.append(model_retry())
     middleware.append(tool_errors_to_messages)
+    retry = tool_retry(tools)
+    if retry is not None:
+        # Listed after ToolErrorMiddleware = wrapped inside it: retries run
+        # first, and only the final failure becomes an error ToolMessage.
+        middleware.append(retry)
     return middleware

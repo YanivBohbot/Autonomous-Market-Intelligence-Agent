@@ -20,6 +20,6 @@ def build_finance_agent():
         tools=_TOOLS,
         system_prompt=FINANCE_SYSTEM_PROMPT,
         state_schema=ClientContextState,
-        middleware=[*base_middleware(), redact_emails(), client_context_prompt, market_desk_display],
+        middleware=[*base_middleware(_TOOLS), redact_emails(), client_context_prompt, market_desk_display],
         name="finance_agent",
     )

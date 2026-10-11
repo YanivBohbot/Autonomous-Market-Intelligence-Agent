@@ -43,7 +43,7 @@ def build_portfolio_agent():
         system_prompt=PORTFOLIO_SYSTEM_PROMPT,
         state_schema=ClientContextState,
         middleware=[
-            *base_middleware(check_email=False),
+            *base_middleware(_TOOLS),
             client_context_prompt,
             HumanInTheLoopMiddleware(interrupt_on={"save_portfolio_report": True}),
             market_desk_display,

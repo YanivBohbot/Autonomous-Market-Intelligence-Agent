@@ -25,7 +25,7 @@ def test_create_agent_call():
     assert kw["name"] == "browser_agent"
     from app.agent.middleware import strip_tool_images
     mw = kw["middleware"]
-    base = base_middleware()
+    base = base_middleware(mod._TOOLS)
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
     assert (mw[len(base)].pii_type, mw[len(base)].strategy) == ("email", "redact")
     assert mw[len(base) + 1] is market_desk_display

@@ -18,6 +18,6 @@ def build_rag_agent():
         # Queries go to third parties (Tavily / Yahoo / web pages): no addresses.
         # fresh_documents_prompt substitutes the live manifest in at call
         # time -- RAG_SYSTEM_PROMPT itself only carries the placeholder.
-        middleware=[*base_middleware(), redact_emails(), fresh_documents_prompt, client_context_prompt, market_desk_display],
+        middleware=[*base_middleware(_TOOLS), redact_emails(), fresh_documents_prompt, client_context_prompt, market_desk_display],
         name="rag_agent",
     )

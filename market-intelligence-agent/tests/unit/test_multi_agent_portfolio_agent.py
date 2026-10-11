@@ -6,7 +6,6 @@ from app.agent.multi_agent import portfolio_agent as mod
 from app.agent.middleware import base_middleware, client_context_prompt
 from app.agent.multi_agent.display import market_desk_display
 from app.agent.multi_agent.state import ClientContextState
-from app.agent.guardrails import SensitiveDataGuard
 
 
 def _kwargs():
@@ -29,7 +28,7 @@ def test_create_agent_call():
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "portfolio_agent"
     assert kw["state_schema"] is ClientContextState
-    base = base_middleware()
+    base = base_middleware(mod._TOOLS)
     assert [type(m) for m in kw["middleware"][:len(base)]] == [type(m) for m in base]
     assert kw["middleware"][len(base)] is client_context_prompt
     hitl = kw["middleware"][len(base) + 1]
@@ -56,8 +55,6 @@ def test_builds_a_real_agent():
 def test_keeps_email_addresses_it_needs_to_work():
     kw = _kwargs()
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
-    guard = next(m for m in kw["middleware"] if isinstance(m, SensitiveDataGuard))
-    assert guard.check_email is False
 
 
 def test_portfolio_recipe_defers_to_report_recipe_for_save_or_export_requests():

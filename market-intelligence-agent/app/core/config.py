@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # disables the fallback entirely -- this is an opt-in extra, not a
     # requirement.
     ANTHROPIC_API_KEY: str = ""
+    # OpenAIModerationMiddleware on every specialist (see app/agent/middleware.py).
+    MODERATION_ENABLED: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
