@@ -14,7 +14,22 @@ def _kwargs():
 
 
 def test_tools():
-    assert {t.name for t in mod._TOOLS} == {"send_email"}
+    assert {t.name for t in mod._TOOLS} == {"read_query", "send_email"}
+
+
+def test_prompt_looks_up_client_email_via_read_query_before_sending():
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    assert "`read_query`" in EMAIL_SYSTEM_PROMPT
+    assert "FROM clients WHERE name LIKE" in EMAIL_SYSTEM_PROMPT
+    assert "ask the user if it's missing" not in EMAIL_SYSTEM_PROMPT
+    assert EMAIL_SYSTEM_PROMPT.index("read_query") < EMAIL_SYSTEM_PROMPT.index("send_email")
+
+
+def test_read_query_is_not_gated_by_hitl():
+    mw = _kwargs()["middleware"]
+    hitl = next(m for m in mw if isinstance(m, HumanInTheLoopMiddleware))
+    assert "read_query" not in hitl.interrupt_on
+    assert set(hitl.interrupt_on) == {"send_email"}
 
 
 def test_create_agent_call_with_hitl_on_send_email():

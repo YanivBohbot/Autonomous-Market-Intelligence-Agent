@@ -10,7 +10,7 @@ from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
 from app.agent.tools import crm_tool, send_email_tool
 from app.agent.tools.concentration import parse_tool_payload
 
-_TOOLS = [send_email_tool]
+_TOOLS = [crm_tool, send_email_tool]
 
 
 async def _is_client_email(address: str) -> bool:
