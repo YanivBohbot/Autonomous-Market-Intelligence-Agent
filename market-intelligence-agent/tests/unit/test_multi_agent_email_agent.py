@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import email_agent as mod
-from app.agent.middleware import base_middleware
+from app.agent.middleware import RedactEmailsForModel, base_middleware
 
 
 def _kwargs():
@@ -55,6 +55,7 @@ def test_builds_a_real_agent_with_hitl_node():
 def test_keeps_email_addresses_it_needs_to_work():
     kw = _kwargs()
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
+    assert not any(isinstance(m, RedactEmailsForModel) for m in kw["middleware"])
 
 
 def test_prompt_opens_empty_draft_instead_of_asking_for_content():

@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import portfolio_agent as mod
-from app.agent.middleware import base_middleware, client_context_prompt
+from app.agent.middleware import RedactEmailsForModel, base_middleware, client_context_prompt
 from app.agent.multi_agent.display import market_desk_display
 from app.agent.multi_agent.state import ClientContextState
 
@@ -55,6 +55,7 @@ def test_builds_a_real_agent():
 def test_keeps_email_addresses_it_needs_to_work():
     kw = _kwargs()
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
+    assert not any(isinstance(m, RedactEmailsForModel) for m in kw["middleware"])
 
 
 def test_portfolio_recipe_defers_to_report_recipe_for_save_or_export_requests():

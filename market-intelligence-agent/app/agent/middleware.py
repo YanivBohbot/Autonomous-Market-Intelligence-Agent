@@ -28,6 +28,7 @@ from langchain_openai.middleware import OpenAIModerationMiddleware
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
+from app.agent.guardrails.detection import redact_emails_in
 from app.agent.prompts import with_today
 from app.agent.tools import is_read_only
 from app.agent.prompts.specialist_agent_prompts import (
@@ -160,12 +161,45 @@ def mask_credit_cards() -> PIIMiddleware:
     )
 
 
-def redact_emails() -> PIIMiddleware:
+class RedactEmailsForModel(AgentMiddleware):
     """For specialists that send queries to third parties (Tavily, Yahoo,
-    web pages) and never need an address: redacted in input and output.
-    NOT for email/portfolio/memory/filesystem -- apply_to_output also
-    rewrites tool-call arguments, which would erase send_email's recipient."""
-    return PIIMiddleware("email", strategy="redact", apply_to_input=True, apply_to_output=True)
+    web pages) and never need an address: the model gets a copy of the
+    conversation with addresses replaced by [REDACTED_EMAIL], so it can't
+    put one in a tool call. Unlike PIIMiddleware(apply_to_input=True), which
+    writes the redacted messages back to the shared `messages` channel, the
+    stored conversation keeps the real address -- a later email_agent hop
+    in the same thread still needs the recipient. Detection uses LangChain's
+    own detect_email (app/agent/guardrails/detection.py)."""
+
+    @staticmethod
+    def _redact(message):
+        content = message.content
+        if isinstance(content, str):
+            redacted = redact_emails_in(content)
+        elif isinstance(content, list):
+            redacted = [
+                {**block, "text": redact_emails_in(str(block.get("text", "")))}
+                if isinstance(block, dict) and block.get("type") == "text"
+                else block
+                for block in content
+            ]
+        else:
+            return message
+        return message if redacted == content else message.model_copy(update={"content": redacted})
+
+    def _request(self, request: ModelRequest) -> ModelRequest:
+        return request.override(messages=[self._redact(m) for m in request.messages])
+
+    def wrap_model_call(self, request, handler):
+        return handler(self._request(request))
+
+    async def awrap_model_call(self, request, handler):
+        return await handler(self._request(request))
+
+
+def redact_emails() -> RedactEmailsForModel:
+    """NOT for email/portfolio/memory/filesystem, which need real addresses."""
+    return RedactEmailsForModel()
 
 
 def moderation() -> OpenAIModerationMiddleware | None:

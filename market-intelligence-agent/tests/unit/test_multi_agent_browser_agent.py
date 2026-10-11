@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import browser_agent as mod
-from app.agent.middleware import base_middleware
+from app.agent.middleware import RedactEmailsForModel, base_middleware
 from app.agent.multi_agent.display import market_desk_display
 
 
@@ -27,7 +27,7 @@ def test_create_agent_call():
     mw = kw["middleware"]
     base = base_middleware(mod._TOOLS)
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
-    assert (mw[len(base)].pii_type, mw[len(base)].strategy) == ("email", "redact")
+    assert isinstance(mw[len(base)], RedactEmailsForModel)
     assert (mw[len(base) + 1].tool_name, mw[len(base) + 1].run_limit) == ("browser_navigate", 5)
     assert mw[len(base) + 2] is market_desk_display
     assert mw[len(base) + 3] is strip_tool_images

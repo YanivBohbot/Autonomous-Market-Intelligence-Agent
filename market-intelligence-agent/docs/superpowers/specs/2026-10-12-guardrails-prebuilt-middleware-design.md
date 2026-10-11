@@ -58,6 +58,11 @@ References: LangChain docs "Guardrails" and "Prebuilt middleware" (langchain 1.4
   - A RAG question still answers with citations.
   - A message with an email sent to the RAG agent is answered with the address redacted, not blocked.
 
+## Final-review changes (2026-10-12)
+
+- `input_guard` also masks the blocked message in place (same id, `****-****-****-1111`). Without this the raw number stayed in history and the supervisor router sent it to OpenAI on the next turn.
+- Third-party email redaction is a small `RedactEmailsForModel` middleware (`wrap_model_call`, LangChain's `detect_email`) instead of `PIIMiddleware("email")`. The prebuilt middleware writes redacted messages back to the shared `messages` channel, so a later `email_agent` hop lost the recipient. The model copy is redacted; the stored conversation is not. Output is no longer redacted for these specialists, because their model never sees an address.
+
 ## Out of Scope
 
 - `ContextEditingMiddleware`, `LLMToolSelectorMiddleware` and the other prebuilt middleware the user did not pick.

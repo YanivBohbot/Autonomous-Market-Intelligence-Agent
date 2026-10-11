@@ -91,3 +91,18 @@ def test_clean_turn_after_blocked_turn_reaches_supervisor():
         with pytest.raises(_RouterReached):
             _ask(graph, "what is the price of AAPL?", "t-guard-3")
     assert router_mock.invoke.called  # RetryPolicy re-runs supervisor on error
+
+
+def test_blocked_card_never_reaches_the_router_on_the_next_turn():
+    """The raw card message must not stay in history: the supervisor router
+    sends the whole conversation to OpenAI on every later turn."""
+    import app.agent.multi_agent.supervisor as supervisor_mod
+    with patch.object(supervisor_mod, "_router") as router_mock:
+        router_mock.invoke.side_effect = _RouterReached
+        graph = _graph()
+        _ask(graph, "my card is 4111 1111 1111 1111", "t-guard-4")
+        with pytest.raises(_RouterReached):
+            _ask(graph, "what is the price of AAPL?", "t-guard-4")
+    sent = " ".join(str(m.content) for m in router_mock.invoke.call_args.args[0])
+    assert "4111 1111 1111 1111" not in sent
+    assert "4111111111111111" not in sent

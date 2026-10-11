@@ -287,9 +287,8 @@ def test_pii_middleware_configuration():
     cards = mask_credit_cards()
     assert (cards.pii_type, cards.strategy) == ("credit_card", "mask")
     assert (cards.apply_to_input, cards.apply_to_output, cards.apply_to_tool_results) == (True, True, True)
-    emails = redact_emails()
-    assert (emails.pii_type, emails.strategy) == ("email", "redact")
-    assert (emails.apply_to_input, emails.apply_to_output) == (True, True)
+    from app.agent.middleware import RedactEmailsForModel
+    assert isinstance(redact_emails(), RedactEmailsForModel)
 
 
 def test_tool_retry_covers_only_read_only_tools():
@@ -351,14 +350,6 @@ async def test_read_only_tool_is_retried_after_a_transient_failure():
     assert tool_msgs[-1].content == "rows"
 
 
-@pytest.mark.anyio
-async def test_email_redacted_in_model_output():
-    model = FakeToolModel([AIMessage(content="write to jane.doe@example.com")])
-    agent = create_agent(model=model, tools=[], system_prompt="S", middleware=[redact_emails()])
-    result = await agent.ainvoke({"messages": [HumanMessage("who?")]})
-    assert "jane.doe@example.com" not in result["messages"][-1].content
-
-
 def test_tool_call_limits_on_rag_and_browser():
     from unittest.mock import patch
     import app.agent.multi_agent.rag_agent as rag_mod
@@ -372,3 +363,19 @@ def test_tool_call_limits_on_rag_and_browser():
         mw = ca.call_args.kwargs["middleware"]
         limits = [m for m in mw if isinstance(m, ToolCallLimitMiddleware)]
         assert [(m.tool_name, m.run_limit, m.exit_behavior) for m in limits] == [(tool_name, limit, "continue")]
+
+
+@pytest.mark.anyio
+async def test_email_redaction_does_not_rewrite_shared_history():
+    """rag/finance/browser hide addresses from their model (third-party
+    queries), but the stored conversation keeps them: a later email_agent
+    hop in the same thread needs the real recipient."""
+    model = FakeToolModel([AIMessage(content="ok")])
+    agent = create_agent(model=model, tools=[], system_prompt="S", middleware=[redact_emails()])
+    result = await agent.ainvoke(
+        {"messages": [HumanMessage("news on AAPL then email margaret.collins@example.com")]}
+    )
+    seen = " ".join(str(m.content) for m in model.seen[0])
+    assert "margaret.collins@example.com" not in seen
+    stored = " ".join(str(m.content) for m in result["messages"])
+    assert "margaret.collins@example.com" in stored

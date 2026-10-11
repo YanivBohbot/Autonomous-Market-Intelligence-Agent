@@ -8,7 +8,11 @@ from typing import Literal
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
-from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING, contains_credit_card
+from app.agent.guardrails.detection import (
+    SENSITIVE_DATA_WARNING,
+    contains_credit_card,
+    mask_credit_cards_in,
+)
 
 
 def input_guard(state) -> Command[Literal["supervisor", "finalize_turn"]]:
@@ -18,8 +22,12 @@ def input_guard(state) -> Command[Literal["supervisor", "finalize_turn"]]:
     messages = state.get("messages", [])
     latest = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
     if latest is not None and contains_credit_card(latest.content):
+        # Same id = replaced in place by the add_messages reducer: the raw
+        # number must not stay in history, or the supervisor router would
+        # send it to OpenAI on the next turn.
+        masked = latest.model_copy(update={"content": mask_credit_cards_in(latest.content)})
         return Command(
             goto="finalize_turn",
-            update={"messages": [AIMessage(content=SENSITIVE_DATA_WARNING)]},
+            update={"messages": [masked, AIMessage(content=SENSITIVE_DATA_WARNING)]},
         )
     return Command(goto="supervisor")

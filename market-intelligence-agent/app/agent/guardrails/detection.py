@@ -1,6 +1,7 @@
 """Sensitive-data detection built on LangChain's documented PII detectors
 (`langchain.agents.middleware.pii`), the same ones PIIMiddleware uses."""
 
+import re
 from typing import Any
 
 from langchain.agents.middleware.pii import detect_credit_card, detect_email
@@ -45,3 +46,25 @@ def contains_sensitive_data(content: Content, *, check_email: bool = True) -> bo
     if contains_credit_card(content):
         return True
     return check_email and contains_email(content)
+
+
+def _replace_spans(text: str, matches: list[dict[str, Any]], replace) -> str:
+    for match in sorted(matches, key=lambda m: m["start"], reverse=True):
+        text = text[: match["start"]] + replace(match["value"]) + text[match["end"] :]
+    return text
+
+
+def mask_credit_cards_in(content: Content) -> str:
+    """Text of `content` with every card number masked to its last 4 digits
+    (same output shape as PIIMiddleware's "mask" strategy)."""
+    text = _text(content)
+    return _replace_spans(
+        text,
+        detect_credit_card(text),
+        lambda value: "****-****-****-" + re.sub(r"\D", "", value)[-4:],
+    )
+
+
+def redact_emails_in(text: str) -> str:
+    """`text` with every email address replaced by [REDACTED_EMAIL]."""
+    return _replace_spans(text, detect_email(text), lambda _value: "[REDACTED_EMAIL]")
