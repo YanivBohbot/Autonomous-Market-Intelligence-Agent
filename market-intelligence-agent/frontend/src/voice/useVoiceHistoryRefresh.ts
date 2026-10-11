@@ -16,6 +16,15 @@ export function useVoiceHistoryRefresh(
 ): { refreshError: string | null } {
   const handledRef = useRef(0);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+
+  // In-flight fetches must survive `events` changing identity (every appended
+  // event does that); only unmount or a thread switch invalidates them.
+  useEffect(() => {
+    return () => {
+      requestIdRef.current += 1;
+    };
+  }, [threadId]);
 
   useEffect(() => {
     // A new voice session resets both the events list and the server-side
@@ -30,19 +39,16 @@ export function useVoiceHistoryRefresh(
     );
     if (latestTrigger <= handledRef.current) return;
     handledRef.current = latestTrigger;
-    let active = true;
+    const requestId = ++requestIdRef.current;
     getThreadHistory(threadId)
       .then((history) => {
-        if (!active) return;
+        if (requestId !== requestIdRef.current) return;
         setMessages(history);
         setRefreshError(null);
       })
       .catch(() => {
-        if (active) setRefreshError("Could not refresh the conversation");
+        if (requestId === requestIdRef.current) setRefreshError("Could not refresh the conversation");
       });
-    return () => {
-      active = false;
-    };
   }, [events, setMessages, threadId]);
 
   return { refreshError };

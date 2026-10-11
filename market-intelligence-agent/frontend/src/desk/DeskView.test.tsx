@@ -244,16 +244,34 @@ describe("DeskView", () => {
     expect(screen.getByRole("status", { name: "You are speaking" })).toHaveTextContent("Which clients are");
   });
 
+  it("does not refetch history for non-trigger voice events", async () => {
+    voiceHookState = {
+      ...voiceHookState,
+      events: [{ sequence: 1, run_id: "r", kind: "tool_started", name: null, tool_call_id: null, duration_ms: null, message: null }],
+    };
+    render(<DeskView threadId="desk_t1" voiceEnabled />);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(getThreadHistoryMock).toHaveBeenCalledTimes(1); // mount seed only
+  });
+
   it("reloads chat history into the agent when a voice run finishes", async () => {
-    const history = [{ id: "v1", role: "assistant", content: "spoken answer", source: "voice" }];
-    // First call is DeskView's own mount seed (empty); the second is the voice refresh.
-    getThreadHistoryMock.mockResolvedValueOnce([]).mockResolvedValueOnce(history);
+    const mountHistory = [{ id: "m1", role: "user", content: "typed", source: "text" }];
+    const refreshHistory = [{ id: "v1", role: "assistant", content: "spoken answer", source: "voice" }];
+    // Effect order between DeskView (mount seed) and DeskBody (refresh) is an
+    // implementation detail, so key the payload on call count and require both.
+    getThreadHistoryMock.mockReset();
+    getThreadHistoryMock
+      .mockImplementationOnce(async () => mountHistory)
+      .mockImplementationOnce(async () => refreshHistory);
     voiceHookState = {
       ...voiceHookState,
       events: [{ sequence: 1, run_id: "r", kind: "run_finished", name: null, tool_call_id: null, duration_ms: null, message: null }],
     };
     render(<DeskView threadId="desk_t1" voiceEnabled />);
-    await waitFor(() => expect(createdAgents[createdAgents.length - 1].setMessages).toHaveBeenCalledWith(history));
+    const setMessages = () => createdAgents[createdAgents.length - 1].setMessages;
+    await waitFor(() => expect(setMessages()).toHaveBeenCalledTimes(2));
     expect(getThreadHistoryMock).toHaveBeenCalledTimes(2);
+    expect(setMessages()).toHaveBeenCalledWith(mountHistory);
+    expect(setMessages()).toHaveBeenCalledWith(refreshHistory);
   });
 });

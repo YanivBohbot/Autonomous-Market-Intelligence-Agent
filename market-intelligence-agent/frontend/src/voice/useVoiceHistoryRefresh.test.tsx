@@ -53,4 +53,19 @@ describe("useVoiceHistoryRefresh", () => {
     await waitFor(() => expect(result.current.refreshError).toBe("Could not refresh the conversation"));
     expect(setMessages).not.toHaveBeenCalled();
   });
+
+  it("still applies the result when another event arrives mid-fetch", async () => {
+    let resolve!: (h: unknown[]) => void;
+    getThreadHistory.mockReturnValue(new Promise((r) => { resolve = r; }));
+    const setMessages = vi.fn();
+    const { rerender } = renderHook(
+      ({ events }) => useVoiceHistoryRefresh("t1", events, setMessages),
+      { initialProps: { events: [ev(1, "run_finished")] } },
+    );
+    rerender({ events: [ev(1, "run_finished"), ev(2, "tool_started")] });
+    const history = [{ id: "v1", role: "assistant", content: "spoken", source: "voice" }];
+    resolve(history);
+    await waitFor(() => expect(setMessages).toHaveBeenCalledWith(history));
+    expect(getThreadHistory).toHaveBeenCalledTimes(1);
+  });
 });
