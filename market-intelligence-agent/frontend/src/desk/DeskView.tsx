@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { CopilotChat, CopilotChatInput, CopilotKitProvider, HttpAgent } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
@@ -6,10 +6,12 @@ import { DeskActivityRail } from "./DeskActivityRail";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useDeskInterrupt } from "./useDeskInterrupt";
 import { useToolDisplay } from "./displays/useToolDisplay";
-import { getThreadHistory, uploadToWorkspace } from "../lib/api";
+import { getThreadHistory, uploadToWorkspace, type ThreadMessage } from "../lib/api";
 import { useIntelligenceSlot } from "../layout/IntelligenceSlot";
 import { ResearchVoiceApproval } from "../voice/ResearchVoiceApproval";
 import { ResearchVoiceProvider, useResearchVoiceContext } from "../voice/ResearchVoiceContext";
+import { LiveCaptionBubble } from "../voice/LiveCaptionBubble";
+import { useVoiceHistoryRefresh } from "../voice/useVoiceHistoryRefresh";
 import { ResearchComposer } from "./ResearchComposer";
 
 export type DeskViewProps = {
@@ -56,17 +58,22 @@ export function DeskView({ threadId, voiceEnabled = false }: DeskViewProps) {
     >
       {voiceEnabled ? (
         <ResearchVoiceProvider threadId={threadId} enabled>
-          <DeskBody threadId={threadId} />
+          <DeskBody threadId={threadId} agent={agent} />
         </ResearchVoiceProvider>
       ) : (
-        <DeskBody threadId={threadId} />
+        <DeskBody threadId={threadId} agent={agent} />
       )}
     </CopilotKitProvider>
   );
 }
 
-function DeskBody({ threadId }: { threadId: string }) {
+function DeskBody({ threadId, agent }: { threadId: string; agent: HttpAgent }) {
   const voice = useResearchVoiceContext();
+  const setMessages = useCallback(
+    (messages: ThreadMessage[]) => agent.setMessages(messages),
+    [agent],
+  );
+  const { refreshError } = useVoiceHistoryRefresh(threadId, voice?.events, setMessages);
   useDeskInterrupt(voice?.setTypedApprovalPending);
   useToolDisplay();
   // Portaled into AppLayout's Intelligence column instead of rendered as a
@@ -107,6 +114,11 @@ function DeskBody({ threadId }: { threadId: string }) {
             <ResearchVoiceApproval pending={voice.pending} />
           </div>
         )}
+        {refreshError && (
+          <p role="alert" className="mx-4 mb-1 rounded-lg border border-terminal-warn/40 bg-terminal-warn/10 px-3 py-1.5 text-xs text-terminal-warn">
+            {refreshError}
+          </p>
+        )}
         <CopilotChat
           agentId={MARKET_DESK_AGENT_ID}
           threadId={threadId}
@@ -127,6 +139,7 @@ function DeskBody({ threadId }: { threadId: string }) {
             },
           }}
         />
+        <LiveCaptionBubble text={voice?.liveCaption ?? ""} />
       </main>
     </>
   );

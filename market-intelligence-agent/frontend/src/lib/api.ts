@@ -153,6 +153,7 @@ export interface ThreadMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  source?: "voice" | "text";
 }
 
 export async function getThreadHistory(threadId: string, base = API_BASE): Promise<ThreadMessage[]> {

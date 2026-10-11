@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 
 const chatProps: Record<string, unknown>[] = [];
 const providerProps: Record<string, unknown>[] = [];
@@ -8,6 +8,7 @@ const portalContents: React.ReactNode[] = [];
 const createdAgents: { setMessages: ReturnType<typeof vi.fn> }[] = [];
 const activityRailProps: Record<string, unknown>[] = [];
 let voiceHookState: Record<string, unknown>;
+const getThreadHistoryMock = vi.fn();
 
 vi.mock("@copilotkit/react-core/v2", () => ({
   CopilotKitProvider: (props: Record<string, unknown> & { children: React.ReactNode }) => {
@@ -46,6 +47,10 @@ vi.mock("@copilotkit/react-core/v2", () => ({
     suggestionConfigs.push(config);
   },
   useAgent: () => ({ agent: { subscribe: () => ({ unsubscribe: () => undefined }) } }),
+}));
+vi.mock("../lib/api", async (orig) => ({
+  ...(await orig<typeof import("../lib/api")>()),
+  getThreadHistory: (...a: unknown[]) => getThreadHistoryMock(...a),
 }));
 vi.mock("../voice/useResearchVoice", () => ({
   useResearchVoice: () => voiceHookState,
@@ -87,11 +92,14 @@ describe("DeskView", () => {
       events: [],
       pending: null,
       error: null,
+      liveCaption: "",
       start: vi.fn(),
       end: vi.fn(),
       submitDecision: vi.fn(),
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    getThreadHistoryMock.mockReset();
+    getThreadHistoryMock.mockResolvedValue([]);
   });
 
   it("shows a compact Research workspace identity", () => {
@@ -215,7 +223,7 @@ describe("DeskView", () => {
 
   it("seeds the same agent from the thread history", async () => {
     const history = [{ id: "u1", role: "user", content: "AAPL price?" }];
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => history }));
+    getThreadHistoryMock.mockResolvedValue(history);
     render(<DeskView threadId="clients_17" />);
 
     await vi.waitFor(() => {
@@ -228,5 +236,24 @@ describe("DeskView", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(createdAgents[createdAgents.length - 1].setMessages).not.toHaveBeenCalled();
+  });
+
+  it("shows the live caption bubble while the user speaks", () => {
+    voiceHookState = { ...voiceHookState, liveCaption: "Which clients are" };
+    render(<DeskView threadId="desk_t1" voiceEnabled />);
+    expect(screen.getByRole("status", { name: "You are speaking" })).toHaveTextContent("Which clients are");
+  });
+
+  it("reloads chat history into the agent when a voice run finishes", async () => {
+    const history = [{ id: "v1", role: "assistant", content: "spoken answer", source: "voice" }];
+    // First call is DeskView's own mount seed (empty); the second is the voice refresh.
+    getThreadHistoryMock.mockResolvedValueOnce([]).mockResolvedValueOnce(history);
+    voiceHookState = {
+      ...voiceHookState,
+      events: [{ sequence: 1, run_id: "r", kind: "run_finished", name: null, tool_call_id: null, duration_ms: null, message: null }],
+    };
+    render(<DeskView threadId="desk_t1" voiceEnabled />);
+    await waitFor(() => expect(createdAgents[createdAgents.length - 1].setMessages).toHaveBeenCalledWith(history));
+    expect(getThreadHistoryMock).toHaveBeenCalledTimes(2);
   });
 });
