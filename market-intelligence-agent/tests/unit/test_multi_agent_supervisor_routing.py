@@ -417,3 +417,16 @@ def test_router_output_is_hidden_from_ag_ui_streams():
     metadata = supervisor_mod._router.config["metadata"]
     assert metadata["emit-messages"] is False
     assert metadata["emit-tool-calls"] is False
+
+
+def test_supervisor_routes_users_own_preference_questions_to_memory_agent():
+    """Regression (QA row 14): "what is my preferred report format?" must match
+    memory_agent, while client/market questions stay elsewhere."""
+    line = next(
+        l for l in supervisor_mod.SUPERVISOR_ROUTING_PROMPT.splitlines()
+        if l.startswith("- memory_agent")
+    )
+    line = line.lower()
+    assert "own preferences" in line
+    assert "what is my preferred report format" in line
+    assert "portfolio_agent" in line
