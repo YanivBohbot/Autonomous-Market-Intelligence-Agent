@@ -52,10 +52,45 @@ class RerankingRetriever(BaseRetriever):
         if not docs:
             return []
         try:
-            return list(self.reranker.compress_documents(docs, query))
+            ranked = list(self.reranker.compress_documents(docs, query))
         except Exception as exc:
             logger.warning("KB_SEARCH: rerank failed, using vector order (%s)", exc)
             return docs[: self.top_n]
+        if not ranked:
+            # Non-empty candidates can't legitimately rerank to nothing --
+            # treat it as a reranker failure, not as "no relevant results".
+            logger.warning("KB_SEARCH: rerank returned nothing, using vector order")
+            return docs[: self.top_n]
+        return ranked
+
+
+class CappedPineconeRerank(PineconeRerank):
+    """PineconeRerank with two fixes for this retriever:
+
+    - caps top_n at the number of candidates (the pre-refactor code sent
+      min(top_n, len(docs)); PineconeRerank always sends its own top_n);
+    - surfaces failures: PineconeRerank.rerank() catches every API error,
+      logs it and returns [] -- raise instead, so RerankingRetriever falls
+      back to vector order rather than reporting "no relevant results".
+    """
+
+    def compress_documents(
+        self, documents: Sequence[Document], query: str, callbacks: Callbacks = None
+    ) -> Sequence[Document]:
+        if not documents:
+            return []
+        results = self.rerank(documents=documents, query=query, top_n=min(self.top_n, len(documents)))
+        if not results:
+            raise RuntimeError("Pinecone rerank returned no results (see 'Rerank error' log)")
+        ranked = []
+        for res in results:
+            index = res.get("index")
+            if index is not None and 0 <= index < len(documents):
+                doc = documents[index]
+                ranked.append(
+                    Document(page_content=doc.page_content, metadata={**doc.metadata, "relevance_score": res["score"]})
+                )
+        return ranked
 
 
 class _VectorOrder(BaseDocumentCompressor):
@@ -72,9 +107,9 @@ class _VectorOrder(BaseDocumentCompressor):
 
 @lru_cache(maxsize=16)
 def _reranker_for(top_n: int) -> BaseDocumentCompressor:
-    # PineconeRerank validates the model with a network call at construction
+    # CappedPineconeRerank (a PineconeRerank) validates the model with a network call at construction
     # -- build it once per top_n (k is 1..10), not on every search.
-    return PineconeRerank(model=RERANK_MODEL, top_n=top_n, pinecone_api_key=settings.PINECONE_API_KEY)
+    return CappedPineconeRerank(model=RERANK_MODEL, top_n=top_n, pinecone_api_key=settings.PINECONE_API_KEY)
 
 
 def build_kb_retriever(k: int, metadata_filter: dict | None) -> RerankingRetriever:

@@ -81,7 +81,7 @@ def test_build_kb_retriever_configures_threshold_candidates_filter_and_rerank(mo
         built["kw"] = kw
         return _ReverseReranker(top_n=kw["top_n"])
 
-    monkeypatch.setattr(r, "PineconeRerank", fake_rerank)
+    monkeypatch.setattr(r, "CappedPineconeRerank", fake_rerank)
 
     rr = r.build_kb_retriever(4, {"filename": {"$in": ["a.pdf"]}})
 
@@ -97,7 +97,7 @@ def test_build_kb_retriever_configures_threshold_candidates_filter_and_rerank(mo
 def test_build_kb_retriever_omits_filter_when_none(monkeypatch):
     store = _FakeStore()
     monkeypatch.setattr(r, "get_vectorstore", lambda: store)
-    monkeypatch.setattr(r, "PineconeRerank", lambda **kw: _ReverseReranker(top_n=kw["top_n"]))
+    monkeypatch.setattr(r, "CappedPineconeRerank", lambda **kw: _ReverseReranker(top_n=kw["top_n"]))
     r.build_kb_retriever(4, None)
     assert "filter" not in store.kwargs["search_kwargs"]
 
@@ -111,14 +111,14 @@ def test_build_kb_retriever_falls_back_to_vector_order_when_reranker_cannot_be_b
     def broken(**kw):
         raise RuntimeError("pinecone unreachable")
 
-    monkeypatch.setattr(r, "PineconeRerank", broken)
+    monkeypatch.setattr(r, "CappedPineconeRerank", broken)
     assert [d.page_content for d in r.build_kb_retriever(2, None).invoke("q")] == ["a", "b"]
 
 
 def test_reranker_is_built_once_per_top_n(monkeypatch):
     monkeypatch.setattr(r, "get_vectorstore", lambda: _FakeStore())
     built = []
-    monkeypatch.setattr(r, "PineconeRerank", lambda **kw: built.append(kw) or _ReverseReranker(top_n=kw["top_n"]))
+    monkeypatch.setattr(r, "CappedPineconeRerank", lambda **kw: built.append(kw) or _ReverseReranker(top_n=kw["top_n"]))
     r.build_kb_retriever(4, None)
     r.build_kb_retriever(4, None)
     r.build_kb_retriever(2, None)
@@ -131,3 +131,53 @@ class _FakeStoreWith:
 
     def as_retriever(self, **kwargs):
         return _ListRetriever(docs=self.docs)
+
+
+class _EmptyReranker(BaseDocumentCompressor):
+    """How the real PineconeRerank fails: rerank() swallows the API error,
+    logs it and returns [] -- compress_documents never raises."""
+
+    def compress_documents(self, documents, query, callbacks=None):
+        return []
+
+
+def test_reranking_retriever_falls_back_when_reranker_returns_nothing():
+    rr = r.RerankingRetriever(base_retriever=_ListRetriever(docs=_docs("a", "b", "c")), reranker=_EmptyReranker(), top_n=2)
+    assert [d.page_content for d in rr.invoke("q")] == ["a", "b"]
+
+
+class _FakeInference:
+    def __init__(self, error=None):
+        self.error = error
+        self.kwargs = None
+
+    def rerank(self, **kwargs):
+        self.kwargs = kwargs
+        if self.error:
+            raise self.error
+        from types import SimpleNamespace
+        n = kwargs["top_n"]
+        return SimpleNamespace(data=[
+            SimpleNamespace(index=i, score=1.0 - i / 10, document=SimpleNamespace(id=f"doc_{i}", to_dict=lambda: {}))
+            for i in reversed(range(n))
+        ])
+
+
+def _capped(monkeypatch, inference, top_n):
+    from types import SimpleNamespace
+    monkeypatch.setattr(r.CappedPineconeRerank, "_get_sync_client", lambda self: SimpleNamespace(inference=inference))
+    return r.CappedPineconeRerank.model_construct(model="bge-reranker-v2-m3", top_n=top_n, return_documents=True)
+
+
+def test_capped_rerank_caps_top_n_at_candidate_count(monkeypatch):
+    inference = _FakeInference()
+    reranker = _capped(monkeypatch, inference, top_n=4)
+    out = reranker.compress_documents(_docs("a", "b"), "q")
+    assert inference.kwargs["top_n"] == 2
+    assert [d.page_content for d in out] == ["b", "a"]
+
+
+def test_capped_rerank_raises_when_pinecone_call_fails_so_retriever_falls_back(monkeypatch):
+    reranker = _capped(monkeypatch, _FakeInference(error=RuntimeError("429 quota exceeded")), top_n=2)
+    rr = r.RerankingRetriever(base_retriever=_ListRetriever(docs=_docs("a", "b", "c")), reranker=reranker, top_n=2)
+    assert [d.page_content for d in rr.invoke("q")] == ["a", "b"]

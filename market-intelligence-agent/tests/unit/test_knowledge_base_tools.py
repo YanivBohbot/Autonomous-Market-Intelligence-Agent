@@ -65,7 +65,7 @@ def rag():
     rag_retriever._reranker_for.cache_clear()
     with (
         patch.object(rag_retriever, "get_vectorstore", side_effect=lambda: state.store),
-        patch.object(rag_retriever, "PineconeRerank", side_effect=fake_rerank),
+        patch.object(rag_retriever, "CappedPineconeRerank", side_effect=fake_rerank),
     ):
         yield state
     rag_retriever._reranker_for.cache_clear()
