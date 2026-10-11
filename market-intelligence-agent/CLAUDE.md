@@ -95,7 +95,7 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 | `recall_memory` | `app/agent/tools/memory.py` | read-only | Look up a user fact in LangGraph's BaseStore by key. |
 | `list_memories` | same | read-only | Return every user fact in memory as `key = value` strings. |
 | `save_memory` | same | side-effect | Persist `{key: value}` under namespace `("user_facts",)`. Gated by `approval_node`. |
-| `search_knowledge_base` | `app/agent/tools/knowledge_base.py` | read-only | Semantic search over ingested company reports/PDFs (Pinecone). Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. |
+| `search_knowledge_base` | `app/agent/tools/knowledge_base.py` | read-only | Semantic search over ingested company reports/PDFs through `app/rag/retriever.build_kb_retriever` — a `RerankingRetriever(BaseRetriever)` over `PineconeVectorStore.as_retriever(similarity_score_threshold, k=20, relevance ≥ 0.675 ≡ cosine 0.35)` + `PineconeRerank(bge-reranker-v2-m3)`; no `langchain-classic`. Returns chunks prefixed `[Source: filename, page N]`. `source_filter` restricts to one document by filename substring. |
 | `web_search` | `app/agent/tools/knowledge_base.py` | read-only | Live web search (Tavily), top 3 results, advanced depth. Fallback/supplement when the knowledge base has nothing relevant. |
 
 `READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` is the allowlist consulted by `approval_node` to skip the interrupt for safe reads.
@@ -167,9 +167,11 @@ Spoken turns are shown in the Research chat: a live caption from `session.input_
 
 See `docs/VOICE.md` for env vars, run order, and the Hebrew-support caveat.
 
-### Data ingestion (`app/ingest.py`)
+### Data ingestion (`app/ingest.py`, `app/rag/`)
 
-Reads all PDFs from `./data/`, splits at 1000 chars / 200 overlap, embeds with `text-embedding-3-small`, and upserts into Pinecone. Run once per document set. The Pinecone index must already exist. It also rewrites `app/agent/tools/kb_documents.json`, the manifest `search_knowledge_base`'s `source_filter` resolves against — **commit it after ingesting**, since the AgentCore image ships `app/` but not `data/`.
+RAG is built from standard LangChain components in `app/rag/`: `loaders.load_pdf` (Document Loader, `PyPDFLoader`), `splitters.build_text_splitter` (Text Splitter, Recursive 1000/200), `vectorstore.get_vectorstore` (the single `PineconeVectorStore` + `OpenAIEmbeddings` instance), `ingestion.index_documents` (split → `filename` metadata → deterministic sha256 chunk IDs → `add_documents(ids=...)`) and `retriever.build_kb_retriever` (Retriever). Both ingestion paths use them: the bulk CLI `app/ingest.py` and the Data-page upload `app/data_import/pdf_ingest.py`.
+
+`app/ingest.py` reads all PDFs from `./data/`, splits at 1000 chars / 200 overlap, embeds with `text-embedding-3-small`, and upserts into Pinecone. Run once per document set. The Pinecone index must already exist. It also rewrites `app/agent/tools/kb_documents.json`, the manifest `search_knowledge_base`'s `source_filter` resolves against — **commit it after ingesting**, since the AgentCore image ships `app/` but not `data/`.
 
 ## Spec & plan workflow
 
