@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { getThreadHistory, type ThreadMessage } from "../lib/api";
 import type { VoiceActivityEvent } from "./types";
 
-const TRIGGERS = new Set<VoiceActivityEvent["kind"]>(["run_finished", "approval_required"]);
+const TRIGGERS = new Set<VoiceActivityEvent["kind"]>(["run_finished", "approval_required", "run_error"]);
 
 // Spoken turns are written to the checkpoint by the voice worker, not by
 // CopilotKit, so the chat never sees them on its own. When a voice turn

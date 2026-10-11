@@ -4,33 +4,6 @@ The LLM is the Research agent graph, invoked
 directly by `app.voice.worker`, so voice turns run the same tools + HITL
 flow as text turns.
 """
-import re
-import sys
-
-from langchain_core.callbacks.base import BaseCallbackHandler
-
-# Matches one or more leading `{"binary_score":"yes|no"}` JSON fragments that
-# sometimes leak through when the LangGraph state has stale grader outputs.
-# Without stripping, TTS literally reads the JSON aloud.
-_BINARY_SCORE_PREFIX = re.compile(r'^\s*(\{"binary_score":"\w+"\}\s*)+')
-
-
-def strip_binary_score_prefix(content: str) -> str:
-    """Remove any leaked grader JSON prefix from a final assistant message."""
-    return _BINARY_SCORE_PREFIX.sub("", content)
-
-
-class _ToolCallLogger(BaseCallbackHandler):
-    """Print every LangGraph tool invocation to stderr so a voice QA session
-    can SEE which tool fired and what it returned. Visibility only."""
-
-    def on_tool_start(self, serialized, input_str, **kwargs) -> None:
-        name = (serialized or {}).get("name", "?")
-        print(f"[voice.tool] CALL  {name}  args={input_str}", file=sys.stderr, flush=True)
-
-    def on_tool_end(self, output, **kwargs) -> None:
-        print(f"[voice.tool] DONE  {str(output)[:240]}", file=sys.stderr, flush=True)
-
 
 VOICE_INSTRUCTIONS = (
     "You are a market intelligence voice assistant speaking with the user. "

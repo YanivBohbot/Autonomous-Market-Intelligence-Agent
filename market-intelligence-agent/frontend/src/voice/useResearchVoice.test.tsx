@@ -326,4 +326,42 @@ describe("useResearchVoice", () => {
     act(() => peers[0].channel.emit({ type: "session.closed" }));
     expect(result.current.liveCaption).toBe("");
   });
+
+  describe("caption lifetime", () => {
+    async function startWithCaption() {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ session_id: "s1", sdp: "answer-sdp" }));
+      const hook = renderHook(() => useResearchVoice("thread-1", true));
+      await act(async () => hook.result.current.start());
+      return hook;
+    }
+
+    it("clears the caption after 4s without a new delta", async () => {
+      const { result } = await startWithCaption();
+      vi.useFakeTimers();
+      act(() => peers[0].channel.emit({ type: "session.input_transcript.delta", delta: "hello" }));
+      act(() => { vi.advanceTimersByTime(3999); });
+      expect(result.current.liveCaption).toBe("hello");
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(result.current.liveCaption).toBe("");
+    });
+
+    it("resets the idle timer on every new delta", async () => {
+      const { result } = await startWithCaption();
+      vi.useFakeTimers();
+      act(() => peers[0].channel.emit({ type: "session.input_transcript.delta", delta: "a" }));
+      act(() => { vi.advanceTimersByTime(3000); });
+      act(() => peers[0].channel.emit({ type: "session.input_transcript.delta", delta: "b" }));
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(result.current.liveCaption).toBe("ab");
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(result.current.liveCaption).toBe("");
+    });
+
+    it("clears the caption when assistant output begins", async () => {
+      const { result } = await startWithCaption();
+      act(() => peers[0].channel.emit({ type: "session.input_transcript.delta", delta: "hello" }));
+      act(() => peers[0].channel.emit({ type: "session.output_audio.delta" }));
+      expect(result.current.liveCaption).toBe("");
+    });
+  });
 });

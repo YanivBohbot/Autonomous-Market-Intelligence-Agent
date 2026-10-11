@@ -22,6 +22,13 @@ describe("useVoiceHistoryRefresh", () => {
     expect(getThreadHistory).not.toHaveBeenCalled();
   });
 
+  it("refetches history on run_error so the checkpointed question still appears", async () => {
+    getThreadHistory.mockResolvedValue([{ id: "v1", role: "user", content: "q", source: "voice" }]);
+    const setMessages = vi.fn();
+    renderHook(() => useVoiceHistoryRefresh("t1", [ev(1, "run_error")], setMessages));
+    await waitFor(() => expect(setMessages).toHaveBeenCalledTimes(1));
+  });
+
   it("refetches history and sets messages on run_finished", async () => {
     const history = [{ id: "v1", role: "user", content: "spoken", source: "voice" }];
     getThreadHistory.mockResolvedValue(history);

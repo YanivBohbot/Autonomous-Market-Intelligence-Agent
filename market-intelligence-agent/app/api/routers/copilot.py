@@ -142,7 +142,7 @@ async def market_desk_history(thread_id: str, request: Request) -> list[dict]:
     since CopilotKit itself never fetches history on its own; see
     docs/superpowers/specs/2026-10-04-clients-workspace-design.md's
     Known limitation note. Tool messages and summarization HumanMessages
-    (_is_summary) is left out. Voice turns are included and tagged
+    (_is_summary) are left out. Voice turns are included and tagged
     `source: "voice"` (2026-10-11 spec); typed turns are `source: "text"`.
     This is for display, not model context."""
     agent: LangGraphAgent | None = getattr(request.app.state, "market_desk_agent", None)

@@ -16,6 +16,7 @@ import type {
 const POLL_INTERVAL_MS = 500;
 const ICE_TIMEOUT_MS = 10_000;
 const CLOSE_TIMEOUT_MS = 15_000;
+const CAPTION_IDLE_MS = 4_000;
 
 async function waitForIceGathering(peer: RTCPeerConnection): Promise<void> {
   if (peer.iceGatheringState === "complete") return;
@@ -58,12 +59,19 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
   // handle avoids Node's Timeout type leaking in through frontend tooling.
   const pollRef = useRef<number | null>(null);
   const forceCloseRef = useRef<number | null>(null);
+  const captionTimerRef = useRef<number | null>(null);
   const afterRef = useRef(0);
   const activeRef = useRef(false);
   const cleanedRef = useRef(true);
   const closeSentRef = useRef(false);
   const finalizingRef = useRef(false);
   const pollInFlightRef = useRef(false);
+
+  const clearCaption = useCallback(() => {
+    if (captionTimerRef.current !== null) window.clearTimeout(captionTimerRef.current);
+    captionTimerRef.current = null;
+    setLiveCaption("");
+  }, []);
 
   const cleanup = useCallback(
     (
@@ -106,11 +114,11 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
       finalizingRef.current = false;
       activeRef.current = false;
       setActive(false);
-      setLiveCaption("");
+      clearCaption();
       setPhase(nextPhase);
       if (nextError !== undefined) setError(nextError);
     },
-    [],
+    [clearCaption],
   );
 
   const pollState = useCallback(async () => {
@@ -154,7 +162,7 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
     setEvents([]);
     setPending(null);
     setError(null);
-    setLiveCaption("");
+    clearCaption();
     setPhase("connecting");
     activeRef.current = true;
     setActive(true);
@@ -190,9 +198,16 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
           startPolling();
         } else if (message.type === "session.input_transcript.delta") {
           const delta = message.delta;
-          if (delta) setLiveCaption((current) => current + delta);
+          if (delta) {
+            setLiveCaption((current) => current + delta);
+            if (captionTimerRef.current !== null) window.clearTimeout(captionTimerRef.current);
+            captionTimerRef.current = window.setTimeout(clearCaption, CAPTION_IDLE_MS);
+          }
         } else if (message.type === "session.delegation.created") {
-          setLiveCaption("");
+          clearCaption();
+        } else if (typeof message.type === "string" && message.type.startsWith("session.output")) {
+          // Assistant output begins: the utterance is over, so drop the caption.
+          clearCaption();
         } else if (message.type === "session.closed") {
           cleanup("disconnected");
         } else if (message.type === "error") {
@@ -226,7 +241,7 @@ export function useResearchVoice(threadId: string, enabled: boolean) {
       const message = microphoneError(startError);
       cleanup("error", message);
     }
-  }, [cleanup, enabled, startPolling, threadId]);
+  }, [cleanup, clearCaption, enabled, startPolling, threadId]);
 
   const end = useCallback(() => {
     if (!activeRef.current || finalizingRef.current) return;

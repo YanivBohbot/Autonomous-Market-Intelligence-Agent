@@ -5,7 +5,7 @@ const chatProps: Record<string, unknown>[] = [];
 const providerProps: Record<string, unknown>[] = [];
 const suggestionConfigs: Record<string, unknown>[] = [];
 const portalContents: React.ReactNode[] = [];
-const createdAgents: { setMessages: ReturnType<typeof vi.fn> }[] = [];
+const createdAgents: { setMessages: ReturnType<typeof vi.fn>; messages: Record<string, unknown>[] }[] = [];
 const activityRailProps: Record<string, unknown>[] = [];
 let voiceHookState: Record<string, unknown>;
 const getThreadHistoryMock = vi.fn();
@@ -38,6 +38,7 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   ),
   HttpAgent: class {
     setMessages = vi.fn();
+    messages: Record<string, unknown>[] = [];
     constructor() {
       createdAgents.push(this);
     }
@@ -254,24 +255,24 @@ describe("DeskView", () => {
     expect(getThreadHistoryMock).toHaveBeenCalledTimes(1); // mount seed only
   });
 
-  it("reloads chat history into the agent when a voice run finishes", async () => {
-    const mountHistory = [{ id: "m1", role: "user", content: "typed", source: "text" }];
-    const refreshHistory = [{ id: "v1", role: "assistant", content: "spoken answer", source: "voice" }];
-    // Effect order between DeskView (mount seed) and DeskBody (refresh) is an
-    // implementation detail, so key the payload on call count and require both.
+  it("merges refreshed history into the agent's messages without dropping tool-call messages", async () => {
+    const toolCallMsg = { id: "a1", role: "assistant", content: "", toolCalls: [{ id: "tc1" }] };
+    const typed = { id: "u1", role: "user", content: "typed" };
+    const spoken = { id: "v1", role: "assistant", content: "spoken answer", source: "voice" };
+    // Mount seed has nothing new to show; only the refresh returns history.
     getThreadHistoryMock.mockReset();
-    getThreadHistoryMock
-      .mockImplementationOnce(async () => mountHistory)
-      .mockImplementationOnce(async () => refreshHistory);
+    getThreadHistoryMock.mockImplementation(async () => [typed, spoken]);
     voiceHookState = {
       ...voiceHookState,
       events: [{ sequence: 1, run_id: "r", kind: "run_finished", name: null, tool_call_id: null, duration_ms: null, message: null }],
     };
     render(<DeskView threadId="desk_t1" voiceEnabled />);
-    const setMessages = () => createdAgents[createdAgents.length - 1].setMessages;
-    await waitFor(() => expect(setMessages()).toHaveBeenCalledTimes(2));
-    expect(getThreadHistoryMock).toHaveBeenCalledTimes(2);
-    expect(setMessages()).toHaveBeenCalledWith(mountHistory);
-    expect(setMessages()).toHaveBeenCalledWith(refreshHistory);
+    const agent = createdAgents[createdAgents.length - 1];
+    agent.messages = [typed, toolCallMsg];
+    await waitFor(() => expect(getThreadHistoryMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      const calls = agent.setMessages.mock.calls.map((c) => c[0] as { id: string }[]);
+      expect(calls.some((list) => list.some((m) => m.id === "a1") && list.some((m) => m.id === "v1"))).toBe(true);
+    });
   });
 });

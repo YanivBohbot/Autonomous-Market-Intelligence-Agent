@@ -12,6 +12,7 @@ import { ResearchVoiceApproval } from "../voice/ResearchVoiceApproval";
 import { ResearchVoiceProvider, useResearchVoiceContext } from "../voice/ResearchVoiceContext";
 import { LiveCaptionBubble } from "../voice/LiveCaptionBubble";
 import { useVoiceHistoryRefresh } from "../voice/useVoiceHistoryRefresh";
+import { mergeHistory } from "./mergeHistory";
 import { ResearchComposer } from "./ResearchComposer";
 
 export type DeskViewProps = {
@@ -70,7 +71,10 @@ export function DeskView({ threadId, voiceEnabled = false }: DeskViewProps) {
 function DeskBody({ threadId, agent }: { threadId: string; agent: HttpAgent }) {
   const voice = useResearchVoiceContext();
   const setMessages = useCallback(
-    (messages: ThreadMessage[]) => agent.setMessages(messages),
+    (history: ThreadMessage[]) => {
+      if (history.length === 0) return;
+      agent.setMessages(mergeHistory(agent.messages, history));
+    },
     [agent],
   );
   const { refreshError } = useVoiceHistoryRefresh(threadId, voice?.events, setMessages);
@@ -114,6 +118,9 @@ function DeskBody({ threadId, agent }: { threadId: string; agent: HttpAgent }) {
             <ResearchVoiceApproval pending={voice.pending} />
           </div>
         )}
+        <div className="pointer-events-none absolute inset-x-4 bottom-24 z-30 flex justify-end">
+          <LiveCaptionBubble text={voice?.liveCaption ?? ""} />
+        </div>
         {refreshError && (
           <p role="alert" className="mx-4 mb-1 rounded-lg border border-terminal-warn/40 bg-terminal-warn/10 px-3 py-1.5 text-xs text-terminal-warn">
             {refreshError}
@@ -139,7 +146,6 @@ function DeskBody({ threadId, agent }: { threadId: string; agent: HttpAgent }) {
             },
           }}
         />
-        <LiveCaptionBubble text={voice?.liveCaption ?? ""} />
       </main>
     </>
   );

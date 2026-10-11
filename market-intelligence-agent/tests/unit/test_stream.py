@@ -214,10 +214,8 @@ def test_stream_emits_interrupted_when_graph_pauses_at_approval():
 def test_stream_does_not_emit_interrupted_for_non_approval_pause():
     """A pause at any node other than `approval` (e.g. a failed task retry) must
     fall through to `done`, matching the nested-interrupt detection in
-    `_helpers.pending_interrupt_from_snapshot`. Both
-    narrow "paused" to specifically 'approval' in snapshot.next for the same
-    reason: both independently drive the same shared-thread awaiting_approval
-    flag in Streamlit, and must agree."""
+    `_helpers.pending_interrupt_from_snapshot`. Both narrow "paused" to
+    specifically 'approval' in snapshot.next, and must agree."""
     tokens = [
         ((), AIMessageChunk(content="Retrying"), {"langgraph_node": "agent"}),
     ]
