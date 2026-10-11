@@ -39,7 +39,10 @@ def ingest_document():
     print("cw Stockage dans Pinecone (cela peut prendre quelques secondes)...")
     for file in pdf_files:
         print(f" Charging the {file}..")
-        documents = load_pdf(os.path.join(data_folder, file), filename=file)
+        # source=file (not the path): same source -- hence same chunk IDs --
+        # as the upload path, so a PDF ingested by both is overwritten in
+        # Pinecone instead of stored twice.
+        documents = load_pdf(os.path.join(data_folder, file), filename=file, source=file)
         index_documents(documents, file)
 
     _write_manifest(pdf_files)

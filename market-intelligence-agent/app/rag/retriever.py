@@ -35,6 +35,22 @@ RERANK_CANDIDATES = 20
 RERANK_MODEL = "bge-reranker-v2-m3"
 
 
+def _drop_duplicate_chunks(docs: list[Document]) -> list[Document]:
+    """Keep the first (best-scored) copy of each chunk text. The index can hold
+    the same chunk more than once: a PDF ingested by both the bulk CLI (old
+    source 'data/x.pdf') and the upload path (source 'x.pdf') gets different
+    chunk IDs, and a re-uploaded copy under another filename duplicates it
+    again -- without this, results show the same text 2-4 times."""
+    seen: set[str] = set()
+    unique = []
+    for doc in docs:
+        key = " ".join(doc.page_content.split())
+        if key not in seen:
+            seen.add(key)
+            unique.append(doc)
+    return unique
+
+
 class RerankingRetriever(BaseRetriever):
     """Retriever = candidate retriever (vector store) + document reranker.
 
@@ -48,7 +64,9 @@ class RerankingRetriever(BaseRetriever):
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
-        docs = self.base_retriever.invoke(query, config={"callbacks": run_manager.get_child()})
+        docs = _drop_duplicate_chunks(
+            self.base_retriever.invoke(query, config={"callbacks": run_manager.get_child()})
+        )
         if not docs:
             return []
         try:

@@ -50,3 +50,22 @@ def test_importing_ingest_module_prints_nothing(capsys):
     capsys.readouterr()
     importlib.reload(app.ingest)
     assert "Ingestion" not in capsys.readouterr().out
+
+
+def test_bulk_ingest_uses_the_bare_filename_as_source(tmp_path, monkeypatch):
+    """Same source as the upload path (app/data_import/pdf_ingest.py), so a
+    PDF ingested by both paths gets identical chunk IDs and Pinecone
+    overwrites instead of storing it twice ('data/x.pdf' vs 'x.pdf')."""
+    import app.ingest as ingest_mod
+
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "Report.pdf").write_bytes(b"%PDF-1.4")
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    monkeypatch.setattr(ingest_mod, "load_pdf", lambda path, **kw: calls.append(kw) or [])
+    monkeypatch.setattr(ingest_mod, "index_documents", lambda docs, filename: [])
+    monkeypatch.setattr(ingest_mod, "_write_manifest", lambda files: None)
+
+    ingest_mod.ingest_document()
+
+    assert calls == [{"filename": "Report.pdf", "source": "Report.pdf"}]

@@ -181,3 +181,28 @@ def test_capped_rerank_raises_when_pinecone_call_fails_so_retriever_falls_back(m
     reranker = _capped(monkeypatch, _FakeInference(error=RuntimeError("429 quota exceeded")), top_n=2)
     rr = r.RerankingRetriever(base_retriever=_ListRetriever(docs=_docs("a", "b", "c")), reranker=reranker, top_n=2)
     assert [d.page_content for d in rr.invoke("q")] == ["a", "b"]
+
+
+class _RecordingReranker(BaseDocumentCompressor):
+    seen: list[str] | None = None
+
+    def compress_documents(self, documents, query, callbacks=None):
+        object.__setattr__(self, "seen", [d.page_content for d in documents])
+        return list(documents)
+
+
+def test_reranking_retriever_drops_duplicate_chunks_before_reranking():
+    """The index holds the same chunk twice (bulk CLI source 'data/x.pdf' and
+    upload source 'x.pdf', or a re-uploaded copy under another filename):
+    keep the first (best-scored) copy so results aren't the same text 2-4x."""
+    docs = [
+        Document(page_content="Net sales $637,959M", metadata={"source": "Amazon.pdf", "page": 35}),
+        Document(page_content="Net sales $637,959M", metadata={"source": "data/Amazon.pdf", "page": 35}),
+        Document(page_content="AWS grew 19%", metadata={"source": "Amazon.pdf", "page": 35}),
+        Document(page_content="Net sales $637,959M ", metadata={"source": "Live-Freshness-Check.pdf", "page": 35}),
+    ]
+    reranker = _RecordingReranker()
+    rr = r.RerankingRetriever(base_retriever=_ListRetriever(docs=docs), reranker=reranker, top_n=4)
+    out = rr.invoke("q")
+    assert reranker.seen == ["Net sales $637,959M", "AWS grew 19%"]
+    assert out[0].metadata["source"] == "Amazon.pdf"
