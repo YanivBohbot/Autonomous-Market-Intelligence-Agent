@@ -46,7 +46,7 @@ Important optional settings include `LOG_LEVEL`, `API_URL`, `YFINANCE_TIMEOUT_S`
 
 ## Runtime Architecture
 
-FastAPI compiles one multi-agent graph with the configured checkpointer and store. That same object is assigned to `app.state.agent_app` and wrapped by `app.state.market_desk_agent`; `/stream`, `/approve`, AgentCore `/invocations`, and opt-in `/copilot/market-desk` therefore share checkpoints and conversation state. The graph routes `load_client_context -> record_question -> supervisor -> specialist -> supervisor -> END` across RAG, finance, portfolio, browser, email, filesystem, and memory specialists.
+FastAPI compiles one multi-agent graph with the configured checkpointer and store. That same object is assigned to `app.state.agent_app` and wrapped by `app.state.market_desk_agent`; `/stream`, `/approve`, AgentCore `/invocations`, and opt-in `/copilot/market-desk` therefore share checkpoints and conversation state. The graph routes `load_client_context -> record_question -> input_guard -> supervisor -> specialist -> supervisor -> END` (`input_guard` blocks credit-card numbers before any LLM call) across RAG, finance, portfolio, browser, email, filesystem, and memory specialists.
 
 Side effects use `HumanInTheLoopMiddleware`. Legacy boolean approval is expanded into `Command(resume={"decisions": [...]})`, with one `approve` or `reject` decision per pending action. Nested specialist state must be inspected with `subgraphs=True` before describing or resuming an interrupt.
 
