@@ -9,8 +9,8 @@ class ResizeObserver {
 if (typeof window !== "undefined") {
   window.ResizeObserver = window.ResizeObserver || ResizeObserver;
 
-  // jsdom doesn't implement scrollIntoView; ChatPane calls it whenever the
-  // message list changes (e.g. after sending a chat message in a test).
+  // jsdom doesn't implement scrollIntoView; chat components call it whenever the
+  // message list changes.
   HTMLElement.prototype.scrollIntoView = HTMLElement.prototype.scrollIntoView || (() => {});
 
   // jsdom's Blob/File don't implement arrayBuffer() (as of jsdom 25); ImportPanel

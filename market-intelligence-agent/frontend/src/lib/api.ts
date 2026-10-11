@@ -1,4 +1,4 @@
-import type { ApproveResponse, HealthResponse } from "./types";
+import type { HealthResponse } from "./types";
 
 // In dev, Vite proxies these paths to the backend, so "" (same origin) works.
 export const API_BASE = "";
@@ -35,20 +35,6 @@ export async function getMarketTicker(base = API_BASE): Promise<{ items: MarketT
 export async function getHealth(base = API_BASE): Promise<HealthResponse> {
   const res = await fetch(`${base}/health`);
   if (!res.ok) throw new Error(`health ${res.status}`);
-  return res.json();
-}
-
-export async function postApprove(
-  threadId: string,
-  approved: boolean,
-  base = API_BASE,
-): Promise<ApproveResponse> {
-  const res = await fetch(`${base}/approve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ thread_id: threadId, approved }),
-  });
-  if (!res.ok) throw new Error(`approve ${res.status}: ${await res.text()}`);
   return res.json();
 }
 

@@ -77,18 +77,10 @@ describe("App routing", () => {
     expect(screen.queryByPlaceholderText(/ask the agent/i)).not.toBeInTheDocument();
   });
 
-  it("/classic renders the classic chat", () => {
+  it("no longer serves the classic chat at /classic", () => {
     renderAt("/classic");
-    expect(screen.getByPlaceholderText(/ask the agent/i)).toBeInTheDocument();
-    expect(screen.queryByTestId("desk-view")).not.toBeInTheDocument();
-  });
-
-  it("/classic has no AppLayout nav (it's outside the layout)", () => {
-    renderAt("/classic");
-    expect(screen.getByPlaceholderText(/ask the agent/i)).toBeInTheDocument();
-    expect(screen.queryByText("Multi-Agent Finance Desk")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("global-market-ticker")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Research" })).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Ask the agent…")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Toggle voice")).not.toBeInTheDocument();
   });
 
   it("/briefing renders BriefingPage", () => {
@@ -143,26 +135,5 @@ describe("App routing", () => {
     const before = screen.getByTestId("desk-view").textContent;
     await user.click(screen.getByRole("button", { name: /new session/i }));
     expect(screen.getByTestId("desk-view").textContent).not.toBe(before);
-  });
-
-  it("Market Desk runs on its own thread, never Classic's", () => {
-    const classic = renderAt("/classic");
-    const classicThread = screen.getByText(/^web_session_/).textContent;
-    classic.unmount();
-    renderAt("/research");
-    expect(screen.getByTestId("desk-view").textContent).not.toBe(classicThread);
-  });
-
-  it("New session clears Classic's chat history", async () => {
-    const { default: userEvent } = await import("@testing-library/user-event");
-    const user = userEvent.setup();
-    renderAt("/classic");
-
-    await user.type(screen.getByPlaceholderText(/ask the agent/i), "hello world");
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    expect(await screen.findByText("hello world")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /new session/i }));
-    expect(screen.queryByText("hello world")).not.toBeInTheDocument();
   });
 });
