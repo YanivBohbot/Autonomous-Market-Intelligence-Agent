@@ -31,3 +31,16 @@ Specialist names come from the SSE `node` events (`<specialist>` node right befo
 
 ## Fix commits
 None (failures are recorded for the controller).
+
+## Re-run after fix 9121e22 (row 14)
+
+Root cause: `MEMORY_SYSTEM_PROMPT` never told the memory specialist to check saved facts before answering a question about the user's own preferences, and the supervisor's `memory_agent` description only matched "remember…" phrasing. Fix: prompt-only (commit 9121e22) + 2 prompt-contract regression tests (39 passed in the memory/supervisor/system-prompt test files).
+
+Live re-check (backend restarted on :8001; note the store is in-memory, so the fact was re-saved after restart):
+- "Remember that my preferred report format is Excel" → `save_memory` → `interrupted` → `/approve` approved:true → "I've saved your preferred report format as Excel."
+- New thread, "What is my preferred report format?" → `memory_agent` + `list_memories` → "Your preferred report format is Excel." (2/2 runs)
+- Routing control: "Which clients have more than 30 percent of their portfolio in one stock?" → still `concentration_screen` with real client names (Robert Hayes GOOGL 68.19%, Thomas Reed NVDA 65.70%, …).
+
+**Row 14: PASS** (after fix).
+
+Known limitation surfaced (pre-existing, out of scope): the long-term memory store is in-process (`InMemoryStore`) locally, so saved facts are lost on backend restart.
