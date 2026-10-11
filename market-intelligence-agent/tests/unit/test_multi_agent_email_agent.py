@@ -58,3 +58,15 @@ def test_keeps_email_addresses_it_needs_to_work():
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
     guard = next(m for m in kw["middleware"] if isinstance(m, SensitiveDataGuard))
     assert guard.check_email is False
+
+
+def test_prompt_opens_empty_draft_instead_of_asking_for_content():
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    assert 'EMPTY `subject` and `body` ("")' in EMAIL_SYSTEM_PROMPT
+    assert "Never ask the user for the subject or body" in EMAIL_SYSTEM_PROMPT
+
+
+def test_prompt_forbids_inventing_figures():
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    assert "never invent figures" in EMAIL_SYSTEM_PROMPT
+    assert "portfolio_agent's answer" in EMAIL_SYSTEM_PROMPT

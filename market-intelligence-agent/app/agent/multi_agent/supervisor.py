@@ -67,6 +67,16 @@ _SAVE_LANGUAGE_RE = re.compile(r"\b(save|export|download)\b", re.IGNORECASE)
 _REPORT_LANGUAGE_RE = re.compile(r"\b(report|brief)\b", re.IGNORECASE)
 
 
+_EMAIL_REQUEST_RE = re.compile(r"\b(e-?mail|send)\b", re.IGNORECASE)
+
+
+def _latest_human_text(messages: list) -> str:
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            return _message_text(m)
+    return ""
+
+
 def _message_text(message) -> str:
     """Same shape as display._content_text: message.content is normally a
     plain str, but AG-UI/MCP content can in principle be a list of blocks
@@ -105,6 +115,21 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     # specialist to fetch the same answer again instead of picking FINISH —
     # prompt wording alone couldn't fully fix this non-determinism, so we
     # don't ask the LLM to reconfirm something we can already tell.
+    # Exception: an email request whose content needs portfolio facts goes
+    # portfolio_agent -> email_agent within the same turn, so the email uses
+    # real numbers. Without this the finish rule below would end the turn
+    # after portfolio_agent's answer. email_agent's own answer then finishes.
+    if (
+        state.get("next_agent") == "portfolio_agent"
+        and isinstance(last, AIMessage)
+        and not getattr(last, "tool_calls", None)
+        and _EMAIL_REQUEST_RE.search(_latest_human_text(messages))
+    ):
+        return Command(
+            goto="email_agent",
+            update={"next_agent": "email_agent", "last_agent": "email_agent", "agent_hops": hops + 1},
+        )
+
     if (
         state.get("next_agent") is not None
         and isinstance(last, AIMessage)

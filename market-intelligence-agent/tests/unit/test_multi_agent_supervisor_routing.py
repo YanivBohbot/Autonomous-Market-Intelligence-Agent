@@ -430,3 +430,37 @@ def test_supervisor_routes_users_own_preference_questions_to_memory_agent():
     assert "own preferences" in line
     assert "what is my preferred report format" in line
     assert "portfolio_agent" in line
+
+
+def test_routing_prompt_sends_portfolio_dependent_emails_to_portfolio_agent_first():
+    prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT
+    assert "route to portfolio_agent FIRST, then email_agent" in prompt
+
+
+def test_goes_to_email_agent_after_portfolio_answer_for_an_email_request_without_llm():
+    history = [
+        HumanMessage(content="Send an email to Margaret Collins with a short summary of her portfolio"),
+        AIMessage(content="Margaret's portfolio is worth $1.2M."),
+    ]
+    state = _state(agent_hops=1, messages=history)
+    state["next_agent"] = "portfolio_agent"
+    with patch.object(supervisor_mod, "_router") as mock:
+        result = supervisor_node(state)
+    mock.invoke.assert_not_called()
+    assert result.goto == "email_agent"
+
+
+def test_finishes_after_email_agent_answer():
+    history = [HumanMessage(content="email her a summary"), AIMessage(content="done")]
+    state = _state(agent_hops=2, messages=history)
+    state["next_agent"] = "email_agent"
+    result = supervisor_node(state)
+    assert result.goto == "finalize_turn"
+
+
+def test_portfolio_answer_without_email_request_still_finishes():
+    history = [HumanMessage(content="What is Margaret's portfolio worth?"), AIMessage(content="$1.2M")]
+    state = _state(agent_hops=1, messages=history)
+    state["next_agent"] = "portfolio_agent"
+    result = supervisor_node(state)
+    assert result.goto == "finalize_turn"

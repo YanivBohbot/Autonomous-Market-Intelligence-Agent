@@ -106,3 +106,18 @@ def test_oversized_raw_message_blocks_before_ses(tmp_path, monkeypatch):
 def test_attachment_field_is_optional():
     parsed = emails.EmailInput(recipient="margaret@example.com", subject="Hi", body="Body")
     assert parsed.attachment_filename is None
+
+
+import pytest
+
+
+@pytest.mark.parametrize("subject,body", [("", "Body"), ("Hi", ""), ("  ", "Body"), ("Hi", " \n ")])
+def test_empty_subject_or_body_is_refused_and_nothing_is_sent(monkeypatch, subject, body):
+    client = FakeSesClient()
+    monkeypatch.setattr(emails.settings, "EMAIL_SENDER", "advisor@firm.com")
+    monkeypatch.setattr(emails, "_create_ses_client", lambda: client)
+    result = emails.send_email_tool.invoke({
+        "recipient": "margaret@example.com", "subject": subject, "body": body
+    })
+    assert result.startswith("Email blocked")
+    assert client.send_email_calls == [] and client.send_raw_email_calls == []

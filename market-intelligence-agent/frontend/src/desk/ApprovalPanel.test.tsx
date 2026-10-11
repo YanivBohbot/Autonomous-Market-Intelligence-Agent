@@ -236,4 +236,54 @@ describe("ApprovalPanel", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  describe("empty email draft", () => {
+    const emptyEmail = { name: "send_email", args: { recipient: "a@x.com", subject: "", body: "" } };
+    const HINT = "Add a subject and a message to send this email.";
+
+    it("opens in editing mode with approve disabled and a hint", () => {
+      setup({ requests: [emptyEmail], allowed: [[...ALL]] });
+      expect(screen.getByLabelText("Subject")).not.toHaveAttribute("readonly");
+      expect(screen.getByLabelText("Message")).not.toHaveAttribute("readonly");
+      expect(screen.getByRole("button", { name: /Approve changes/ })).toBeDisabled();
+      expect(screen.getByText(HINT)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
+    });
+
+    it("treats whitespace-only fields as empty", () => {
+      setup({ requests: [{ ...emptyEmail, args: { ...emptyEmail.args, subject: "  ", body: " " } }], allowed: [[...ALL]] });
+      expect(screen.getByRole("button", { name: /Approve changes/ })).toBeDisabled();
+    });
+
+    it("enables sending once subject and body are typed and submits an edit decision", async () => {
+      const { user, onSubmit } = setup({ requests: [emptyEmail], allowed: [[...ALL]] });
+      await user.type(screen.getByLabelText("Subject"), "Hello");
+      expect(screen.getByRole("button", { name: /Approve changes/ })).toBeDisabled();
+      await user.type(screen.getByLabelText("Message"), "Some text");
+      expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /Approve changes/ }));
+      expect(onSubmit).toHaveBeenCalledWith([
+        {
+          type: "edit",
+          edited_action: {
+            name: "send_email",
+            args: { ...emptyEmail.args, subject: "Hello", body: "Some text", attachment_filename: null },
+          },
+        },
+      ]);
+    });
+
+    it("disables plain Approve when cancelling edits leaves the draft empty", async () => {
+      const { user } = setup({ requests: [emptyEmail], allowed: [[...ALL]] });
+      await user.click(screen.getByRole("button", { name: "Cancel changes" }));
+      expect(screen.getByRole("button", { name: "Approve & send" })).toBeDisabled();
+    });
+
+    it("keeps a filled draft in read-only mode", () => {
+      setup({ requests: [email], allowed: [[...ALL]] });
+      expect(screen.getByLabelText("Subject")).toHaveAttribute("readonly");
+      expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Approve & send" })).toBeEnabled();
+    });
+  });
 });

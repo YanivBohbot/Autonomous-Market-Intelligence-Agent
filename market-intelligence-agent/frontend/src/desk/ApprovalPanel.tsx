@@ -86,7 +86,8 @@ function RequestCard({
 }) {
   const fields = EDITABLE_FIELDS[request.name];
   const isEmail = request.name === "send_email";
-  const [editing, setEditing] = useState(false);
+  const startsEmpty = isEmail && ["subject", "body"].some((f) => !String(request.args[f] ?? "").trim());
+  const [editing, setEditing] = useState(startsEmpty);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [values, setValues] = useState<Record<string, string>>(() =>
@@ -98,6 +99,7 @@ function RequestCard({
   const [attachment, setAttachment] = useState(originalAttachment);
   const editSnapshot = useRef({ values: { ...values }, attachment: originalAttachment });
   const can = (d: DecisionType) => allowed.includes(d);
+  const emptyDraft = isEmail && ["subject", "body"].some((f) => !(values[f] ?? "").trim());
   const locked = decided !== undefined;
 
   function editedEmailArgs(includeFieldEdits: boolean) {
@@ -162,6 +164,7 @@ function RequestCard({
               id: `${request.name}-${f}`,
               "aria-label": fieldLabel,
               value: values[f],
+              autoFocus: startsEmpty && f === "subject",
               readOnly: !editing || locked,
               onChange: (e: { target: { value: string } }) => setValues({ ...values, [f]: e.target.value }),
               className: isEmail
@@ -209,6 +212,11 @@ function RequestCard({
             <Icon name="shield" className="h-4 w-4 text-emerald-600" />
             Nothing is sent until you approve.
           </p>
+          {emptyDraft && (
+            <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+              Add a subject and a message to send this email.
+            </p>
+          )}
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               {can("reject") && !rejecting && (
@@ -246,6 +254,7 @@ function RequestCard({
                 <button
                   type="button"
                   className={primaryBtn}
+                  disabled={emptyDraft}
                   onClick={() => onDecide({
                     type: "edit",
                     edited_action: { name: request.name, args: editedEmailArgs(true) },
@@ -268,6 +277,7 @@ function RequestCard({
                 <button
                   type="button"
                   className={primaryBtn}
+                  disabled={emptyDraft}
                   onClick={() => {
                     if (attachment !== originalAttachment) {
                       onDecide({

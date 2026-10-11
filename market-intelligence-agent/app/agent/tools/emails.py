@@ -67,6 +67,9 @@ def send_email_tool(
     sender = settings.EMAIL_SENDER
     logger.info("SEND_EMAIL: from=%s to=%s subject=%r", sender, recipient, subject)
 
+    if not subject.strip() or not body.strip():
+        return "Email blocked: subject and body must not be empty."
+
     report = None
     if attachment_filename:
         try:
