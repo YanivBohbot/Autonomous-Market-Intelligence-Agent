@@ -26,25 +26,12 @@ class HealthResponse(BaseModel):
 class GptLiveSessionRequest(BaseModel):
     sdp: str = Field(min_length=1, max_length=200_000)
     thread_id: Optional[str] = None
-    surface: Literal["classic", "research"] = "classic"
+    surface: Literal["research"] = "research"
 
 
 class GptLiveSessionResponse(BaseModel):
     session_id: str
     sdp: str
-
-
-class VoiceTranscriptEntry(BaseModel):
-    id: int
-    role: str
-    content: str
-
-
-class VoiceTranscriptResponse(BaseModel):
-    messages: list[VoiceTranscriptEntry]
-    last_id: int
-    paused: bool
-    action: Optional[str] = None
 
 
 VoicePhase = Literal[

@@ -2,7 +2,7 @@
 
 Proxies the browser's WebRTC SDP offer to OpenAI using our own API key (kept
 server-side — the browser never sees it), then spawns the background
-delegation worker that bridges the session to the LangGraph voice workflow.
+delegation worker that bridges the session to the Research agent.
 """
 import asyncio
 import logging
@@ -17,12 +17,9 @@ from app.api.models.models import (
     VoiceDecisionRequest,
     VoiceDecisionResponse,
     VoiceStateResponse,
-    VoiceTranscriptResponse,
 )
 from app.api.routers._helpers import pending_interrupt_from_snapshot
 from app.core.config import settings
-from app.voice import transcript_store
-from app.voice.hitl import is_interrupted
 from app.voice.session import VOICE_INSTRUCTIONS
 from app.voice.worker import run_delegation_worker
 
@@ -53,45 +50,31 @@ async def create_session(payload: GptLiveSessionRequest, request: Request) -> Gp
     if origin and origin not in _allowed_origins():
         raise HTTPException(status_code=403, detail="Voice origin is not allowed.")
 
-    is_research = payload.surface == "research"
-    coordinator = None
-    activity_store = None
-    research_runtime = None
-    lease = None
-    research_thread_id = payload.thread_id or f"voice-{uuid4()}"
-
-    if is_research:
-        coordinator = request.app.state.turn_coordinator
-        activity_store = request.app.state.voice_activity_store
-        research_runtime = request.app.state.research_voice_runtime
-        lease = await coordinator.try_acquire(
-            research_thread_id, f"voice:{uuid4()}"
+    thread_id = payload.thread_id or f"voice-{uuid4()}"
+    coordinator = request.app.state.turn_coordinator
+    activity_store = request.app.state.voice_activity_store
+    research_runtime = request.app.state.research_voice_runtime
+    lease = await coordinator.try_acquire(thread_id, f"voice:{uuid4()}")
+    if lease is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Another turn is active for this thread.",
         )
-        if lease is None:
+    activity_store.begin_session(thread_id)
+    try:
+        snapshot = await request.app.state.agent_app.aget_state(
+            {"configurable": {"thread_id": thread_id, "actor_id": "mia-agent"}},
+            subgraphs=True,
+        )
+        if pending_interrupt_from_snapshot(snapshot) is not None:
             raise HTTPException(
                 status_code=409,
-                detail="Another turn is active for this thread.",
+                detail="Resolve the pending approval before starting voice mode.",
             )
-        activity_store.begin_session(research_thread_id)
-        try:
-            snapshot = await request.app.state.agent_app.aget_state(
-                {
-                    "configurable": {
-                        "thread_id": research_thread_id,
-                        "actor_id": "mia-agent",
-                    }
-                },
-                subgraphs=True,
-            )
-            if pending_interrupt_from_snapshot(snapshot) is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Resolve the pending approval before starting voice mode.",
-                )
-        except Exception as exc:
-            activity_store.end_session(research_thread_id, error=exc)
-            await coordinator.release(lease)
-            raise
+    except Exception as exc:
+        activity_store.end_session(thread_id, error=exc)
+        await coordinator.release(lease)
+        raise
 
     try:
         response = await _client.live.create(
@@ -104,26 +87,15 @@ async def create_session(payload: GptLiveSessionRequest, request: Request) -> Gp
             transport={"sdp": payload.sdp, "type": "webrtc"},
         )
     except Exception as exc:
-        if lease is not None:
-            activity_store.end_session(research_thread_id, error=exc)
-            await coordinator.release(lease)
+        activity_store.end_session(thread_id, error=exc)
+        await coordinator.release(lease)
         raise
 
     session_id = response.session.id
-    thread_id = research_thread_id if is_research else (
-        payload.thread_id or f"voice-{session_id}"
-    )
-    agent_app = (
-        request.app.state.agent_app
-        if is_research
-        else request.app.state.voice_agent_app
-    )
 
     worker_coro = run_delegation_worker(
         session_id,
         thread_id,
-        agent_app,
-        surface=payload.surface,
         research_runtime=research_runtime,
         activity_store=activity_store,
         lease=lease,
@@ -133,9 +105,8 @@ async def create_session(payload: GptLiveSessionRequest, request: Request) -> Gp
         task = _spawn_task(worker_coro)
     except Exception as exc:
         worker_coro.close()
-        if lease is not None:
-            activity_store.end_session(thread_id, error=exc)
-            await coordinator.release(lease)
+        activity_store.end_session(thread_id, error=exc)
+        await coordinator.release(lease)
         raise
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
@@ -167,16 +138,3 @@ async def decide_voice_action(
     if result.status == "error":
         raise HTTPException(status_code=500, detail=result.response)
     return VoiceDecisionResponse(status=result.status, response=result.response)
-
-
-@router.get("/voice/{thread_id}/transcript", response_model=VoiceTranscriptResponse)
-async def get_voice_transcript(
-    thread_id: str, request: Request, after: int = 0
-) -> VoiceTranscriptResponse:
-    entries = transcript_store.get_after(thread_id, after)
-    last_id = entries[-1]["id"] if entries else after
-    agent_app = request.app.state.voice_agent_app
-    paused, action = await is_interrupted(agent_app, thread_id)
-    return VoiceTranscriptResponse(
-        messages=entries, last_id=last_id, paused=paused, action=action
-    )

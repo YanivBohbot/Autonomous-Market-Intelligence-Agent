@@ -11,7 +11,6 @@ from app.voice.research_runtime import ResearchVoiceRuntime
 async def test_lifespan_shares_one_multi_agent_graph_across_transports(monkeypatch):
     monkeypatch.setattr(server.settings, "CHECKPOINTER_BACKEND", "memory")
     monkeypatch.setattr(server.settings, "COPILOT_ENABLED", True)
-    monkeypatch.setattr(server, "build_voice_agent_app", lambda checkpointer, store: object())
     test_app = FastAPI()
 
     async with server.lifespan(test_app):

@@ -1,6 +1,6 @@
 """Transport-agnostic helpers shared by the GPT-Live delegation worker.
 
-The LLM is the compiled LangGraph workflow (`app.voice.graph`), invoked
+The LLM is the Research agent graph, invoked
 directly by `app.voice.worker`, so voice turns run the same tools + HITL
 flow as text turns.
 """

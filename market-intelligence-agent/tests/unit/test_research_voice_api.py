@@ -62,7 +62,6 @@ def voice_api(monkeypatch):
     app.state.turn_coordinator = ThreadTurnCoordinator()
     app.state.voice_activity_store = VoiceActivityStore()
     app.state.agent_app = EmptyGraph()
-    app.state.voice_agent_app = object()
     app.state.research_voice_runtime = RuntimeStub()
     monkeypatch.setattr(
         gptlive_session.settings,
@@ -95,21 +94,42 @@ def voice_api(monkeypatch):
     yield TestClient(app, raise_server_exceptions=False), create, captured
 
 
-def test_omitted_surface_preserves_classic_worker_contract(voice_api):
+def test_omitted_surface_defaults_to_research(voice_api):
     client, create, captured = voice_api
 
     response = client.post(
         "/gptlive/session",
-        json={"sdp": "offer-sdp", "thread_id": "classic-thread"},
+        json={"sdp": "offer-sdp", "thread_id": "default-thread"},
+        headers={"Origin": "http://127.0.0.1:5173"},
     )
 
     assert response.status_code == 200
     assert response.json() == {"session_id": "live-session-1", "sdp": "answer-sdp"}
     args, kwargs = captured["worker"]
-    assert args[:3] == ("live-session-1", "classic-thread", app.state.voice_agent_app)
-    assert kwargs["surface"] == "classic"
-    assert kwargs["research_runtime"] is None
+    assert args == ("live-session-1", "default-thread")
+    assert "surface" not in kwargs
+    assert kwargs["research_runtime"] is app.state.research_voice_runtime
+    assert kwargs["activity_store"] is app.state.voice_activity_store
+    assert kwargs["lease"] is not None
     create.assert_awaited_once()
+    asyncio.run(app.state.turn_coordinator.release(kwargs["lease"]))
+
+
+def test_classic_surface_is_rejected(voice_api):
+    client, create, captured = voice_api
+    response = client.post(
+        "/gptlive/session",
+        json={"sdp": "offer-sdp", "surface": "classic"},
+        headers={"Origin": "http://127.0.0.1:5173"},
+    )
+    assert response.status_code == 422
+    create.assert_not_awaited()
+    assert "worker" not in captured
+
+
+def test_transcript_endpoint_is_gone(voice_api):
+    client, _, _ = voice_api
+    assert client.get("/voice/any-thread/transcript").status_code == 404
 
 
 def test_research_session_acquires_lease_and_passes_shared_dependencies(voice_api):
@@ -123,7 +143,6 @@ def test_research_session_acquires_lease_and_passes_shared_dependencies(voice_ap
 
     assert response.status_code == 200
     _, kwargs = captured["worker"]
-    assert kwargs["surface"] == "research"
     assert kwargs["research_runtime"] is app.state.research_voice_runtime
     assert kwargs["activity_store"] is app.state.voice_activity_store
     assert kwargs["lease"].thread_id == "research-thread"
@@ -313,7 +332,7 @@ class FakeConnection:
 
 @pytest.mark.anyio
 async def test_research_worker_does_not_write_transcripts_and_releases_lease(monkeypatch):
-    from app.voice import transcript_store, worker
+    from app.voice import worker
 
     thread_id = "research-worker-no-transcript"
     events = [
@@ -345,8 +364,6 @@ async def test_research_worker_does_not_write_transcripts_and_releases_lease(mon
     await run_delegation_worker(
         "session-1",
         thread_id,
-        object(),
-        surface="research",
         research_runtime=runtime,
         activity_store=store,
         lease=lease,
@@ -354,7 +371,6 @@ async def test_research_worker_does_not_write_transcripts_and_releases_lease(mon
     )
 
     runtime.run_turn.assert_awaited_once_with(thread_id, "AAPL price")
-    assert transcript_store.get_after(thread_id, 0) == []
     assert await coordinator.owner(thread_id) is None
     assert store.snapshot(thread_id)["phase"] == "disconnected"
 
@@ -402,8 +418,6 @@ async def test_session_close_during_analysis_cancels_task_and_releases_lease(mon
     await run_delegation_worker(
         "session-1",
         "cancel-thread",
-        object(),
-        surface="research",
         research_runtime=runtime,
         activity_store=store,
         lease=lease,
@@ -455,8 +469,6 @@ async def test_spoken_approval_uses_the_shared_decision_runtime(monkeypatch):
     await run_delegation_worker(
         "session-1",
         "approval-thread",
-        object(),
-        surface="research",
         research_runtime=runtime,
         activity_store=store,
         lease=lease,
@@ -493,8 +505,6 @@ async def test_worker_connection_failure_releases_research_lease(monkeypatch):
     await run_delegation_worker(
         "session-1",
         "worker-failure",
-        object(),
-        surface="research",
         research_runtime=SimpleNamespace(),
         activity_store=store,
         lease=lease,
