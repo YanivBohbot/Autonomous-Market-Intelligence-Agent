@@ -8,7 +8,11 @@ from langgraph.types import Command
 
 from app.core.config import settings
 from app.agent.multi_agent.state import SupervisorState
-from app.agent.prompts.specialist_agent_prompts import SUPERVISOR_ROUTING_PROMPT
+from app.agent.prompts.specialist_agent_prompts import (
+    INGESTED_DOCUMENTS_PLACEHOLDER,
+    SUPERVISOR_ROUTING_PROMPT,
+    ingested_documents_list,
+)
 
 
 SpecialistName = Literal[
@@ -20,14 +24,12 @@ SpecialistName = Literal[
     "browser_agent",
     "email_agent",
 ]
-# Where the supervisor can send control: a specialist, or END ("__end__").
-Route = Literal[SpecialistName, "__end__"]
+# Where the supervisor can send control: a specialist or the finalizer.
+Route = Literal[SpecialistName, "finalize_turn"]
 
 
 def _finish() -> Command[Route]:
-    # "__end__" is langgraph's END; spelled as a literal so the type checker
-    # keeps Command[Route] instead of widening to Command[str].
-    return Command(goto="__end__", update={"next_agent": None})
+    return Command(goto="finalize_turn", update={"next_agent": None})
 
 
 class RoutingDecision(BaseModel):
@@ -63,6 +65,16 @@ _SAVE_LANGUAGE_RE = re.compile(r"\b(save|export|download)\b", re.IGNORECASE)
 # memory_agent or finance_agent request that happens to follow a portfolio
 # question (see test_sticky_rule_does_not_fire_when_the_prior_answer_never_mentioned_a_report).
 _REPORT_LANGUAGE_RE = re.compile(r"\b(report|brief)\b", re.IGNORECASE)
+
+
+_EMAIL_REQUEST_RE = re.compile(r"\b(e-?mail|send)\b", re.IGNORECASE)
+
+
+def _latest_human_text(messages: list) -> str:
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            return _message_text(m)
+    return ""
 
 
 def _message_text(message) -> str:
@@ -103,6 +115,21 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     # specialist to fetch the same answer again instead of picking FINISH —
     # prompt wording alone couldn't fully fix this non-determinism, so we
     # don't ask the LLM to reconfirm something we can already tell.
+    # Exception: an email request whose content needs portfolio facts goes
+    # portfolio_agent -> email_agent within the same turn, so the email uses
+    # real numbers. Without this the finish rule below would end the turn
+    # after portfolio_agent's answer. email_agent's own answer then finishes.
+    if (
+        state.get("next_agent") == "portfolio_agent"
+        and isinstance(last, AIMessage)
+        and not getattr(last, "tool_calls", None)
+        and _EMAIL_REQUEST_RE.search(_latest_human_text(messages))
+    ):
+        return Command(
+            goto="email_agent",
+            update={"next_agent": "email_agent", "last_agent": "email_agent", "agent_hops": hops + 1},
+        )
+
     if (
         state.get("next_agent") is not None
         and isinstance(last, AIMessage)
@@ -145,9 +172,29 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     # causing it to loop to MAX_AGENT_HOPS instead of picking FINISH.
     # with_structured_output is typed as dict | BaseModel; with a pydantic
     # schema it returns a RoutingDecision instance.
+    # Substituted fresh on every call, not baked in at import time -- a PDF
+    # uploaded via /data/import/pdf while the server is already running
+    # must be recognized immediately, not only after a restart.
+    routing_prompt = SUPERVISOR_ROUTING_PROMPT.replace(
+        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
+    )
+    # Without this, the router had no idea a client was even active (only
+    # portfolio_agent/finance_agent/rag_agent read client_context via their
+    # own client_context_prompt middleware) -- a vague client question like
+    # "qui est le client" could route to memory_agent or another specialist
+    # that has never heard of this client, producing a confused answer.
+    client_context = state.get("client_context")
+    if client_context:
+        routing_prompt = (
+            f"{routing_prompt}\n\n{client_context} When this client is active and the question "
+            "is about them -- even phrased generically (\"who is the client\", \"what's their "
+            "portfolio worth\") -- prefer portfolio_agent, finance_agent, or rag_agent over "
+            "memory_agent/filesystem_agent/browser_agent/email_agent, which don't know who this "
+            "client is."
+        )
     decision = cast(RoutingDecision, _router.invoke(
         [
-            SystemMessage(content=SUPERVISOR_ROUTING_PROMPT),
+            SystemMessage(content=routing_prompt),
             *state.get("messages", []),
         ]
     ))

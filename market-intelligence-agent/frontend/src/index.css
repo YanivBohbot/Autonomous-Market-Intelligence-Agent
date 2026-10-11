@@ -2,31 +2,125 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Light theme (default) -- modern SaaS: white cards, soft shadows. */
+  --terminal-bg: 248 250 252; /* slate-50 */
+  --terminal-panel: 255 255 255;
+  --terminal-border: 203 213 225; /* slate-300 -- visible but light; slate-200 nearly vanished against white, slate-400 read as too heavy */
+  --terminal-text: 30 41 59; /* slate-800 */
+  --terminal-muted: 100 116 139; /* slate-500 */
+  --terminal-accent: 5 150 105; /* emerald-600 */
+  --terminal-accent-dim: 209 250 229; /* emerald-100 */
+  --terminal-warn: 217 119 6; /* amber-600 */
+  --terminal-warn-dim: 254 243 199; /* amber-100 */
+  --terminal-danger: 220 38 38; /* red-600 */
+  --terminal-danger-dim: 254 226 226; /* red-100 */
+  --terminal-user: 239 246 255; /* blue-50 */
+  --terminal-user-border: 37 99 235; /* blue-600 */
+  --brand-blue: 37 99 235;
+  --surface-elevated: 255 255 255;
+  --surface-soft: 241 245 249;
+  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 1px rgb(0 0 0 / 0.06);
+  --scrollbar-thumb: 203 213 225;
+  --scrollbar-thumb-hover: 148 163 184;
+}
+
+/* Keep CopilotKit's supported v2 theme tokens local to Research. The public
+   data attribute handles both possible className placements without relying
+   on generated component classes. */
+.finance-desk-chat[data-copilotkit],
+.finance-desk-chat [data-copilotkit] {
+  --background: rgb(var(--terminal-bg));
+  --foreground: rgb(var(--terminal-text));
+  --card: rgb(var(--terminal-panel));
+  --card-foreground: rgb(var(--terminal-text));
+  --popover: rgb(var(--terminal-panel));
+  --popover-foreground: rgb(var(--terminal-text));
+  --primary: rgb(var(--brand-blue));
+  --primary-foreground: #ffffff;
+  --secondary: rgb(var(--surface-soft));
+  --secondary-foreground: rgb(var(--terminal-text));
+  --muted: rgb(var(--surface-soft));
+  --muted-foreground: rgb(var(--terminal-muted));
+  --accent: rgb(var(--surface-soft));
+  --accent-foreground: rgb(var(--terminal-text));
+  --border: rgb(var(--terminal-border));
+  --input: rgb(var(--terminal-border));
+  --ring: rgb(var(--brand-blue));
+  --radius: 0.875rem;
+  --cpk-color-zinc-200: rgb(var(--terminal-border));
+  --cpk-color-gray-200: rgb(var(--terminal-border));
+}
+
+.finance-desk-chat {
+  min-height: 0;
+  overflow: hidden;
+  background: rgb(var(--terminal-panel));
+}
+
+/* The Market Desk composer (CopilotKit v2's prebuilt chat input) has no
+   visible frame of its own -- its exact wrapper class is internal and
+   unstable, so target the input element directly and give it the same
+   frame as Classic's textarea (App.tsx), using the same tokens so both
+   stay in sync across theme changes. */
+.finance-desk-chat textarea,
+.finance-desk-chat [contenteditable="true"] {
+  border: 1px solid rgb(var(--terminal-border)) !important;
+  border-radius: 0.75rem;
+  background-color: rgb(var(--terminal-bg));
+}
+.finance-desk-chat textarea:focus,
+.finance-desk-chat [contenteditable="true"]:focus {
+  border-color: rgb(var(--brand-blue) / 0.7) !important;
+  box-shadow: 0 0 0 3px rgb(var(--brand-blue) / 0.14);
+  outline: none;
+}
+
+[data-theme="dark"] {
+  /* Original terminal palette, kept as the opt-in alternate theme. */
+  --terminal-bg: 10 14 20;
+  --terminal-panel: 15 22 32;
+  --terminal-border: 28 39 51;
+  --terminal-text: 201 212 224;
+  --terminal-muted: 107 122 141;
+  --terminal-accent: 52 211 153;
+  --terminal-accent-dim: 26 107 74;
+  --terminal-warn: 251 191 36;
+  --terminal-warn-dim: 107 79 10;
+  --terminal-danger: 248 113 113;
+  --terminal-danger-dim: 107 26 26;
+  --terminal-user: 30 58 95;
+  --terminal-user-border: 37 99 235;
+  --brand-blue: 96 165 250;
+  --surface-elevated: 17 24 39;
+  --surface-soft: 15 23 42;
+  --card-shadow: none;
+  --scrollbar-thumb: 28 39 51;
+  --scrollbar-thumb-hover: 45 63 82;
+}
+
 html, body, #root { height: 100%; }
+html { font-size: 17px; }
 body {
   @apply bg-terminal-bg text-terminal-text font-sans antialiased;
   margin: 0;
+  line-height: 1.55;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
+
+/* Card surface shared by list rows, panels and chat bubbles -- a soft
+   shadow in light mode, no-op in dark mode (border/panel contrast already
+   does the job there, and shadows barely read on a dark background). */
+.card-shadow { box-shadow: var(--card-shadow); }
 
 /* Custom scrollbar — narrow, subtle */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #1c2733;
+  background: rgb(var(--scrollbar-thumb));
   border-radius: 2px;
 }
-::-webkit-scrollbar-thumb:hover { background: #2d3f52; }
-
-/* Scan-line overlay on the header bar */
-.scan-lines {
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0,0,0,0.06) 2px,
-    rgba(0,0,0,0.06) 4px
-  );
-}
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--scrollbar-thumb-hover)); }
 
 /* Streaming caret */
 .streaming-caret::after {
@@ -52,4 +146,41 @@ body {
 .chat-prose ol { @apply ml-4 list-decimal; }
 .chat-prose h1, .chat-prose h2, .chat-prose h3 {
   @apply font-semibold text-terminal-text mt-3 mb-1;
+}
+
+@keyframes market-ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes voice-wave {
+  from { transform: scaleY(0.55); opacity: 0.62; }
+  to { transform: scaleY(1.2); opacity: 1; }
+}
+
+.market-ticker-track {
+  width: max-content;
+  animation: market-ticker-scroll 42s linear infinite;
+}
+
+.market-ticker:hover .market-ticker-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .market-ticker-track {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .market-ticker-copy {
+    display: none;
+  }
 }

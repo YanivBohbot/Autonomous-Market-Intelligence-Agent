@@ -15,20 +15,3 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
-
-  ui:
-    build: .
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./data:/app/data
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      - API_URL=http://api:8000
-    depends_on:
-      api:
-        condition: service_healthy
-    command: ["uv", "run", "streamlit", "run", "app/ui/app.py", "--server.port", "8080", "--server.address", "0.0.0.0"]
-    restart: unless-stopped

@@ -2,6 +2,7 @@ import logging
 import re
 from collections.abc import AsyncIterable
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
@@ -9,9 +10,13 @@ from langchain_core.messages import AIMessageChunk, ToolMessage
 
 from app.agent.tools.mcp_clients.browser_client import SCREENSHOT_TOOL_NAME
 from app.api.models.models import StreamRequest
-from app.api.routers._helpers import get_action_description
+from app.api.routers._helpers import (
+    get_action_description,
+    pending_interrupt_from_snapshot,
+)
 
 _SCREENSHOT_LINK_RE = re.compile(r"\[Screenshot[^\]]*\]\(([^)]+)\)")
+_STREAMABLE_NODES = {"agent", "model", "synthesize"}
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,12 +61,17 @@ def _screenshot_filename(content) -> str | None:
     return Path(raw).name
 
 
+# Node name of SensitiveDataGuard's before_model hook inside a specialist
+# subgraph (app/agent/guardrails/middleware.py).
+_GUARD_NODE = "SensitiveDataGuard.before_model"
+
+
 def _static_message_content(node_name: str, update) -> str | None:
-    """pii_guard's short-circuit AIMessage is added straight to graph state,
-    not streamed as an AIMessageChunk -- that only happens for generate's LLM
-    call -- so without this, a blocked turn produced zero token events and
+    """SensitiveDataGuard's blocking AIMessage is added straight to graph
+    state, never streamed as an AIMessageChunk (that only happens for model
+    calls) -- so without this, a blocked turn produced zero token events and
     the client never saw the warning, even though the block itself worked."""
-    if node_name != "pii_guard" or not isinstance(update, dict):
+    if node_name != _GUARD_NODE or not isinstance(update, dict):
         return None
     messages = update.get("messages")
     if not messages:
@@ -96,10 +106,26 @@ async def stream_endpoint(
         }
     }
     inputs = {"question": payload.query}
+    coordinator = request.app.state.turn_coordinator
+    lease = await coordinator.try_acquire(
+        payload.thread_id, f"text:stream:{uuid4()}"
+    )
+    if lease is None:
+        owner = await coordinator.owner(payload.thread_id)
+        error = (
+            "Voice mode is active for this thread."
+            if owner and owner.startswith("voice:")
+            else "Another turn is active for this thread."
+        )
+        yield ServerSentEvent(data={"error": error}, event="error")
+        return
 
     try:
-        async for mode, chunk in agent_app.astream(
-            inputs, config, stream_mode=["updates", "messages"]
+        async for _namespace, mode, chunk in agent_app.astream(
+            inputs,
+            config,
+            stream_mode=["updates", "messages"],
+            subgraphs=True,
         ):
             if mode == "updates":
                 for node_name, update in chunk.items():
@@ -121,7 +147,7 @@ async def stream_endpoint(
                 token, meta = chunk
                 if (
                     isinstance(token, AIMessageChunk)
-                    and meta.get("langgraph_node") == "generate"
+                    and meta.get("langgraph_node") in _STREAMABLE_NODES
                     and token.content
                     and not getattr(token, "tool_call_chunks", None)
                 ):
@@ -129,10 +155,12 @@ async def stream_endpoint(
                         data={"token": token.content}, event="token"
                     )
 
-        snapshot = await agent_app.aget_state(config)
-        if snapshot.next and "approval" in snapshot.next:
-            last_msg = snapshot.values["messages"][-1]
-            action = get_action_description(last_msg)
+        snapshot = await agent_app.aget_state(config, subgraphs=True)
+        pending = pending_interrupt_from_snapshot(snapshot)
+        if pending is not None:
+            requests = pending.value.get("action_requests")
+            action_request = requests[0] if isinstance(requests, list) and requests else None
+            action = get_action_description(pending.last_message, action_request)
             yield ServerSentEvent(
                 data={"action": action, "next_step": str(snapshot.next)},
                 event="interrupted",
@@ -142,3 +170,5 @@ async def stream_endpoint(
     except Exception as exc:
         logger.exception("stream failed for thread %s", payload.thread_id)
         yield ServerSentEvent(data={"error": str(exc)}, event="error")
+    finally:
+        await coordinator.release(lease)

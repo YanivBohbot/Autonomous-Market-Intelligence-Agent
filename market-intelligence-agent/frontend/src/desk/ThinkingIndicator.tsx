@@ -54,7 +54,7 @@ export function ThinkingIndicator() {
   if (!label) return null;
 
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-terminal-border bg-terminal-panel px-3 py-2 font-mono text-xs text-terminal-accent">
+    <div className="flex items-center gap-2 rounded-xl border border-terminal-border bg-terminal-panel card-shadow px-3 py-2 font-mono text-xs text-terminal-accent">
       <span className="flex gap-0.5">
         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-terminal-accent [animation-delay:-0.3s]" />
         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-terminal-accent [animation-delay:-0.15s]" />

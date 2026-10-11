@@ -41,3 +41,13 @@ def test_keeps_email_addresses_it_needs_to_work():
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
     guard = next(m for m in kw["middleware"] if isinstance(m, SensitiveDataGuard))
     assert guard.check_email is False
+
+
+def test_prompt_requires_checking_memory_before_answering_preference_questions():
+    """Regression (QA row 14): a new thread asked "What is my preferred report
+    format?" answered "no info" without calling any tool."""
+    from app.agent.prompts.specialist_agent_prompts import MEMORY_SYSTEM_PROMPT
+    p = MEMORY_SYSTEM_PROMPT
+    assert "ALWAYS call `list_memories`" in p
+    assert "own facts or preferences" in p
+    assert "never say nothing is saved" in p.lower()

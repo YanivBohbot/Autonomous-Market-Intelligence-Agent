@@ -1,6 +1,6 @@
 """GET /workspace/screenshots/{filename} — serves screenshots the agent's
 browser_take_screenshot tool writes into WORKSPACE_ROOT/screenshots, so the
-Streamlit chat can render them inline (app/ui/app.py)."""
+chat can render them inline."""
 from fastapi.testclient import TestClient
 
 from app.core.config import settings

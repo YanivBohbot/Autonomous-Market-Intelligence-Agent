@@ -15,6 +15,8 @@ from langchain.agents.middleware import PIIMiddleware, SummarizationMiddleware
 from app.agent.middleware import (
     base_middleware,
     call_limit,
+    client_context_prompt,
+    fresh_documents_prompt,
     mask_credit_cards,
     redact_emails,
     specialist_model,
@@ -23,6 +25,8 @@ from app.agent.middleware import (
     today_prompt,
     tool_errors_to_messages,
 )
+from app.agent.multi_agent.state import ClientContextState
+from app.agent.prompts.specialist_agent_prompts import INGESTED_DOCUMENTS_PLACEHOLDER
 from app.agent.guardrails import SensitiveDataGuard
 from tests.unit.fake_chat import FakeToolModel
 
@@ -132,6 +136,58 @@ async def test_today_prompt_appends_todays_date_to_the_static_prompt():
     system_text = model.seen[0][0].content
     assert system_text.startswith("You are X.")
     assert f"Today's date is {date.today().isoformat()}." in system_text
+
+
+@pytest.mark.anyio
+async def test_client_context_prompt_appends_the_active_client_when_set():
+    model = FakeToolModel([AIMessage(content="hi")])
+    agent = create_agent(
+        model=model, tools=[], system_prompt="You are X.",
+        middleware=[client_context_prompt], state_schema=ClientContextState,
+    )
+    await agent.ainvoke({
+        "messages": [HumanMessage("q")],
+        "client_context": "Active client: Jane Doe, segment VIP, risk balanced, advisor Sam.",
+    })
+    system_text = model.seen[0][0].content
+    assert system_text.startswith("You are X.")
+    assert "Active client: Jane Doe" in system_text
+
+
+@pytest.mark.anyio
+async def test_client_context_prompt_leaves_the_prompt_unchanged_when_unset():
+    model = FakeToolModel([AIMessage(content="hi")])
+    agent = create_agent(
+        model=model, tools=[], system_prompt="You are X.",
+        middleware=[client_context_prompt], state_schema=ClientContextState,
+    )
+    await agent.ainvoke({"messages": [HumanMessage("q")]})
+    assert model.seen[0][0].content == "You are X."
+
+
+@pytest.mark.anyio
+async def test_fresh_documents_prompt_substitutes_the_live_manifest(tmp_path, monkeypatch):
+    manifest = tmp_path / "kb_documents.json"
+    manifest.write_text('["report-a.pdf"]', encoding="utf-8")
+    monkeypatch.setattr(
+        "app.agent.prompts.specialist_agent_prompts._KB_MANIFEST_PATH", manifest
+    )
+
+    model = FakeToolModel([AIMessage(content="hi"), AIMessage(content="hi again")])
+    agent = create_agent(
+        model=model,
+        tools=[],
+        system_prompt=f"Docs: {INGESTED_DOCUMENTS_PLACEHOLDER}",
+        middleware=[fresh_documents_prompt],
+    )
+    await agent.ainvoke({"messages": [HumanMessage("q")]})
+    assert model.seen[0][0].content == "Docs: report-a.pdf"
+
+    # A document uploaded AFTER the agent was built (no rebuild/restart)
+    # must still show up on the next call -- this is the whole point.
+    manifest.write_text('["report-a.pdf", "report-b.pdf"]', encoding="utf-8")
+    await agent.ainvoke({"messages": [HumanMessage("q2")]})
+    assert model.seen[-1][0].content == "Docs: report-a.pdf, report-b.pdf"
 
 
 @tool

@@ -16,11 +16,10 @@ from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.store.base import BaseStore
 
-from app.agent.multi_agent import build_multi_agent_app
+from app.agent.turn_coordinator import TurnLease
 from app.core.config import settings
 
 MARKET_DESK_AGENT_NAME = "market_desk"
@@ -39,16 +38,22 @@ def _is_summary(message) -> bool:
     return getattr(message, "additional_kwargs", {}).get("lc_source") == "summarization"
 
 
+def _source(message) -> str:
+    return "voice" if getattr(message, "additional_kwargs", {}).get("source") == "voice" else "text"
+
+
 class MarketDeskAgent(LangGraphAgent):
     """LangGraphAgent that keeps SummarizationMiddleware's summary (a
     HumanMessage in state, needed by the model) out of what the browser
     renders — otherwise it shows up in the chat as if the user typed it.
+    Voice turns are shown too (tagged `source: "voice"`, 2026-10-11 spec).
 
     Hooks ag-ui-langgraph's snapshot filter (a private method, pinned by
     test_summary_message_is_not_sent_to_the_chat)."""
 
     def _filter_orphan_tool_messages(self, messages: list) -> list:
-        return super()._filter_orphan_tool_messages([m for m in messages if not _is_summary(m)])
+        visible = [m for m in messages if not _is_summary(m)]
+        return super()._filter_orphan_tool_messages(visible)
 
     def _build_command_from_agui_resume(self, entries: list, *, open_interrupts=None) -> Command:
         """CopilotKit's cancel() resumes with status "cancelled", but every
@@ -73,12 +78,10 @@ def _pending_action_count(open_interrupts: list, interrupt_id: str) -> int:
     return 0
 
 
-def build_market_desk_agent(
-    checkpointer: BaseCheckpointSaver, store: BaseStore | None
-) -> LangGraphAgent:
+def build_market_desk_agent(graph) -> LangGraphAgent:
     return MarketDeskAgent(
         name=MARKET_DESK_AGENT_NAME,
-        graph=build_multi_agent_app(checkpointer, store),
+        graph=graph,
         emit_subagent_events=True,
         emit_interrupt_outcome=True,
         enable_legacy_on_interrupt_event=False,
@@ -86,10 +89,8 @@ def build_market_desk_agent(
     )
 
 
-def attach_market_desk(
-    app: FastAPI, checkpointer: BaseCheckpointSaver, store: BaseStore | None
-) -> None:
-    app.state.market_desk_agent = build_market_desk_agent(checkpointer, store)
+def attach_market_desk(app: FastAPI, graph) -> None:
+    app.state.market_desk_agent = build_market_desk_agent(graph)
 
 
 @router.post("/copilot/market-desk")
@@ -101,6 +102,23 @@ async def market_desk(input_data: RunAgentInput, request: Request):
     encoder = EventEncoder(accept=request.headers.get("accept"))
     # LangGraphAgent keeps per-run state on the instance: one clone per request.
     run_agent = agent.clone()
+    coordinator = getattr(request.app.state, "turn_coordinator", None)
+    if coordinator is None:
+        raise HTTPException(status_code=503, detail="Turn coordinator is not ready.")
+
+    lease: TurnLease | None = None
+    if not input_data.resume:
+        lease = await coordinator.try_acquire(
+            input_data.thread_id, f"text:{input_data.run_id}"
+        )
+        if lease is None:
+            owner = await coordinator.owner(input_data.thread_id)
+            detail = (
+                "Voice mode is active for this thread."
+                if owner and owner.startswith("voice:")
+                else "Another turn is active for this thread."
+            )
+            raise HTTPException(status_code=409, detail=detail)
 
     async def events():
         try:
@@ -109,8 +127,42 @@ async def market_desk(input_data: RunAgentInput, request: Request):
         except Exception as exc:  # the headers are sent: report in-band
             logger.exception("Market Desk run failed (thread %s)", input_data.thread_id)
             yield encoder.encode(RunErrorEvent(type=EventType.RUN_ERROR, message=str(exc)))
+        finally:
+            if lease is not None:
+                await coordinator.release(lease)
 
     return StreamingResponse(events(), media_type=encoder.get_content_type())
+
+
+@router.get("/copilot/market-desk/history")
+async def market_desk_history(thread_id: str, request: Request) -> list[dict]:
+    """Plain user/assistant messages for a thread, read straight from the
+    graph's checkpoint -- no run, no model call. Lets the frontend seed a
+    chat panel with prior conversation on mount (agent.setMessages(...)),
+    since CopilotKit itself never fetches history on its own; see
+    docs/superpowers/specs/2026-10-04-clients-workspace-design.md's
+    Known limitation note. Tool messages and summarization HumanMessages
+    (_is_summary) are left out. Voice turns are included and tagged
+    `source: "voice"` (2026-10-11 spec); typed turns are `source: "text"`.
+    This is for display, not model context."""
+    agent: LangGraphAgent | None = getattr(request.app.state, "market_desk_agent", None)
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Market Desk agent is not ready.")
+    snapshot = await agent.graph.aget_state({"configurable": {"thread_id": thread_id}})
+    messages = snapshot.values.get("messages", []) if snapshot.values else []
+    return [
+        {
+            "id": m.id,
+            "role": "user" if isinstance(m, HumanMessage) else "assistant",
+            "content": m.content,
+            "source": _source(m),
+        }
+        for m in messages
+        if isinstance(m, (HumanMessage, AIMessage))
+        and isinstance(m.content, str)
+        and m.content
+        and not _is_summary(m)
+    ]
 
 
 @router.post("/copilot/uploads")

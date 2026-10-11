@@ -2,7 +2,7 @@ import type { DisplayPayload } from "./types";
 
 export function TickerInfoCard({ display }: { display: Extract<DisplayPayload, { type: "ticker_info" }> }) {
   return (
-    <div className="rounded-xl border border-terminal-border bg-terminal-panel p-3 font-mono text-xs text-terminal-text">
+    <div className="rounded-xl border border-terminal-border bg-terminal-panel card-shadow p-3 font-mono text-xs text-terminal-text">
       <div className="flex items-baseline justify-between">
         <span className="font-semibold">{display.name}</span>
         <span className="text-terminal-muted">{display.ticker}</span>

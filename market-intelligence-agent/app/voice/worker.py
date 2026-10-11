@@ -2,27 +2,26 @@
 
 Attaches to a GPT-Live session (client-delegation mode) over a sideband
 WebSocket and bridges its `session.delegation.created` events to the
-compiled LangGraph voice workflow (`app.voice.graph`). Spawned as a
+Research voice runtime. Spawned as a
 background asyncio task per session by
 `app/api/routers/gptlive_session.py` right after the browser's WebRTC leg
 is created — there is no separate worker process to run.
 """
+import asyncio
 import logging
 import sys
+from contextlib import suppress
 
-from langchain_core.messages import HumanMessage
 from openai import AsyncOpenAI
 
 from app.core.config import settings
-from app.voice import transcript_store
-from app.voice.hitl import classify_verdict, is_interrupted, resume_with
-from app.voice.session import _ToolCallLogger, strip_binary_score_prefix
+from app.voice.hitl import classify_verdict
 
 logger = logging.getLogger("voice.worker")
 
 _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-GREETING = "שלום, אני עוזר המודיעין העסקי שלך. איך אוכל לעזור?"
+RESEARCH_GREETING = "Voice mode is ready. How can I help?"
 
 
 def _trace(msg: str) -> None:
@@ -31,45 +30,65 @@ def _trace(msg: str) -> None:
     print(f"[voice.worker] {msg}", file=sys.stderr, flush=True)
 
 
-def _extract_reply(state: dict) -> str | None:
-    for msg in reversed(state.get("messages", [])):
-        content = getattr(msg, "content", None)
-        if content and not getattr(msg, "tool_calls", None):
-            return strip_binary_score_prefix(str(content))
-    return None
-
-
-async def _handle_delegation(
-    connection, agent_app, thread_id: str, delegation_id: str, question: str
+async def _handle_research_delegation(
+    connection,
+    research_runtime,
+    activity_store,
+    thread_id: str,
+    delegation_id: str,
+    question: str,
+    is_closed,
 ) -> None:
-    config = {
-        "configurable": {"thread_id": thread_id, "actor_id": "mia-agent"},
-        "callbacks": [_ToolCallLogger()],
-    }
-    paused, action = await is_interrupted(agent_app, thread_id)
-    if paused:
+    pending = activity_store.snapshot(thread_id)["pending"]
+    if pending:
         verdict = classify_verdict(question)
         if verdict is None:
-            confirmation = f"I need confirmation before {action}. Say yes or no."
-            await connection.session.commentary.append(
-                delegation_id=delegation_id,
-                content=confirmation,
+            reply = "Say Approve or Reject, or use the approval card."
+        else:
+            decision = (
+                {"type": "approve"}
+                if verdict == "approve"
+                else {"type": "reject", "message": "Rejected by user."}
             )
-            transcript_store.append(thread_id, "assistant", confirmation)
-            return
-        state = await resume_with(agent_app, thread_id, verdict)
+            result = await research_runtime.resolve(
+                thread_id, pending["interrupt_id"], [decision]
+            )
+            reply = result.response
     else:
-        state = await agent_app.ainvoke(
-            {"messages": [HumanMessage(content=question)], "question": question},
-            config,
+        result = await research_runtime.run_turn(thread_id, question)
+        reply = result.response
+
+    if reply and not is_closed():
+        await connection.session.commentary.append(
+            delegation_id=delegation_id,
+            content=reply,
         )
-    reply = _extract_reply(state)
-    if reply:
-        await connection.session.commentary.append(delegation_id=delegation_id, content=reply)
-        transcript_store.append(thread_id, "assistant", reply)
 
 
-async def run_delegation_worker(session_id: str, thread_id: str, agent_app) -> None:
+async def _restore_research_phase(activity_store, thread_id: str) -> None:
+    await asyncio.sleep(0.35)
+    pending = activity_store.snapshot(thread_id)["pending"]
+    activity_store.set_phase(
+        thread_id, "approval_required" if pending else "listening"
+    )
+
+
+def _consume_task(task: asyncio.Task) -> None:
+    if task.cancelled():
+        return
+    with suppress(Exception):
+        task.result()
+
+
+async def run_delegation_worker(
+    session_id: str,
+    thread_id: str,
+    *,
+    research_runtime,
+    activity_store,
+    lease,
+    turn_coordinator,
+) -> None:
     """Run until the GPT-Live session closes (WebRTC leg disconnects).
 
     A delegation event carries no task text — only metadata — so this
@@ -77,38 +96,104 @@ async def run_delegation_worker(session_id: str, thread_id: str, agent_app) -> N
     accumulated transcript as the question when
     `session.delegation.created` fires.
     """
-    _trace(f"attaching sideband session_id={session_id} thread_id={thread_id}")
+    _trace(
+        f"attaching sideband session_id={session_id} thread_id={thread_id}"
+    )
     transcript_buffer = ""
-    async with _client.live.sideband.connect(session_id=session_id) as connection:
-        # Bypass the graph for the greeting — same rationale as the old
-        # LiveKit worker's session.say(): the graph is slow (LLM + tools),
-        # and if the user speaks during the greeting an in-flight run
-        # getting cancelled can leave the checkpointer in a bad state.
-        await connection.session.commentary.append(delegation_id=None, content=GREETING)
-        transcript_store.append(thread_id, "assistant", GREETING)
+    active_delegation: asyncio.Task | None = None
+    speaking_reset: asyncio.Task | None = None
+    closed = False
+    worker_error: Exception | None = None
 
-        async for event in connection:
-            if event.type == "session.input_transcript.delta":
-                transcript_buffer += event.delta
-            elif event.type == "session.delegation.created":
-                question = transcript_buffer.strip()
-                transcript_buffer = ""
-                _trace(f"delegation.created id={event.delegation.id} question={question!r}")
-                if question:
-                    transcript_store.append(thread_id, "user", question)
-                try:
-                    await _handle_delegation(
-                        connection, agent_app, thread_id, event.delegation.id, question
+    async def handle(connection, delegation_id: str, question: str) -> None:
+        try:
+            await _handle_research_delegation(
+                connection,
+                research_runtime,
+                activity_store,
+                thread_id,
+                delegation_id,
+                question,
+                lambda: closed,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("voice delegation failed (session=%s)", session_id)
+            activity_store.set_phase(thread_id, "error", error=True)
+            activity_store.append_event(
+                thread_id,
+                run_id=session_id,
+                kind="run_error",
+                message="Voice processing failed",
+            )
+            if not closed:
+                await connection.session.commentary.append(
+                    delegation_id=delegation_id,
+                    content="Voice processing failed. Please try again.",
+                )
+
+    try:
+        async with _client.live.sideband.connect(session_id=session_id) as connection:
+            activity_store.set_phase(thread_id, "listening")
+            # Bypass the graph for the greeting: it is transport setup, not a
+            # research turn, and must never contend with the checkpoint.
+            await connection.session.commentary.append(
+                delegation_id=None, content=RESEARCH_GREETING
+            )
+
+            async for event in connection:
+                if event.type == "session.input_transcript.delta":
+                    transcript_buffer += event.delta
+                elif event.type == "session.delegation.created":
+                    question = transcript_buffer.strip()
+                    transcript_buffer = ""
+                    _trace(
+                        f"delegation.created id={event.delegation.id} question={question!r}"
                     )
-                except Exception:
-                    logger.exception("voice delegation failed (session=%s)", session_id)
-                    await connection.session.commentary.append(
-                        delegation_id=event.delegation.id,
-                        content="Sorry, something went wrong handling that. Please try again.",
+                    if not question:
+                        continue
+                    if active_delegation is not None and not active_delegation.done():
+                        logger.warning(
+                            "ignoring overlapping voice delegation session=%s", session_id
+                        )
+                        continue
+                    active_delegation = asyncio.create_task(
+                        handle(connection, event.delegation.id, question)
                     )
-            elif event.type == "error":
-                logger.warning("GPT-Live sideband error (session=%s): %s", session_id, event)
-            elif event.type == "session.closed":
-                _trace(f"session closed session_id={session_id} reason={event.reason}")
-                break
+                    active_delegation.add_done_callback(_consume_task)
+                elif event.type == "session.output_audio.delta":
+                    activity_store.set_phase(thread_id, "speaking")
+                    if speaking_reset is not None:
+                        speaking_reset.cancel()
+                    speaking_reset = asyncio.create_task(
+                        _restore_research_phase(activity_store, thread_id)
+                    )
+                    speaking_reset.add_done_callback(_consume_task)
+                elif event.type == "error":
+                    logger.warning(
+                        "GPT-Live sideband error (session=%s): %s", session_id, event
+                    )
+                elif event.type == "session.closed":
+                    closed = True
+                    _trace(
+                        f"session closed session_id={session_id} reason={event.reason}"
+                    )
+                    if active_delegation is not None and not active_delegation.done():
+                        active_delegation.cancel()
+                        with suppress(asyncio.CancelledError, TimeoutError):
+                            await asyncio.wait_for(active_delegation, timeout=1.0)
+                    break
+    except Exception as exc:
+        worker_error = exc
+        logger.exception("voice worker failed (session=%s)", session_id)
+    finally:
+        closed = True
+        for task in (active_delegation, speaking_reset):
+            if task is not None and not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError, TimeoutError):
+                    await asyncio.wait_for(task, timeout=1.0)
+        activity_store.end_session(thread_id, error=worker_error)
+        await turn_coordinator.release(lease)
     _trace(f"worker exiting session_id={session_id}")

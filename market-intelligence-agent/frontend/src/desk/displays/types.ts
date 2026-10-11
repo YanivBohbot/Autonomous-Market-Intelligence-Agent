@@ -1,6 +1,6 @@
 // Wire contract with app/agent/multi_agent/display.py's DISPLAY_NORMALIZERS.
 // Keys are snake_case, matching the Python source dicts 1:1 (no case-mapping
-// layer), the same convention this codebase's ApproveResponse already uses.
+// layer), the same convention the backend API models use.
 
 export interface PortfolioPosition {
   ticker: string;

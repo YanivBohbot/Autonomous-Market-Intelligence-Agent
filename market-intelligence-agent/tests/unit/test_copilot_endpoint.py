@@ -2,6 +2,7 @@
 Every LLM is faked; the router is exercised on a bare FastAPI app so the
 test doesn't depend on the COPILOT_ENABLED flag (see test_copilot_wiring)."""
 import json
+import asyncio
 from contextlib import ExitStack
 from unittest.mock import patch
 
@@ -12,11 +13,13 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 
+from app.agent.multi_agent import build_multi_agent_app
 from app.agent.multi_agent import email_agent as email_mod
 from app.agent.multi_agent import finance_agent as finance_mod
 from app.agent.multi_agent import portfolio_agent as portfolio_mod
 from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import RoutingDecision
+from app.agent.turn_coordinator import ThreadTurnCoordinator
 from app.api.routers.copilot import attach_market_desk, router
 from tests.unit.fake_chat import FakeToolModel, StreamingFakeToolModel
 
@@ -50,7 +53,9 @@ def _client_with(stack: ExitStack, route_to: str) -> tuple[TestClient, FastAPI]:
     router_mock.invoke.return_value = RoutingDecision(next=route_to, reasoning="test")
     app = FastAPI()
     app.include_router(router)
-    attach_market_desk(app, InMemorySaver(), None)
+    graph = build_multi_agent_app(InMemorySaver(), None)
+    attach_market_desk(app, graph)
+    app.state.turn_coordinator = ThreadTurnCoordinator()
     return TestClient(app), app
 
 
@@ -171,13 +176,39 @@ def test_long_tool_loop_finishes():
 def test_graph_error_becomes_run_error_event():
     # A crash mid-run must reach the browser as RUN_ERROR, not a cut stream.
     with ExitStack() as stack:
-        client, _ = _client_with(stack, "finance_agent")
+        client, app = _client_with(stack, "finance_agent")
         supervisor_mod._router.invoke.side_effect = RuntimeError("router down")
         resp = client.post(PATH, json=_run_input("t5", "r1", [{"id": "u1", "role": "user", "content": "hi"}]))
     assert resp.status_code == 200
     last = _events(resp.text)[-1]
     assert last["type"] == "RUN_ERROR"
     assert "router down" in last["message"]
+    assert asyncio.run(app.state.turn_coordinator.owner("t5")) is None
+
+
+def test_typed_run_returns_409_without_running_when_voice_owns_thread(finance_client):
+    client, app = finance_client
+    coordinator = app.state.turn_coordinator
+    lease = asyncio.run(coordinator.try_acquire("voice-locked", "voice:test"))
+    assert lease is not None
+    try:
+        response = client.post(
+            PATH,
+            json=_run_input(
+                "voice-locked",
+                "typed-run",
+                [{"id": "u1", "role": "user", "content": "AAPL price?"}],
+            ),
+        )
+    finally:
+        asyncio.run(coordinator.release(lease))
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Voice mode is active for this thread."
+    snapshot = app.state.market_desk_agent.graph.get_state(
+        {"configurable": {"thread_id": "voice-locked"}}
+    )
+    assert not snapshot.values
 
 
 def _snapshot_texts(events: list[dict]) -> list[str]:
@@ -234,6 +265,80 @@ def test_cancel_rejects_the_pending_calls_and_frees_the_thread(email_client):
     assert events[-1]["type"] == "RUN_FINISHED"
     assert (events[-1].get("outcome") or {}).get("type") != "interrupt"
     assert SENT == []
+
+
+def test_history_returns_prior_user_and_assistant_messages(finance_client):
+    client, _ = finance_client
+    client.post(PATH, json=_run_input("t10", "r1", [{"id": "u1", "role": "user", "content": "AAPL price?"}]))
+
+    resp = client.get(f"{PATH}/history", params={"thread_id": "t10"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert {"role": "user", "content": "AAPL price?"}.items() <= body[0].items()
+    assert any(m["role"] == "assistant" and "AAPL is trading at $200." in m["content"] for m in body)
+
+
+def test_history_is_empty_for_an_unknown_thread(finance_client):
+    client, _ = finance_client
+    resp = client.get(f"{PATH}/history", params={"thread_id": "never-used"})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_history_excludes_the_internal_summarization_message(finance_client):
+    client, app = finance_client
+    graph = app.state.market_desk_agent.graph
+    cfg = {"configurable": {"thread_id": "t11"}}
+    graph.update_state(cfg, {"messages": [
+        HumanMessage(content="Here is a summary of the conversation to date: ...", id="s1",
+                     additional_kwargs={"lc_source": "summarization"}),
+    ]})
+    client.post(PATH, json=_run_input("t11", "r1", [{"id": "u1", "role": "user", "content": "AAPL price?"}]))
+
+    resp = client.get(f"{PATH}/history", params={"thread_id": "t11"})
+    assert resp.status_code == 200
+    assert not any("summary of the conversation" in m["content"] for m in resp.json())
+
+
+def test_history_and_snapshots_include_voice_turns_tagged_with_source(finance_client):
+    client, app = finance_client
+    graph = app.state.market_desk_agent.graph
+    cfg = {"configurable": {"thread_id": "voice-history"}}
+    messages = [
+        HumanMessage(content="Here is a summary of the conversation to date: ...", id="s1",
+                     additional_kwargs={"lc_source": "summarization"}),
+        HumanMessage(content="typed question", id="typed-1"),
+        AIMessage(content="typed answer", id="typed-2"),
+        HumanMessage(content="spoken question", id="voice-1", additional_kwargs={"source": "voice"}),
+        AIMessage(content="spoken answer", id="voice-2", additional_kwargs={"source": "voice"}),
+    ]
+    graph.update_state(cfg, {"messages": messages})
+
+    response = client.get(f"{PATH}/history", params={"thread_id": "voice-history"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [(m["content"], m["source"]) for m in body] == [
+        ("typed question", "text"),
+        ("typed answer", "text"),
+        ("spoken question", "voice"),
+        ("spoken answer", "voice"),
+    ]
+
+    filtered = app.state.market_desk_agent._filter_orphan_tool_messages(messages)
+    assert [m.content for m in filtered] == [
+        "typed question",
+        "typed answer",
+        "spoken question",
+        "spoken answer",
+    ]
+
+
+def test_history_404s_when_agent_not_ready():
+    app = FastAPI()
+    app.include_router(router)
+    resp = TestClient(app).get(f"{PATH}/history", params={"thread_id": "t0"})
+    assert resp.status_code == 503
 
 
 def test_portfolio_result_is_enveloped_for_the_frontend(portfolio_client):

@@ -1,7 +1,7 @@
-"""Unit tests for the shared tool_utils module, extracted so both the
-single-agent graph and the multi-agent specialists can sanitize MCP tool
-output without duplicating the image-stripping logic."""
-from app.agent.nodes.tool_utils import strip_image_content
+"""Unit tests for strip_image_content (app/agent/middleware.py), which the
+browser specialist's middleware uses to drop image parts from MCP tool
+output before it re-enters the conversation."""
+from app.agent.middleware import strip_image_content
 
 
 def test_strips_image_parts_keeps_text():

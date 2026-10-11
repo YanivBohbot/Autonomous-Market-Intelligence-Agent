@@ -1,17 +1,52 @@
-import { useMemo } from "react";
-import { CopilotChat, CopilotKitProvider, HttpAgent, useConfigureSuggestions } from "@copilotkit/react-core/v2";
+import { useCallback, useEffect, useMemo } from "react";
+import { CopilotChat, CopilotChatInput, CopilotKitProvider, HttpAgent } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
 import { DeskActivityRail } from "./DeskActivityRail";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useDeskInterrupt } from "./useDeskInterrupt";
 import { useToolDisplay } from "./displays/useToolDisplay";
-import { uploadToWorkspace } from "../lib/api";
+import { getThreadHistory, uploadToWorkspace, type ThreadMessage } from "../lib/api";
+import { useIntelligenceSlot } from "../layout/IntelligenceSlot";
+import { ResearchVoiceApproval } from "../voice/ResearchVoiceApproval";
+import { ResearchVoiceProvider, useResearchVoiceContext } from "../voice/ResearchVoiceContext";
+import { LiveCaptionBubble } from "../voice/LiveCaptionBubble";
+import { useVoiceHistoryRefresh } from "../voice/useVoiceHistoryRefresh";
+import { mergeHistory } from "./mergeHistory";
+import { ResearchComposer } from "./ResearchComposer";
+
+export type DeskViewProps = {
+  threadId: string;
+  voiceEnabled?: boolean;
+};
 
 // Market Desk: CopilotKit v2 talking AG-UI straight to FastAPI (no runtime).
 // Remounted per thread by App (key={threadId}), so New session starts clean.
-export function DeskView({ threadId }: { threadId: string }) {
+export function DeskView({ threadId, voiceEnabled = false }: DeskViewProps) {
   const agent = useMemo(() => new HttpAgent({ url: MARKET_DESK_URL }), []);
+
+  // CopilotChat never fetches a thread's prior messages on its own --
+  // threadId is outgoing-request metadata only (see the Known limitation
+  // note in docs/superpowers/specs/2026-10-04-clients-workspace-design.md).
+  // Seed them here on mount so revisiting a thread (e.g. a client's
+  // deterministic clients_<id> thread) shows the earlier conversation
+  // before the user types anything, instead of only after their next
+  // message triggers a MESSAGES_SNAPSHOT.
+  useEffect(() => {
+    let active = true;
+    getThreadHistory(threadId)
+      .then((history) => {
+        if (active && history.length > 0) agent.setMessages(history);
+      })
+      .catch(() => {
+        // No history yet (new thread) or the fetch failed -- the chat
+        // still works, it just starts empty, same as before this existed.
+      });
+    return () => {
+      active = false;
+    };
+  }, [agent, threadId]);
+
   return (
     <CopilotKitProvider
       agentId={MARKET_DESK_AGENT_ID}
@@ -22,31 +57,82 @@ export function DeskView({ threadId }: { threadId: string }) {
       showDevConsole={false}
       enableInspector={false}
     >
-      <DeskBody threadId={threadId} />
+      {voiceEnabled ? (
+        <ResearchVoiceProvider threadId={threadId} enabled>
+          <DeskBody threadId={threadId} agent={agent} />
+        </ResearchVoiceProvider>
+      ) : (
+        <DeskBody threadId={threadId} agent={agent} />
+      )}
     </CopilotKitProvider>
   );
 }
 
-function DeskBody({ threadId }: { threadId: string }) {
-  useDeskInterrupt();
+function DeskBody({ threadId, agent }: { threadId: string; agent: HttpAgent }) {
+  const voice = useResearchVoiceContext();
+  const setMessages = useCallback(
+    (history: ThreadMessage[]) => {
+      if (history.length === 0) return;
+      agent.setMessages(mergeHistory(agent.messages, history));
+    },
+    [agent],
+  );
+  const { refreshError } = useVoiceHistoryRefresh(threadId, voice?.events, setMessages);
+  useDeskInterrupt(voice?.setTypedApprovalPending);
   useToolDisplay();
-  useConfigureSuggestions({
-    suggestions: [
-      { title: "Portfolio value", message: "What is the total value of a client's portfolio?" },
-      { title: "Stock price", message: "What is AAPL trading at?" },
-      { title: "Concentration risk", message: "Are any clients over-concentrated in one stock?" },
-    ],
-  }, []);
+  // Portaled into AppLayout's Intelligence column instead of rendered as a
+  // direct sibling -- DeskActivityRail itself is unchanged, only where its
+  // DOM lands changes. Must stay inside DeskBody's own CopilotKitProvider
+  // subtree (hence rendering the returned portal right here, not lifting
+  // it through plain state) since DeskActivityRail calls useAgent, which
+  // needs that provider's context.
+  const intelligencePortal = useIntelligenceSlot(
+    <DeskActivityRail voiceEvents={voice?.events} />,
+  );
   return (
-    <div className="flex min-h-0 flex-1">
-      <main className="relative flex min-w-0 flex-1 flex-col">
+    <>
+      {intelligencePortal}
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-terminal-border bg-terminal-panel px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
+              Market Desk
+            </p>
+            <h1 className="mt-0.5 text-base font-semibold tracking-tight text-terminal-text sm:text-lg">
+              Research workspace
+            </h1>
+            <p className="mt-0.5 text-xs text-terminal-muted">
+              Multi-agent market research, portfolio analysis, and approved actions.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-terminal-border bg-terminal-bg px-3 py-1 text-[11px] font-semibold text-terminal-muted">
+            <span className="h-1.5 w-1.5 rounded-full bg-terminal-accent shadow-glow-green" aria-hidden="true" />
+            Live intelligence
+          </span>
+        </header>
         <div className="pointer-events-none absolute inset-x-4 bottom-20 z-50 flex">
           <ThinkingIndicator />
         </div>
+        {voice?.pending && (
+          <div className="absolute inset-x-4 bottom-24 z-40 max-h-[65%] overflow-y-auto rounded-2xl shadow-xl">
+            <ResearchVoiceApproval pending={voice.pending} />
+          </div>
+        )}
+        <div className="pointer-events-none absolute inset-x-4 bottom-24 z-30 flex justify-end">
+          <LiveCaptionBubble text={voice?.liveCaption ?? ""} />
+        </div>
+        {refreshError && (
+          <p role="alert" className="mx-4 mb-1 rounded-lg border border-terminal-warn/40 bg-terminal-warn/10 px-3 py-1.5 text-xs text-terminal-warn">
+            {refreshError}
+          </p>
+        )}
         <CopilotChat
           agentId={MARKET_DESK_AGENT_ID}
           threadId={threadId}
-          className="h-full"
+          className="finance-desk-chat h-full min-h-0"
+          // CopilotKit's runtime accepts any compatible input component, but
+          // its 1.74 type also requires the default component's static slots.
+          input={ResearchComposer as typeof CopilotChatInput}
           attachments={{
             enabled: true,
             maxSize: 20 * 1024 * 1024,
@@ -61,7 +147,6 @@ function DeskBody({ threadId }: { threadId: string }) {
           }}
         />
       </main>
-      <DeskActivityRail />
-    </div>
+    </>
   );
 }

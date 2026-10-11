@@ -1,6 +1,8 @@
 # Voice Mode
 
-OpenAI GPT-Live (client delegation) over the existing LangGraph workflow.
+OpenAI GPT-Live (client delegation) powers voice in the React **Research**
+workspace. Audio flows directly between the browser and OpenAI over WebRTC; FastAPI
+keeps the API key server-side and runs the sideband delegation worker.
 
 ## Required env (added to `.env`)
 
@@ -13,23 +15,24 @@ OPENAI_LIVE_VOICE=marin       # optional, any built-in GPT-Live voice
 No extra sign-up — voice uses the same OpenAI account/key as text mode. There is no
 separate STT/TTS provider anymore (GPT-Live does both).
 
-## Run order (two terminals)
+## Run order
 
 ```bash
 # 1. FastAPI (mints GPT-Live sessions at /gptlive/session, runs the delegation
 #    worker as a background task per session, plus the existing text routers)
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
 
-# 2. Streamlit UI (hosts both text chat AND the embedded voice panel)
-uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
-# then open http://localhost:8080 and flip "🎤 Enable voice" in the sidebar
+# 2. React console
+cd frontend
+npm run dev
+# open http://localhost:5173/research and press the mic in the composer
 ```
 
 There is no separate voice worker process — the delegation loop runs inside the
 FastAPI process as an `asyncio.create_task` spawned per session
 (`app/api/routers/gptlive_session.py`).
 
-## How it routes
+## Shared transport
 
 ```
 Mic (browser, WebRTC) ──────────────► OpenAI GPT-Live session
@@ -43,30 +46,46 @@ client.live.sideband.connect(session_id) — this is the "delegation worker"
                                              │
                           session.delegation.created
                                              │
-                          app.voice.graph.build_voice_agent_app(...).ainvoke(...)
-                                             │   (generate → approval → tools → ...)
+                          delegation worker invokes app.state.agent_app
                                              │
                           connection.session.commentary.append(delegation_id, content)
                                              │
 Browser speaker ◄── GPT-Live TTS ◄──────────┘
 ```
 
-Audio flows directly between the browser and OpenAI over WebRTC — our backend never
-touches raw audio, only the sideband control channel (transcripts in, commentary out).
+The backend never handles raw audio. `POST /gptlive/session` accepts the SDP offer,
+an optional `thread_id`, and `surface` (must be `research`, the default; `classic` is rejected with 422). The sideband worker receives transcript text and
+returns commentary for GPT-Live to speak.
 
-Voice and text sessions share `data/checkpoints.db` AND the same `thread_id`:
-Streamlit mints one `web_session_<uuid>` per browser tab and passes it to both
-`/stream` (text) and `/gptlive/session` (voice), so a voice turn and a text turn
-in the same tab continue one conversation rather than two isolated ones. (A voice
-session started without a caller-supplied `thread_id` still falls back to
-`voice-<gpt_live_session_id>`.)
+## Research voice
 
-## HITL in voice
+Research voice is available only at `/research`. It is continuous rather than a
+push-to-talk form: the composer displays **Connecting…**, **Listening…**,
+**Analyzing…**, **Speaking…**, or **Approval required**, with an animated waveform
+that respects reduced-motion settings. While voice is active the text composer is
+locked; users must choose either typing or speaking, never both at once.
 
-Read-only tools run silently. Side-effect tools (`send_email`, `write_file`, `save_memory`)
-trigger a verbal "Say yes or no" prompt via `commentary.append`. The next user utterance
-(buffered from `session.input_transcript.delta`) is parsed for affirmative/negative tokens
-— in English or Hebrew — and resumes the graph with `Command(resume="approve"|"reject")`.
+Research text and voice use the same `app.state.agent_app`, `thread_id`, SQLite
+checkpoint, specialists, and activity timeline. Voice graph inputs carry
+`metadata.input_source="voice"`; transcript text is not exposed through the
+Research polling API. A per-thread lease rejects overlapping text/voice turns with
+HTTP 409, and a pre-existing approval must be resolved before voice can start.
+
+The React client polls `GET /voice/{thread_id}/state?after=<sequence>` for incremental
+phase/activity data and any pending approval. Side-effect tools render the same
+visual approval cards as typed Research, including generated-report selection and
+edit/reject options. The card remains visible after voice disconnects. Decisions go
+to `POST /voice/{thread_id}/decision`; a stable interrupt ID and first-decision-wins
+coordinator make repeated submissions idempotent (`already_applied`) while stale
+decisions return HTTP 409.
+
+## Transcript in the chat
+
+Spoken turns appear in the Research chat. While the user speaks, a live caption is
+built from the `session.input_transcript.delta` events on the data channel. When a
+turn finishes, the client reloads the committed user/assistant messages from
+`/copilot/market-desk/history` on `run_finished`/`approval_required`, replacing the
+caption. See `docs/superpowers/specs/2026-10-11-research-voice-chat-transcript-design.md`.
 
 ## Hebrew support
 
@@ -81,11 +100,9 @@ a real browser + mic before relying on Hebrew STT in production.
 
 ## Troubleshooting
 
-- **"No audio"** in browser → check Chrome's mic permission for `localhost:8080`.
+- **"No audio"** in browser → check Chrome's mic permission for the active local origin (`localhost:5173`).
 - **`status: error — Failed to fetch`** in voice panel → CORS not applied; confirm
   `CORSMiddleware` is in `server.py` and FastAPI was restarted after the change.
-- **Browser never prompts for mic** → Streamlit's iframe may have stripped `allow="microphone"`;
-  upgrade Streamlit: `uv add 'streamlit>=1.30'`.
 - **Session created but nothing spoken** → check the FastAPI server logs for
   `[voice.worker]` lines; the sideband delegation task logs every attach/delegation/close.
 - **`invalid_type ... session.delegation`** → don't pass `"delegation": None` in the session

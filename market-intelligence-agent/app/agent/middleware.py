@@ -24,9 +24,12 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
-from app.agent.nodes.tool_utils import strip_image_content
 from app.agent.guardrails import SensitiveDataGuard
 from app.agent.prompts import with_today
+from app.agent.prompts.specialist_agent_prompts import (
+    INGESTED_DOCUMENTS_PLACEHOLDER,
+    ingested_documents_list,
+)
 from app.core.config import settings
 
 MODEL_CALL_LIMIT = 10
@@ -34,6 +37,20 @@ SUMMARY_TRIGGER_TOKENS = 6000
 SUMMARY_KEEP_MESSAGES = 50
 
 ToolResult = ToolMessage | Command[Any]
+
+
+def strip_image_content(content):
+    """Drop image parts from an MCP tool result before it re-enters the
+    conversation: OpenAI rejects image content on tool-role messages (only
+    'user' may carry images), and the frontend already gets the real PNG via
+    the dedicated screenshot SSE event, so the LLM never needs the raw bytes.
+    """
+    if not isinstance(content, list):
+        return content
+    return [
+        part for part in content
+        if not (isinstance(part, dict) and part.get("type") in ("image", "image_url"))
+    ]
 
 
 def specialist_model() -> ChatOpenAI:
@@ -45,6 +62,31 @@ def today_prompt(request: ModelRequest) -> str:
     """Static system_prompt + today's date, computed per call so a
     long-running process never serves a stale date."""
     return with_today(request.system_prompt or "")
+
+
+@dynamic_prompt
+def client_context_prompt(request: ModelRequest) -> str:
+    """Appends the active client's profile blurb (set by
+    load_client_context, see app/agent/multi_agent/graph.py) to the system
+    prompt when this thread is scoped to a client; leaves the prompt
+    untouched on every other thread."""
+    client_context = request.state.get("client_context")
+    base = request.system_prompt or ""
+    if not client_context:
+        return base
+    return f"{base}\n\n{client_context}"
+
+
+@dynamic_prompt
+def fresh_documents_prompt(request: ModelRequest) -> str:
+    """Substitute the RAG manifest's current contents into
+    INGESTED_DOCUMENTS_PLACEHOLDER at call time, not once at prompt-string-
+    definition time -- a PDF uploaded via /data/import/pdf while the server
+    is already running must be visible to rag_agent immediately, not only
+    after a restart."""
+    return (request.system_prompt or "").replace(
+        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
+    )
 
 
 def call_limit() -> ModelCallLimitMiddleware:

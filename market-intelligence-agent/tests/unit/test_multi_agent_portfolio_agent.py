@@ -3,8 +3,9 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import portfolio_agent as mod
-from app.agent.middleware import base_middleware
+from app.agent.middleware import base_middleware, client_context_prompt
 from app.agent.multi_agent.display import market_desk_display
+from app.agent.multi_agent.state import ClientContextState
 from app.agent.guardrails import SensitiveDataGuard
 
 
@@ -27,13 +28,15 @@ def test_create_agent_call():
     assert kw["system_prompt"] == PORTFOLIO_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "portfolio_agent"
+    assert kw["state_schema"] is ClientContextState
     base = base_middleware()
     assert [type(m) for m in kw["middleware"][:len(base)]] == [type(m) for m in base]
-    hitl = kw["middleware"][len(base)]
+    assert kw["middleware"][len(base)] is client_context_prompt
+    hitl = kw["middleware"][len(base) + 1]
     assert isinstance(hitl, HumanInTheLoopMiddleware)
     assert set(hitl.interrupt_on) == {"save_portfolio_report"}
     assert kw["middleware"][-1] is market_desk_display
-    assert len(kw["middleware"]) == len(base) + 2
+    assert len(kw["middleware"]) == len(base) + 3
 
 
 def test_hitl_gate_has_no_content_argument_to_preview():
@@ -78,3 +81,13 @@ def test_report_recipe_calls_the_single_atomic_save_tool():
     example = report_section.split("Example:", 1)[1]
     assert "save_portfolio_report" in example
     assert "client_portfolio" in example
+
+
+def test_prompt_never_saves_a_report_for_an_email_request():
+    """Live QA 2026-10-11: "Send an email to Margaret Collins with a short
+    summary of her portfolio" sometimes called save_portfolio_report (report
+    approval card) instead of client_portfolio, so the email card never came."""
+    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+
+    assert "Email recipe" in PORTFOLIO_SYSTEM_PROMPT
+    assert "NEVER call `save_portfolio_report` for an email request" in PORTFOLIO_SYSTEM_PROMPT

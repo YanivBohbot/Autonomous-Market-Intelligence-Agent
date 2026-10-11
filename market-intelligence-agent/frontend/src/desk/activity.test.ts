@@ -1,13 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { reduceActivity, type AgUiEvent, type DeskActivity } from "./activity";
+import {
+  groupActivityRuns,
+  humanizeToolName,
+  reduceActivity,
+  voiceActivityToAgUi,
+  type AgUiEvent,
+  type DeskActivity,
+} from "./activity";
+import type { VoiceActivityEvent } from "../voice/types";
 
 function run(events: AgUiEvent[], start = 1000, step = 100): DeskActivity[] {
   return events.reduce<DeskActivity[]>((acc, e, i) => reduceActivity(acc, e, start + i * step), []);
 }
 
 describe("reduceActivity", () => {
-  it("maps each specialist node to its badge", () => {
+  it("maps supervisor and each specialist node to its badge", () => {
     const names: Array<[string, string]> = [
+      ["supervisor", "SUPERVISOR"], ["supervisor_agent", "SUPERVISOR"],
       ["rag_agent", "RAG"], ["finance_agent", "FINANCE"], ["portfolio_agent", "PORTFOLIO"],
       ["browser_agent", "BROWSER"], ["email_agent", "EMAIL"], ["filesystem_agent", "FILES"],
       ["memory_agent", "MEMORY"],
@@ -18,10 +27,9 @@ describe("reduceActivity", () => {
     }
   });
 
-  it("ignores supervisor, middleware and internal steps", () => {
+  it("ignores middleware and internal steps", () => {
     const rows = run([
       { type: "STEP_STARTED", stepName: "record_question" },
-      { type: "STEP_STARTED", stepName: "supervisor" },
       { type: "STEP_STARTED", stepName: "model" },
       { type: "STEP_STARTED", stepName: "tools" },
       { type: "STEP_STARTED", stepName: "SummarizationMiddleware.before_model" },
@@ -99,5 +107,85 @@ describe("reduceActivity", () => {
     const before: DeskActivity[] = [];
     reduceActivity(before, { type: "STEP_STARTED", stepName: "rag_agent" }, 1);
     expect(before).toEqual([]);
+  });
+});
+
+describe("groupActivityRuns", () => {
+  it("starts a new run after done, error, or awaiting and returns newest first", () => {
+    const rows = run([
+      { type: "STEP_STARTED", stepName: "supervisor" },
+      { type: "RUN_FINISHED", usage: { totalTokens: 9 } },
+      { type: "STEP_STARTED", stepName: "rag_agent" },
+      { type: "RUN_ERROR", message: "source failed" },
+      { type: "STEP_STARTED", stepName: "finance_agent" },
+      { type: "RUN_FINISHED", outcome: { type: "interrupt" } },
+      { type: "STEP_STARTED", stepName: "browser_agent" },
+    ]);
+
+    const groups = groupActivityRuns(rows);
+
+    expect(groups).toHaveLength(4);
+    expect(groups.map((group) => group.status)).toEqual(["running", "awaiting", "error", "done"]);
+    expect(groups.map((group) => group.items[0]?.kind)).toEqual(["specialist", "specialist", "specialist", "specialist"]);
+    expect(groups[0].startedAt).toBeGreaterThan(groups[1].startedAt);
+  });
+
+  it("uses the terminal item as the run status", () => {
+    expect(groupActivityRuns(run([{ type: "RUN_FINISHED", outcome: { type: "interrupt" } }]))[0].status).toBe("awaiting");
+    expect(groupActivityRuns(run([{ type: "RUN_FINISHED" }]))[0].status).toBe("done");
+    expect(groupActivityRuns(run([{ type: "RUN_ERROR" }]))[0].status).toBe("error");
+    expect(groupActivityRuns(run([{ type: "STEP_STARTED", stepName: "rag_agent" }]))[0].status).toBe("running");
+  });
+});
+
+describe("humanizeToolName", () => {
+  it("removes provider prefixes and turns machine names into readable labels", () => {
+    expect(humanizeToolName("yfinance_ticker_info")).toBe("Ticker info");
+    expect(humanizeToolName("portfolio_metrics")).toBe("Portfolio metrics");
+    expect(humanizeToolName("sendEmail")).toBe("Send email");
+  });
+});
+
+describe("voiceActivityToAgUi", () => {
+  const event = (
+    kind: VoiceActivityEvent["kind"],
+    overrides: Partial<VoiceActivityEvent> = {},
+  ): VoiceActivityEvent => ({
+    sequence: 1,
+    run_id: "voice-run-1",
+    kind,
+    name: null,
+    tool_call_id: null,
+    duration_ms: null,
+    message: null,
+    ...overrides,
+  });
+
+  it.each([
+    [event("specialist_started", { name: "finance_agent" }), { type: "STEP_STARTED", stepName: "finance_agent" }],
+    [event("tool_started", { name: "portfolio_metrics", tool_call_id: "call-1" }), { type: "TOOL_CALL_START", toolCallId: "call-1", toolCallName: "portfolio_metrics" }],
+    [event("tool_finished", { name: "portfolio_metrics", tool_call_id: "call-1", duration_ms: 1250 }), { type: "TOOL_CALL_RESULT", toolCallId: "call-1", durationMs: 1250 }],
+    [event("approval_required"), { type: "RUN_FINISHED", outcome: { type: "interrupt" } }],
+    [event("run_finished"), { type: "RUN_FINISHED" }],
+    [event("run_error", { message: "Voice processing failed" }), { type: "RUN_ERROR", message: "Voice processing failed" }],
+  ])("maps %s into the existing reducer contract", (voiceEvent, expected) => {
+    expect(voiceActivityToAgUi(voiceEvent as VoiceActivityEvent)).toMatchObject(expected);
+  });
+
+  it("uses the server duration when completing a voice tool", () => {
+    const rows = [
+      event("tool_started", { name: "portfolio_metrics", tool_call_id: "call-1" }),
+      event("tool_finished", { name: "portfolio_metrics", tool_call_id: "call-1", duration_ms: 1250 }),
+    ].reduce<DeskActivity[]>(
+      (items, voiceEvent, index) =>
+        reduceActivity(items, voiceActivityToAgUi(voiceEvent), 1000 + index),
+      [],
+    );
+
+    expect(rows[0]).toMatchObject({
+      kind: "tool",
+      status: "done",
+      durationMs: 1250,
+    });
   });
 });

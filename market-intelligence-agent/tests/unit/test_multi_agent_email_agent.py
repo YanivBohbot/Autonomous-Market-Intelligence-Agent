@@ -14,7 +14,22 @@ def _kwargs():
 
 
 def test_tools():
-    assert {t.name for t in mod._TOOLS} == {"send_email"}
+    assert {t.name for t in mod._TOOLS} == {"read_query", "send_email"}
+
+
+def test_prompt_looks_up_client_email_via_read_query_before_sending():
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    assert "`read_query`" in EMAIL_SYSTEM_PROMPT
+    assert "FROM clients WHERE name LIKE" in EMAIL_SYSTEM_PROMPT
+    assert "ask the user if it's missing" not in EMAIL_SYSTEM_PROMPT
+    assert EMAIL_SYSTEM_PROMPT.index("read_query") < EMAIL_SYSTEM_PROMPT.index("send_email")
+
+
+def test_read_query_is_not_gated_by_hitl():
+    mw = _kwargs()["middleware"]
+    hitl = next(m for m in mw if isinstance(m, HumanInTheLoopMiddleware))
+    assert "read_query" not in hitl.interrupt_on
+    assert set(hitl.interrupt_on) == {"send_email"}
 
 
 def test_create_agent_call_with_hitl_on_send_email():
@@ -43,3 +58,15 @@ def test_keeps_email_addresses_it_needs_to_work():
     assert not any(getattr(m, "pii_type", None) == "email" for m in kw["middleware"])
     guard = next(m for m in kw["middleware"] if isinstance(m, SensitiveDataGuard))
     assert guard.check_email is False
+
+
+def test_prompt_opens_empty_draft_instead_of_asking_for_content():
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    assert 'EMPTY `subject` and `body` ("")' in EMAIL_SYSTEM_PROMPT
+    assert "Never ask the user for the subject or body" in EMAIL_SYSTEM_PROMPT
+
+
+def test_prompt_forbids_inventing_figures():
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    assert "never invent figures" in EMAIL_SYSTEM_PROMPT
+    assert "portfolio_agent's answer" in EMAIL_SYSTEM_PROMPT

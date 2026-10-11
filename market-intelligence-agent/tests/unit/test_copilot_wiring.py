@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 
+from app.agent.multi_agent import build_multi_agent_app
 from app.api import server
 from app.api.routers.copilot import MARKET_DESK_AGENT_NAME
 from app.core.config import Settings
@@ -33,14 +34,17 @@ def test_routes_present_when_enabled(monkeypatch):
 def test_setup_market_desk_attaches_agent_when_enabled(monkeypatch):
     monkeypatch.setattr(server.settings, "COPILOT_ENABLED", True)
     app = FastAPI()
-    server.setup_market_desk(app, InMemorySaver(), None)
+    graph = build_multi_agent_app(InMemorySaver(), None)
+    server.setup_market_desk(app, graph)
     assert app.state.market_desk_agent.name == MARKET_DESK_AGENT_NAME
+    assert app.state.market_desk_agent.graph is graph
 
 
 def test_setup_market_desk_is_a_no_op_when_disabled(monkeypatch):
     monkeypatch.setattr(server.settings, "COPILOT_ENABLED", False)
     app = FastAPI()
-    server.setup_market_desk(app, InMemorySaver(), None)
+    graph = build_multi_agent_app(InMemorySaver(), None)
+    server.setup_market_desk(app, graph)
     assert not hasattr(app.state, "market_desk_agent")
 
 
