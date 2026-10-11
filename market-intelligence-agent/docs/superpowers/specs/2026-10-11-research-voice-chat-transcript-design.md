@@ -70,7 +70,7 @@ Each item is deleted only once nothing outside the removed surface still uses it
 - `app/voice/transcript_store.py`, `GET /voice/{thread_id}/transcript`, and `VoiceTranscriptResponse`.
 - The classic branch of `app/voice/worker.py`: `_handle_delegation`, `GREETING`, the `surface="classic"` path and its `transcript_store` calls. Research becomes the only surface. The `surface` field of `GptLiveSessionRequest` is kept and validated as `research` only, so existing clients get a clear 422 instead of silent behavior.
 - `app/voice/graph.py` / `build_voice_agent_app` and `app.state.voice_agent_app` in `server.py`, since only the classic worker and the transcript endpoint used them.
-- `app/voice/hitl.py` is **kept**: `classify_verdict` is still used by `app/agent/multi_agent/supervisor.py`. Only the helpers that become unused (for example `is_interrupted` / `resume_with`, if so) are removed.
+- `app/voice/hitl.py` is **kept**: `classify_verdict` is still used by the Research path of the worker (`_handle_research_delegation`, verbal "approve"/"reject"). `is_interrupted` and `resume_with` become unused once the classic path and transcript endpoint are gone, and are removed.
 - The Streamlit service in `docker-compose.yml`.
 - `app/agent/graph.py` (legacy single-agent graph) is **out of scope**: it may lose its last runtime caller once the Classic voice workflow is gone, but it also provides shared node helpers. Note it as a follow-up candidate in the plan; do not delete it in this change.
 
