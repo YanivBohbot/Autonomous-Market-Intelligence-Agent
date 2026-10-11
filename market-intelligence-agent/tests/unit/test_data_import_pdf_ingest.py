@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 
+from langchain_core.documents import Document
 from pypdf import PdfWriter
 
 from app.agent.tools.knowledge_base import KB_MANIFEST_PATH
@@ -11,53 +12,44 @@ from app.data_import.pdf_ingest import ingest_single_pdf
 _FAKE_PAGES = [{"page_content": "Some extracted text about Acme Corp.", "metadata": {"page": 0}}]
 
 
-class _FakeDoc:
-    def __init__(self, page_content, metadata):
-        self.page_content = page_content
-        self.metadata = metadata
-
-
 def _fake_loader(_path):
     class _Loader:
         def load(self):
-            return [_FakeDoc(p["page_content"], dict(p["metadata"])) for p in _FAKE_PAGES]
+            return [Document(page_content=p["page_content"], metadata=dict(p["metadata"])) for p in _FAKE_PAGES]
     return _Loader()
 
 
-def _fake_vectorstore_from_documents(**kwargs):
-    _fake_vectorstore_from_documents.calls.append(kwargs)
+class _FakeStore:
+    """Stands in for the single PineconeVectorStore (app.rag.vectorstore)."""
+    def __init__(self):
+        self.calls = []
 
-
-_fake_vectorstore_from_documents.calls = []
+    def add_documents(self, documents, ids=None):
+        self.calls.append({"documents": documents, "ids": ids})
+        return ids
 
 
 def test_ingest_single_pdf_upserts_chunks_and_returns_their_count(tmp_path, monkeypatch):
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text(json.dumps(["existing-report.pdf"]))
     monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
-    monkeypatch.setattr("app.data_import.pdf_ingest.PyPDFLoader", _fake_loader)
-    monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
-    monkeypatch.setattr(
-        "app.ingest.PineconeVectorStore.from_documents",
-        staticmethod(lambda **kw: _fake_vectorstore_from_documents(**kw)),
-    )
+    monkeypatch.setattr("app.rag.loaders.PyPDFLoader", _fake_loader)
+    store = _FakeStore()
+    monkeypatch.setattr("app.rag.ingestion.get_vectorstore", lambda: store)
 
     chunk_count = ingest_single_pdf(b"%PDF-1.4 fake bytes", "new-report.pdf")
 
     assert chunk_count >= 1
-    assert _fake_vectorstore_from_documents.calls, "Pinecone upsert was not called"
+    assert store.calls, "Pinecone upsert was not called"
 
 
 def test_ingest_single_pdf_adds_to_the_manifest_without_removing_existing_entries(tmp_path, monkeypatch):
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text(json.dumps(["existing-report.pdf"]))
     monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
-    monkeypatch.setattr("app.data_import.pdf_ingest.PyPDFLoader", _fake_loader)
-    monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
-    monkeypatch.setattr(
-        "app.ingest.PineconeVectorStore.from_documents",
-        staticmethod(lambda **kw: None),
-    )
+    monkeypatch.setattr("app.rag.loaders.PyPDFLoader", _fake_loader)
+    store = _FakeStore()
+    monkeypatch.setattr("app.rag.ingestion.get_vectorstore", lambda: store)
 
     ingest_single_pdf(b"%PDF-1.4 fake bytes", "new-report.pdf")
 
@@ -68,12 +60,9 @@ def test_ingesting_the_same_pdf_twice_does_not_duplicate_the_manifest_entry(tmp_
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text(json.dumps([]))
     monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
-    monkeypatch.setattr("app.data_import.pdf_ingest.PyPDFLoader", _fake_loader)
-    monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
-    monkeypatch.setattr(
-        "app.ingest.PineconeVectorStore.from_documents",
-        staticmethod(lambda **kw: None),
-    )
+    monkeypatch.setattr("app.rag.loaders.PyPDFLoader", _fake_loader)
+    store = _FakeStore()
+    monkeypatch.setattr("app.rag.ingestion.get_vectorstore", lambda: store)
 
     ingest_single_pdf(b"%PDF-1.4 fake bytes", "same-report.pdf")
     ingest_single_pdf(b"%PDF-1.4 fake bytes", "same-report.pdf")
@@ -91,20 +80,15 @@ def test_ingesting_the_same_pdf_twice_upserts_with_identical_chunk_ids(tmp_path,
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text(json.dumps([]))
     monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
-    monkeypatch.setattr("app.data_import.pdf_ingest.PyPDFLoader", _fake_loader)
-    monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
-
-    calls = []
-    monkeypatch.setattr(
-        "app.ingest.PineconeVectorStore.from_documents",
-        staticmethod(lambda **kw: calls.append(kw)),
-    )
+    monkeypatch.setattr("app.rag.loaders.PyPDFLoader", _fake_loader)
+    store = _FakeStore()
+    monkeypatch.setattr("app.rag.ingestion.get_vectorstore", lambda: store)
 
     ingest_single_pdf(b"%PDF-1.4 fake bytes", "same-report.pdf")
     ingest_single_pdf(b"%PDF-1.4 fake bytes", "same-report.pdf")
 
-    assert len(calls) == 2
-    assert calls[0]["ids"] == calls[1]["ids"]
+    assert len(store.calls) == 2
+    assert store.calls[0]["ids"] == store.calls[1]["ids"]
 
 
 def test_ingest_single_pdf_handles_a_real_temp_file_and_real_pypdf_loader(tmp_path, monkeypatch):
@@ -128,11 +112,8 @@ def test_ingest_single_pdf_handles_a_real_temp_file_and_real_pypdf_loader(tmp_pa
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text(json.dumps([]))
     monkeypatch.setattr("app.data_import.pdf_ingest.KB_MANIFEST_PATH", manifest)
-    monkeypatch.setattr("app.ingest.OpenAIEmbeddings", lambda **kw: object())
-    monkeypatch.setattr(
-        "app.ingest.PineconeVectorStore.from_documents",
-        staticmethod(lambda **kw: None),
-    )
+    store = _FakeStore()
+    monkeypatch.setattr("app.rag.ingestion.get_vectorstore", lambda: store)
 
     writer = PdfWriter()
     writer.add_blank_page(width=72, height=72)
