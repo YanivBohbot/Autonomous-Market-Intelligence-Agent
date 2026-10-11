@@ -922,20 +922,33 @@ Use only fresh `qa-` threads ("New session" in the UI).
 | 10 | Data | `/data` lists documents and clients (no import). |
 | 11 | Removed surfaces | `/classic` shows no classic chat, `curl -s -o /dev/null -w "%{http_code}" localhost:8000/voice/x/transcript` returns `404`, and nothing listens on :8080. |
 | 12 | Backend API | `curl localhost:8000/health` returns ok. `POST /stream` with a `qa-` thread and an email request emits `interrupted`, then `POST /approve` with `approved:false` returns a completed status. |
+| 13 | Browser specialist | "Open https://www.example.com and tell me the page title" → activity rail shows `browser_agent` + `browser_navigate`/`browser_snapshot`; answer says "Example Domain". |
+| 14 | Memory specialist | "Remember that my preferred report format is Excel" → approval card for `save_memory` → Approve; then new message "What is my preferred report format?" → `memory_agent` + `recall_memory`/`list_memories`, answer "Excel". |
+| 15 | Supervisor routing summary | Across rows 3–6, 13, 14 every one of the 7 specialists (rag, finance, portfolio, browser, email, filesystem, memory) was routed to at least once — list which row proved each. |
 
 - [ ] **Step 2: Handle failures**
 
 For each failing row: find the root cause, write a regression test that reproduces it, fix it, re-run the suites, commit, and re-run that QA row only. Do not repeat rows just because the LLM worded an answer differently.
 
-- [ ] **Step 3: Write the QA report and commit**
+- [ ] **Step 3: Write the user-runnable QA guide (French)**
+
+The user explicitly asked to be able to re-run every QA check themselves. Create `docs/QA-GUIDE.md` **in French**, one section per matrix row (1–15), each with:
+- **Objectif** (one line: which part of the multi-agent system it proves),
+- **Prérequis** (servers running, URL, fresh session via "New session"),
+- **Étapes** (numbered: where to click, exact text to type or say),
+- **Résultat attendu** (what must appear in the chat, in the Intelligence/activity rail — specialist + tool names — and in the backend log or on disk),
+- **Si ça échoue** (first thing to check: backend log line, server restarted, mic permission, `.env` key).
+Top of the file: how to start backend + frontend (exact commands from this worktree), and a warning that the email test with "approve" sends a real SES email (only to `clients.email` addresses) — use "reject" to test safely. Include the curl commands for rows 11–12 verbatim.
+
+- [ ] **Step 4: Write the QA report and commit**
 
 `docs/superpowers/qa/2026-10-11-voice-transcript-qa.md`: one row per check with Pass/Fail, the evidence (log line, screenshot path or curl output), and any fix commit. Then:
 
 ```bash
-git add docs/superpowers/qa/2026-10-11-voice-transcript-qa.md
-git commit -m "test(qa): live QA pass for Research voice transcript"
+git add docs/superpowers/qa/2026-10-11-voice-transcript-qa.md docs/QA-GUIDE.md
+git commit -m "test(qa): live QA pass + user QA guide for Research voice transcript"
 ```
 
-- [ ] **Step 4: Report to the user**
+- [ ] **Step 5: Report to the user**
 
-Summarize in French: the regression counts (baseline → after), the QA results per row, the fixes made, and what remains (for example the `app/agent/graph.py` follow-up). The branch is not merged or pushed without the user's explicit request.
+Summarize in French and point the user to `docs/QA-GUIDE.md`: the regression counts (baseline → after), the QA results per row, the fixes made, and what remains (for example the `app/agent/graph.py` follow-up). The branch is not merged or pushed without the user's explicit request.
