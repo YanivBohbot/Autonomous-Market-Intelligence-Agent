@@ -316,17 +316,17 @@ def test_stream_emits_screenshot_event_for_custom_agentcore_server_result():
     assert screenshot_events == [{"url": "/workspace/screenshots/evidence.png"}]
 
 
-def test_stream_emits_pii_guard_warning_as_token():
-    """pii_guard's short-circuit AIMessage is added straight to graph state,
-    never streamed as an AIMessageChunk -- that only happens for generate's
-    LLM call. Without surfacing it, a blocked turn was record_question ->
-    pii_guard -> done with zero token events: the block worked (the LLM
-    never saw the data) but the client never saw the warning either."""
+def test_stream_emits_sensitive_data_guard_warning_as_token():
+    """SensitiveDataGuard (the multi-agent guardrail middleware, inside a
+    specialist subgraph) blocks before any model call by adding its warning
+    AIMessage straight to state -- it is never streamed as an AIMessageChunk.
+    Live check 2026-10-12: a credit-card message produced node events and
+    `done` with zero token events, so the user saw nothing at all."""
     from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING
 
     warning_msg = AIMessage(content=SENSITIVE_DATA_WARNING)
     updates = [
-        ((), {"pii_guard": {"messages": [warning_msg]}}),
+        (("portfolio_agent:abc123",), {"SensitiveDataGuard.before_model": {"messages": [warning_msg]}}),
     ]
     fake = _FakeAgentApp([], updates=updates)
 

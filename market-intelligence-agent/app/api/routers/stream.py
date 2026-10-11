@@ -61,12 +61,17 @@ def _screenshot_filename(content) -> str | None:
     return Path(raw).name
 
 
+# Node name of SensitiveDataGuard's before_model hook inside a specialist
+# subgraph (app/agent/guardrails/middleware.py).
+_GUARD_NODE = "SensitiveDataGuard.before_model"
+
+
 def _static_message_content(node_name: str, update) -> str | None:
-    """pii_guard's short-circuit AIMessage is added straight to graph state,
-    not streamed as an AIMessageChunk -- that only happens for generate's LLM
-    call -- so without this, a blocked turn produced zero token events and
+    """SensitiveDataGuard's blocking AIMessage is added straight to graph
+    state, never streamed as an AIMessageChunk (that only happens for model
+    calls) -- so without this, a blocked turn produced zero token events and
     the client never saw the warning, even though the block itself worked."""
-    if node_name != "pii_guard" or not isinstance(update, dict):
+    if node_name != _GUARD_NODE or not isinstance(update, dict):
         return None
     messages = update.get("messages")
     if not messages:
