@@ -31,7 +31,7 @@ The agent relies on a **Cyclic State Graph** (LangGraph) for its decision-making
 * **MCP Adapters:** `langchain-mcp-adapters` (`MultiServerMCPClient` registry)
 * **MCP Servers:** `mcp-server-sqlite` (CRM), `yfmcp` (Yahoo Finance), `@modelcontextprotocol/server-filesystem` (workspace), `@playwright/mcp` + headless Chromium (browser)
 * **Backend API:** FastAPI (async `/stream` SSE endpoint + `/approve` resume)
-* **Frontend UI:** Streamlit
+* **Frontend UI:** React 19 + Vite + Tailwind (CopilotKit / AG-UI)
 * **Deployment:** Docker, AWS App Runner
 * **Tooling:** `uv` (Package Manager), `mcp` (Model Context Protocol SDK)
 
@@ -41,7 +41,7 @@ The agent relies on a **Cyclic State Graph** (LangGraph) for its decision-making
 
 This scenario showcases the agent chaining a structured data query (MCP), a document retrieval (RAG), and a secure action (Email) across multiple steps, requiring user intervention for safety.
 
-### 1. The Complex User Prompt (Streamlit UI)
+### 1. The Complex User Prompt (React console)
 
 > **"Find client Yaniv Bohbot in the CRM database. If they are a VIP client (segment), send them an email summarizing Amazon's AI strategy for 2024."**
 
@@ -75,7 +75,7 @@ The tool surface is unified through a single `MultiServerMCPClient` registry (se
 | 13 | `save_memory` | **side-effect (gated)** | LangGraph BaseStore | Persist a durable user fact across sessions. |
 | 14 | `send_email` | **side-effect (gated)** | SMTP / Gmail | Send a real email (simulates if credentials are placeholder). |
 
-**Note on HITL:** Read-only tools bypass the human-approval gate and execute immediately. The three gated tools (`write_file`, `save_memory`, `send_email`) pause the graph via dynamic `interrupt()`, surface the proposed action in the Streamlit modal, and resume only when the user clicks **Approve**.
+**Note on HITL:** Read-only tools bypass the human-approval gate and execute immediately. The three gated tools (`write_file`, `save_memory`, `send_email`) pause the graph via dynamic `interrupt()`, surface the proposed action in the approval card, and resume only when the user clicks **Approve**.
 
 ---
 
@@ -115,7 +115,7 @@ Cross-thread memory uses LangGraph's `BaseStore` (`save_memory`, `recall_memory`
 
 ### 2. **Run Locally**
 
-The application runs two services (FastAPI backend + Streamlit UI). The FastAPI lifespan opens the `AsyncSqliteSaver` checkpointer and the `InMemoryStore` at startup.
+The application runs two services (FastAPI backend + React console). The FastAPI lifespan opens the `AsyncSqliteSaver` checkpointer and the `InMemoryStore` at startup.
 
 ```bash
 # 1. Create the dummy SQLite database
@@ -127,11 +127,11 @@ uv run python -m app.ingest
 # 3. Launch the FastAPI backend
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 &
 
-# 4. Launch the Streamlit UI
-uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
+# 4. Launch the React console
+cd frontend && npm install && npm run dev
 ```
 
-Open the UI at **http://localhost:8080**. Health check at **http://localhost:8000/health**, OpenAPI docs at **http://localhost:8000/docs**.
+Open the UI at **http://localhost:5173**. Health check at **http://localhost:8000/health**, OpenAPI docs at **http://localhost:8000/docs**.
 
 ### 3. **Run in Docker**
 

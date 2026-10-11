@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-This document gives coding agents the project context and working rules needed to contribute safely. This repository is a full-stack market-intelligence system: a FastAPI/LangGraph backend that researches financial questions, uses MCP tools and RAG, and gates side effects behind human approval. It has a Streamlit chat UI and a React/Vite operations console.
+This document gives coding agents the project context and working rules needed to contribute safely. This repository is a full-stack market-intelligence system: a FastAPI/LangGraph backend that researches financial questions, uses MCP tools and RAG, and gates side effects behind human approval. It has a React/Vite operations console.
 
 ## Commands
 
@@ -11,7 +11,6 @@ uv sync
 uv run python create_db.py
 uv run python -m app.ingest
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
-uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
 uv run python test_agent.py
 uv run pytest tests/ -v
 uv run python app/agent/tools/mcp_clients/mcp_client.py
@@ -41,7 +40,6 @@ Important optional settings include `LOG_LEVEL`, `API_URL`, `YFINANCE_TIMEOUT_S`
 - `app/agent/`: single-agent LangGraph flow, multi-agent mode, prompts, guardrails, memory, and tools.
 - `app/voice/`: GPT-Live delegation worker, shared voice graph, and HITL handling.
 - `app/data_import/`: deterministic, non-agentic SQLite/PDF import logic.
-- `app/ui/`: Streamlit UI and voice panel.
 - `frontend/src/`: React console features such as Desk, Clients, Data, Reports, and Briefing.
 - `tests/unit/`: pytest suite. Frontend Vitest tests are colocated with components.
 - `docs/`: project documentation; `docs/TOOLS.md` is the tool catalog.
@@ -52,7 +50,7 @@ FastAPI compiles one multi-agent graph with the configured checkpointer and stor
 
 Side effects use `HumanInTheLoopMiddleware`. Legacy boolean approval is expanded into `Command(resume={"decisions": [...]})`, with one `approve` or `reject` decision per pending action. Nested specialist state must be inspected with `subgraphs=True` before describing or resuming an interrupt.
 
-`app/agent/graph.py` remains for shared helpers and the Classic voice workflow. Do not delete it during multi-agent work.
+`app/agent/graph.py` remains for shared helpers (no runtime caller remains; removal is a tracked follow-up). Do not delete it during multi-agent work.
 
 ## Tools and Safety Rules
 
@@ -78,7 +76,7 @@ Shared middleware lives in `app/agent/middleware.py`: sensitive-data checks, dat
 
 Key routers are `health.py` (`/health`, AgentCore `/ping` and `/invocations`), `stream.py`, `approve.py`, `copilot.py`, `gptlive_session.py`, and `data.py`. The `/data/*` import and client endpoints are deterministic SQLite operations: they do not call an LLM and are not part of either agent graph.
 
-OpenAI GPT-Live uses browser-to-OpenAI WebRTC with a FastAPI sideband worker. React `/research` voice runs on the same `app.state.agent_app`, thread/checkpoint, activity rail, and visual HITL cards as typed Research; text entry is locked while its continuous voice session is active. `GET /voice/{thread_id}/state` and `POST /voice/{thread_id}/decision` are Research-only. Classic Streamlit voice remains on `app.state.voice_agent_app` and keeps `GET /voice/{thread_id}/transcript` plus verbal yes/no HITL. See `docs/VOICE.md` before changing either surface or Hebrew support.
+OpenAI GPT-Live uses browser-to-OpenAI WebRTC with a FastAPI sideband worker. React `/research` voice runs on the same `app.state.agent_app`, thread/checkpoint, activity rail, and visual HITL cards as typed Research; text entry is locked while its continuous voice session is active. `GET /voice/{thread_id}/state` and `POST /voice/{thread_id}/decision` are Research-only. Research voice shows a live caption, then committed turns, in the chat (see `docs/superpowers/specs/2026-10-11-research-voice-chat-transcript-design.md`). See `docs/VOICE.md` before changing voice or Hebrew support.
 
 ## Development and Test Conventions
 

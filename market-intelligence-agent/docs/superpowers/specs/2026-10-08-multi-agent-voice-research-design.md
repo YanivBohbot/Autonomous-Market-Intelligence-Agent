@@ -1,5 +1,7 @@
 # Multi-Agent Voice Mode for Research — Design
 
+> **Superseded in part (2026-10-11):** voice transcripts ARE now shown in the Research chat, and the Classic/Streamlit voice surface was removed. See `2026-10-11-research-voice-chat-transcript-design.md`.
+
 **Status:** Written specification approved by the user on 2026-10-08; implementation plans prepared for review.
 
 ## Goal

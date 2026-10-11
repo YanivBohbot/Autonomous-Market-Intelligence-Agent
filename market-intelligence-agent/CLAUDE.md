@@ -16,9 +16,6 @@ uv run python -m app.ingest
 # Run the FastAPI backend (port 8000)
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
 
-# Run the Streamlit frontend (port 8080)
-uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
-
 # Run the React dev console (port 5173) — proxies to the backend on :8000
 cd frontend && npm install && npm run dev
 
@@ -58,7 +55,7 @@ The email tool falls back to a simulation (no real send) when `EMAIL_SENDER` sti
 
 ### Legacy single-agent graph (`app/agent/graph.py`)
 
-This graph is retained for shared node helpers and the temporary Classic voice workflow; the main text transports no longer compile it. Its HITL uses the dynamic `interrupt()` pattern with `Command(resume=...)` — no `interrupt_before`. Flow:
+This graph is retained for shared node helpers (no runtime caller remains; removal is a tracked follow-up); the main text transports no longer compile it. Its HITL uses the dynamic `interrupt()` pattern with `Command(resume=...)` — no `interrupt_before`. Flow:
 
 ```
 START → record_question → pii_guard → (sensitive?) → END
@@ -112,9 +109,9 @@ All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agen
 
 ### Multi-agent mode (`app/agent/multi_agent/`)
 
-Router pattern: `load_client_context → record_question → supervisor → <specialist> → supervisor → END`. FastAPI compiles this graph once and assigns the same object to `app.state.agent_app` and `app.state.market_desk_agent.graph`. `/stream`, `/approve`, AgentCore `/invocations`, the opt-in Market Desk endpoint, and React Research voice therefore share state. Classic voice remains on `app.state.voice_agent_app`.
+Router pattern: `load_client_context → record_question → supervisor → <specialist> → supervisor → END`. FastAPI compiles this graph once and assigns the same object to `app.state.agent_app` and `app.state.market_desk_agent.graph`. `/stream`, `/approve`, AgentCore `/invocations`, the opt-in Market Desk endpoint, and React Research voice therefore share state.
 
-The console uses `react-router-dom` (`/` Desk, `/classic` Classic chat, `/data` the Data section) — not a `localStorage`-persisted mode toggle.
+The console uses `react-router-dom` (`/research`, `/briefing`, `/clients`, `/reports`, `/data`) — not a `localStorage`-persisted mode toggle.
 
 - One file per specialist (`rag_agent`, `finance_agent`, `portfolio_agent`, `browser_agent`, `email_agent`, `filesystem_agent`, `memory_agent`), each `build_<name>_agent()` → LangChain `create_agent(...)`, added as a subgraph node with a static edge back to `supervisor`.
 - `app/agent/middleware.py` (shared with the single-agent graph, so it lives outside `multi_agent/`; named for its contents — middleware factories — rather than `common.py`): `specialist_model()` and `base_middleware(*, check_email=True)` = `SensitiveDataGuard(check_email=...)` (`app/agent/guardrails/`: blocks before any model call if the user's message contains a credit card, or — unless `check_email=False` — an email; see below), `today_prompt` (date in the system prompt), `summarization()` (`SummarizationMiddleware`: past 6000 tokens, older messages → summary, last 50 kept), `mask_credit_cards()` (`PIIMiddleware` credit_card/mask), `ModelCallLimitMiddleware(run_limit=10)`, `model_fallback()` (`ModelFallbackMiddleware` to `claude-sonnet-5-5` — opt-in, only when `ANTHROPIC_API_KEY` is set; omitted otherwise), `model_retry()` (`ModelRetryMiddleware`, default 2 retries/exponential backoff — covers a transient OpenAI error during the model call itself, which `tool_errors_to_messages` below never sees), `tool_errors_to_messages` (official `ToolErrorMiddleware`: tool exception → error ToolMessage). `rag`/`finance`/`browser` also get `redact_emails()` (their queries go to third parties); browser also gets `strip_tool_images`. `email`/`portfolio`/`memory`/`filesystem` call `base_middleware(check_email=False)` and keep addresses — they need a real one to work (`send_email`, or a report/fact tied to a client); the single-agent graph's `pii_guard` node does the same (hardcoded `check_email=False`) since it bundles `send_email` alongside everything else with no per-specialist split. `email_agent.EmailRecipientGuard`: `send_email` only to a `clients.email` address, checked at execution (after HITL approval).
@@ -126,7 +123,7 @@ The console uses `react-router-dom` (`/` Desk, `/classic` Classic chat, `/data` 
 - `copilot.py` — `POST /copilot/market-desk` (AG-UI SSE over the shared multi-agent graph, agent id `market_desk`), included only when `COPILOT_ENABLED`; the wrapper is attached in `lifespan` without compiling a second graph.
 - `stream.py` — `/stream` (SSE one-shot run; emits `node`, `token`, then `interrupted`/`done`/`error` events).
 - `approve.py` — `/approve` for HITL resume.
-- `gptlive_session.py` — `POST /gptlive/session` proxies the browser's WebRTC SDP offer to OpenAI (`client.live.create`) and spawns the voice delegation worker as a background task. `surface="research"` acquires a per-thread turn lease and uses the shared multi-agent graph; omitted/`classic` preserves the legacy path. Research activity and visual HITL use `GET /voice/{thread_id}/state` and `POST /voice/{thread_id}/decision`.
+- `gptlive_session.py` — `POST /gptlive/session` proxies the browser's WebRTC SDP offer to OpenAI (`client.live.create`) and spawns the voice delegation worker as a background task. `surface="research"` acquires a per-thread turn lease and uses the shared multi-agent graph; `surface` must be `research` (default); `classic` is rejected with 422. Research activity and visual HITL use `GET /voice/{thread_id}/state` and `POST /voice/{thread_id}/decision`.
 - `data.py` — `/data/clients` (GET), `/data/documents` (GET), `/data/import/pdf` (POST), `/data/import/preview` (POST), `/data/import/confirm` (POST). Deterministic, non-agentic CRUD + import for the React console's `/data` section — no LLM, not wired into either graph. Direct sqlite3 access to `customers.db` (bare relative path, same convention as `create_db.py` and the MCP sqlite server), not the MCP indirection the agent uses. See `docs/superpowers/specs/2026-10-03-data-import-and-view-design.md`.
 - `_helpers.py` — shared graph-invocation utilities.
 
@@ -137,7 +134,7 @@ The console uses `react-router-dom` (`/` Desk, `/classic` Classic chat, `/data` 
 - `ApproveRequest`: `thread_id: str`, `approved: bool` (single global verdict for the whole interrupted batch).
 - `HealthResponse`, `GptLiveSessionRequest`/`GptLiveSessionResponse` round out the schema.
 
-### Voice mode (`app/voice/`, React Research, and Streamlit Classic)
+### Voice mode (`app/voice/`, React Research)
 
 OpenAI **GPT-Live** in client-delegation mode. There is no separate worker process:
 the browser opens a WebRTC session directly with OpenAI (offer/answer proxied through
@@ -159,26 +156,14 @@ rail. Pending side effects use the same visual HITL cards and generated-report
 selector; decisions are idempotently submitted to
 `POST /voice/{thread_id}/decision`, and remain actionable after disconnect.
 
-Classic Streamlit voice invokes the separately compiled workflow
-(`app.voice.graph.build_voice_agent_app`, stored as `app.state.voice_agent_app`).
-It keeps verbal English/Hebrew yes/no HITL and transcript mirroring for backward
-compatibility.
+Spoken turns are shown in the Research chat: a live caption from `session.input_transcript.delta` while speaking, then the committed user/assistant messages, reloaded from `/copilot/market-desk/history` on `run_finished`/`approval_required` (see `docs/superpowers/specs/2026-10-11-research-voice-chat-transcript-design.md`).
 
 - `app/voice/worker.py` — `run_delegation_worker(session_id, thread_id, agent_app)`: the sideband event loop.
 - `app/voice/session.py` — transport-agnostic helpers: `VOICE_INSTRUCTIONS`, `_ToolCallLogger`, `strip_binary_score_prefix`.
 - `app/voice/hitl.py` — verbalizes interrupts and maps yes/no (English or Hebrew כן/לא) to `Command(resume=…)`.
 - `app/voice/research_runtime.py` and `activity_store.py` — multi-agent Research turns, incremental activity, stable interrupts, and first-decision-wins handling.
-- `app/api/routers/gptlive_session.py` — bootstraps both surfaces and exposes Research state/decision endpoints.
+- `app/api/routers/gptlive_session.py` — bootstraps the Research surface and exposes Research state/decision endpoints.
 - `frontend/src/voice/` — continuous Research WebRTC lifecycle, phase UI, activity adapter, and visual approval bridge.
-- `app/ui/voice_panel.py` — `render_voice_panel()` embeds the browser-side WebRTC client
-  (`RTCPeerConnection` + `getUserMedia`) via `st.components.v1.html`. Activated by the
-  `🎤 Enable voice` sidebar toggle in `app/ui/app.py`. Voice and text share the
-  same `thread_id` (Streamlit generates one `web_session_<uuid>` per browser
-  tab and passes it to both `/stream` and `/gptlive/session`), so they're one
-  continuous LangGraph conversation. `GET /voice/{thread_id}/transcript`
-  mirrors voice turns (and HITL pause state) into the Streamlit chat, since
-  the voice delegation worker runs as a background task with no direct line
-  back into the Streamlit process.
 
 See `docs/VOICE.md` for env vars, run order, and the Hebrew-support caveat.
 

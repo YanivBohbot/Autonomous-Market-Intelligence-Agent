@@ -1,8 +1,7 @@
 # Voice Mode
 
-OpenAI GPT-Live (client delegation) provides two intentionally separate voice
-surfaces: the React **Research** workspace and the legacy Streamlit **Classic**
-chat. Audio flows directly between the browser and OpenAI over WebRTC; FastAPI
+OpenAI GPT-Live (client delegation) powers voice in the React **Research**
+workspace. Audio flows directly between the browser and OpenAI over WebRTC; FastAPI
 keeps the API key server-side and runs the sideband delegation worker.
 
 ## Required env (added to `.env`)
@@ -23,14 +22,10 @@ separate STT/TTS provider anymore (GPT-Live does both).
 #    worker as a background task per session, plus the existing text routers)
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
 
-# 2a. React Research workspace
+# 2. React console
 cd frontend
 npm run dev
-# open http://localhost:5173/research
-
-# 2b. Optional Classic Streamlit UI
-uv run streamlit run app/ui/app.py --server.port 8080 --server.address 0.0.0.0
-# open http://localhost:8080 and enable voice in the sidebar
+# open http://localhost:5173/research and press the mic in the composer
 ```
 
 There is no separate voice worker process — the delegation loop runs inside the
@@ -51,9 +46,7 @@ client.live.sideband.connect(session_id) — this is the "delegation worker"
                                              │
                           session.delegation.created
                                              │
-                          delegation worker selects by `surface`
-                          ├─ research → app.state.agent_app
-                          └─ classic  → app.state.voice_agent_app
+                          delegation worker invokes app.state.agent_app
                                              │
                           connection.session.commentary.append(delegation_id, content)
                                              │
@@ -61,8 +54,7 @@ Browser speaker ◄── GPT-Live TTS ◄──────────┘
 ```
 
 The backend never handles raw audio. `POST /gptlive/session` accepts the SDP offer,
-an optional `thread_id`, and `surface: "research" | "classic"`; omitting `surface`
-preserves the Classic default. The sideband worker receives transcript text and
+an optional `thread_id`, and `surface` (must be `research`, the default; `classic` is rejected with 422). The sideband worker receives transcript text and
 returns commentary for GPT-Live to speak.
 
 ## Research voice
@@ -87,14 +79,13 @@ to `POST /voice/{thread_id}/decision`; a stable interrupt ID and first-decision-
 coordinator make repeated submissions idempotent (`already_applied`) while stale
 decisions return HTTP 409.
 
-## Classic voice
+## Transcript in the chat
 
-Classic voice remains available through Streamlit and intentionally uses the
-separately compiled `app.state.voice_agent_app`. It retains verbal HITL: side-effect
-tools prompt for yes/no in English or Hebrew and resume the Classic graph. Classic
-text and voice share the Streamlit-generated `thread_id`, and
-`GET /voice/{thread_id}/transcript` mirrors turns and pause state into the chat.
-These compatibility endpoints and defaults must not be repurposed for Research.
+Spoken turns appear in the Research chat. While the user speaks, a live caption is
+built from the `session.input_transcript.delta` events on the data channel. When a
+turn finishes, the client reloads the committed user/assistant messages from
+`/copilot/market-desk/history` on `run_finished`/`approval_required`, replacing the
+caption. See `docs/superpowers/specs/2026-10-11-research-voice-chat-transcript-design.md`.
 
 ## Hebrew support
 
@@ -109,11 +100,9 @@ a real browser + mic before relying on Hebrew STT in production.
 
 ## Troubleshooting
 
-- **"No audio"** in browser → check Chrome's mic permission for the active local origin (`localhost:5173` or `localhost:8080`).
+- **"No audio"** in browser → check Chrome's mic permission for the active local origin (`localhost:5173`).
 - **`status: error — Failed to fetch`** in voice panel → CORS not applied; confirm
   `CORSMiddleware` is in `server.py` and FastAPI was restarted after the change.
-- **Classic browser never prompts for mic** → Streamlit's iframe may have stripped `allow="microphone"`;
-  upgrade Streamlit: `uv add 'streamlit>=1.30'`.
 - **Session created but nothing spoken** → check the FastAPI server logs for
   `[voice.worker]` lines; the sideband delegation task logs every attach/delegation/close.
 - **`invalid_type ... session.delegation`** → don't pass `"delegation": None` in the session
