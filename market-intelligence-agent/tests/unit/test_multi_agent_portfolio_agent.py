@@ -81,3 +81,13 @@ def test_report_recipe_calls_the_single_atomic_save_tool():
     example = report_section.split("Example:", 1)[1]
     assert "save_portfolio_report" in example
     assert "client_portfolio" in example
+
+
+def test_prompt_never_saves_a_report_for_an_email_request():
+    """Live QA 2026-10-11: "Send an email to Margaret Collins with a short
+    summary of her portfolio" sometimes called save_portfolio_report (report
+    approval card) instead of client_portfolio, so the email card never came."""
+    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+
+    assert "Email recipe" in PORTFOLIO_SYSTEM_PROMPT
+    assert "NEVER call `save_portfolio_report` for an email request" in PORTFOLIO_SYSTEM_PROMPT
