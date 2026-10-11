@@ -33,10 +33,12 @@ def test_create_agent_call():
     # Substitutes the live manifest into RAG_SYSTEM_PROMPT's placeholder at
     # call time -- a PDF uploaded while the server is running must be
     # visible immediately, not only after a restart.
-    assert mw[len(base) + 1] is fresh_documents_prompt
-    assert mw[len(base) + 2] is client_context_prompt
-    assert mw[len(base) + 3] is market_desk_display
-    assert len(mw) == len(base) + 4
+    # Caps Tavily calls per run (ToolCallLimitMiddleware).
+    assert (mw[len(base) + 1].tool_name, mw[len(base) + 1].run_limit) == ("web_search", 3)
+    assert mw[len(base) + 2] is fresh_documents_prompt
+    assert mw[len(base) + 3] is client_context_prompt
+    assert mw[len(base) + 4] is market_desk_display
+    assert len(mw) == len(base) + 5
     assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 

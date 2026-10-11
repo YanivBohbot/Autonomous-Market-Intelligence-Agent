@@ -357,3 +357,18 @@ async def test_email_redacted_in_model_output():
     agent = create_agent(model=model, tools=[], system_prompt="S", middleware=[redact_emails()])
     result = await agent.ainvoke({"messages": [HumanMessage("who?")]})
     assert "jane.doe@example.com" not in result["messages"][-1].content
+
+
+def test_tool_call_limits_on_rag_and_browser():
+    from unittest.mock import patch
+    import app.agent.multi_agent.rag_agent as rag_mod
+    import app.agent.multi_agent.browser_agent as browser_mod
+    for mod, build, tool_name, limit in (
+        (rag_mod, "build_rag_agent", "web_search", 3),
+        (browser_mod, "build_browser_agent", "browser_navigate", 5),
+    ):
+        with patch.object(mod, "create_agent") as ca:
+            getattr(mod, build)()
+        mw = ca.call_args.kwargs["middleware"]
+        limits = [m for m in mw if isinstance(m, ToolCallLimitMiddleware)]
+        assert [(m.tool_name, m.run_limit, m.exit_behavior) for m in limits] == [(tool_name, limit, "continue")]

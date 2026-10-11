@@ -1,6 +1,6 @@
 from langchain.agents import create_agent
 
-from app.agent.middleware import base_middleware, redact_emails, specialist_model, strip_tool_images
+from app.agent.middleware import base_middleware, redact_emails, specialist_model, strip_tool_images, tool_call_limit
 from app.agent.multi_agent.display import market_desk_display
 from app.agent.prompts.specialist_agent_prompts import BROWSER_SYSTEM_PROMPT
 from app.agent.tools import browser_navigate_tool, browser_screenshot_tool, browser_snapshot_tool
@@ -14,6 +14,6 @@ def build_browser_agent():
         tools=_TOOLS,
         system_prompt=BROWSER_SYSTEM_PROMPT,
         # Page content and URLs go to the web: no addresses.
-        middleware=[*base_middleware(_TOOLS), redact_emails(), market_desk_display, strip_tool_images],
+        middleware=[*base_middleware(_TOOLS), redact_emails(), tool_call_limit("browser_navigate", 5), market_desk_display, strip_tool_images],
         name="browser_agent",
     )

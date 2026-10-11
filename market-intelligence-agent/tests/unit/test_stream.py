@@ -316,17 +316,16 @@ def test_stream_emits_screenshot_event_for_custom_agentcore_server_result():
     assert screenshot_events == [{"url": "/workspace/screenshots/evidence.png"}]
 
 
-def test_stream_emits_sensitive_data_guard_warning_as_token():
-    """SensitiveDataGuard (the multi-agent guardrail middleware, inside a
-    specialist subgraph) blocks before any model call by adding its warning
+def test_stream_emits_input_guard_warning_as_token():
+    """input_guard, the graph node before the supervisor, adds its warning
     AIMessage straight to state -- it is never streamed as an AIMessageChunk.
-    Live check 2026-10-12: a credit-card message produced node events and
-    `done` with zero token events, so the user saw nothing at all."""
+    Live check 2026-10-12: a guard block produced node events and `done`
+    with zero token events, so the user saw nothing at all."""
     from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING
 
     warning_msg = AIMessage(content=SENSITIVE_DATA_WARNING)
     updates = [
-        (("portfolio_agent:abc123",), {"SensitiveDataGuard.before_model": {"messages": [warning_msg]}}),
+        ((), {"input_guard": {"messages": [warning_msg]}}),
     ]
     fake = _FakeAgentApp([], updates=updates)
 
@@ -343,6 +342,16 @@ def test_stream_emits_sensitive_data_guard_warning_as_token():
     token_events = [d["token"] for e, d in events if e == "token"]
     assert token_events == [SENSITIVE_DATA_WARNING]
     assert events[-1][0] == "done"
+
+
+def test_stream_emits_moderation_violation_as_token():
+    from app.agent.middleware import MODERATION_VIOLATION_MESSAGE
+    msg = AIMessage(content=MODERATION_VIOLATION_MESSAGE)
+    updates = [(("rag_agent:x",), {"OpenAIModerationMiddleware.before_model": {"messages": [msg]}})]
+    app.state.agent_app = _FakeAgentApp([], updates=updates)
+    response = TestClient(app).post("/stream", json={"query": "bad", "thread_id": "t-mod"})
+    tokens = [d["token"] for e, d in _parse_sse(response.text) if e == "token"]
+    assert tokens == [MODERATION_VIOLATION_MESSAGE]
 
 
 class _ExplodingAgentApp:

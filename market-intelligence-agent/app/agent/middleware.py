@@ -16,6 +16,7 @@ from langchain.agents.middleware import (
     ModelRetryMiddleware,
     PIIMiddleware,
     SummarizationMiddleware,
+    ToolCallLimitMiddleware,
     ToolErrorMiddleware,
     ToolRetryMiddleware,
     dynamic_prompt,
@@ -192,6 +193,12 @@ def tool_retry(tools: Sequence[BaseTool]) -> ToolRetryMiddleware | None:
     if not names:
         return None
     return ToolRetryMiddleware(max_retries=2, tools=names, on_failure="error")
+
+
+def tool_call_limit(tool_name: str, run_limit: int) -> ToolCallLimitMiddleware:
+    """Caps a costly/loop-prone tool per run; "continue" lets the model
+    answer with what it already has instead of failing the run."""
+    return ToolCallLimitMiddleware(tool_name=tool_name, run_limit=run_limit, exit_behavior="continue")
 
 
 def _tool_error_content(exc: Exception, request: ToolCallRequest) -> str:
