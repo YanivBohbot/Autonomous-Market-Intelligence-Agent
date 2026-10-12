@@ -2,7 +2,7 @@ from collections.abc import Awaitable, Callable
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 
 from app.agent.middleware import ToolResult, base_middleware, specialist_model
@@ -67,6 +67,55 @@ class EmailRecipientGuard(AgentMiddleware):
         return await handler(request)
 
 
+_SEND_FAILURE_PREFIXES = ("Erreur", "Email blocked")
+
+
+def _turn_start(messages: list) -> int:
+    return next((i for i in range(len(messages) - 1, -1, -1) if isinstance(messages[i], HumanMessage)), 0)
+
+
+class NoResendAfterFailure(AgentMiddleware):
+    """Drops a send_email call to a recipient whose send already failed this
+    turn, before HumanInTheLoopMiddleware can show a second approval card for
+    it (listed after HITL: after_model hooks run in reverse order, so this
+    one runs first). An SES rejection or a blocked recipient fails the same
+    way on every retry; live, the model kept re-calling send_email and the
+    user was asked to approve the same failing email again."""
+
+    def after_model(self, state, runtime):
+        messages = state["messages"]
+        last = messages[-1] if messages else None
+        if not isinstance(last, AIMessage) or not last.tool_calls:
+            return None
+        turn = messages[_turn_start(messages):]
+        recipient_by_call = {
+            call["id"]: str(call["args"].get("recipient", "")).strip().lower()
+            for message in turn if isinstance(message, AIMessage)
+            for call in message.tool_calls if call["name"] == "send_email"
+        }
+        failures = {
+            recipient_by_call[m.tool_call_id]: str(m.content)
+            for m in turn
+            if isinstance(m, ToolMessage) and m.name == "send_email"
+            and str(m.content).startswith(_SEND_FAILURE_PREFIXES)
+            and m.tool_call_id in recipient_by_call
+        }
+        blocked = [
+            call for call in last.tool_calls
+            if call["name"] == "send_email"
+            and str(call["args"].get("recipient", "")).strip().lower() in failures
+        ]
+        if not blocked:
+            return None
+        notes = " ".join(
+            f"The email to {call['args'].get('recipient')} was not sent: "
+            f"{failures[str(call['args'].get('recipient', '')).strip().lower()]} I did not retry it."
+            for call in blocked
+        )
+        kept = [call for call in last.tool_calls if call not in blocked]
+        return {"messages": [last.model_copy(update={"tool_calls": kept, "content": notes})]}
+
+
 def build_email_agent():
     return create_agent(
         model=specialist_model(),
@@ -75,6 +124,7 @@ def build_email_agent():
         middleware=[
             *base_middleware(_TOOLS),
             HumanInTheLoopMiddleware(interrupt_on={"send_email": True}),
+            NoResendAfterFailure(),
             EmailRecipientGuard(is_known_recipient=_is_client_email),
         ],
         name="email_agent",

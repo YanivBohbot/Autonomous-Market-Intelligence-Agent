@@ -121,3 +121,22 @@ def test_empty_subject_or_body_is_refused_and_nothing_is_sent(monkeypatch, subje
     })
     assert result.startswith("Email blocked")
     assert client.send_email_calls == [] and client.send_raw_email_calls == []
+
+
+def test_ses_rejection_is_reported_as_permanent(monkeypatch):
+    from botocore.exceptions import ClientError
+
+    class RejectingClient:
+        def send_email(self, **kwargs):
+            raise ClientError(
+                {"Error": {"Code": "MessageRejected", "Message": "Email address is not verified."}},
+                "SendEmail",
+            )
+
+    monkeypatch.setattr(emails.settings, "EMAIL_SENDER", "advisor@firm.com")
+    monkeypatch.setattr(emails, "_create_ses_client", lambda: RejectingClient())
+    result = emails.send_email_tool.invoke({
+        "recipient": "margaret@example.com", "subject": "Report", "body": "Body"
+    })
+    assert result.startswith("Erreur SES (MessageRejected)")
+    assert "permanent" in result.lower() and "do not retry" in result.lower()

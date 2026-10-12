@@ -42,9 +42,12 @@ def test_create_agent_call_with_hitl_on_send_email():
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
     assert isinstance(mw[len(base)], HumanInTheLoopMiddleware)
     assert set(mw[len(base)].interrupt_on) == {"send_email"}
+    # Listed after HITL so its after_model runs before HITL's: a retry of a
+    # failed send is dropped before any approval card is shown.
+    assert isinstance(mw[len(base) + 1], mod.NoResendAfterFailure)
     # Guard runs at execution time (after approval): only clients' addresses.
-    assert isinstance(mw[len(base) + 1], mod.EmailRecipientGuard)
-    assert len(mw) == len(base) + 2
+    assert isinstance(mw[len(base) + 2], mod.EmailRecipientGuard)
+    assert len(mw) == len(base) + 3
 
 
 def test_builds_a_real_agent_with_hitl_node():
@@ -68,3 +71,10 @@ def test_prompt_forbids_inventing_figures():
     from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
     assert "never invent figures" in EMAIL_SYSTEM_PROMPT
     assert "portfolio_agent's answer" in EMAIL_SYSTEM_PROMPT
+
+
+def test_prompt_says_not_to_retry_a_failed_send():
+    """Regression (LangSmith trace 2026-10-12): after SES rejected the
+    address, the agent re-called send_email and asked for approval again."""
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    assert "do not call `send_email` again" in EMAIL_SYSTEM_PROMPT.lower()

@@ -4,8 +4,10 @@ from typing import Literal, cast
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.types import Command
 
+from app.agent.middleware import ClearOldTurnToolResults
 from app.core.config import settings
 from app.agent.multi_agent.state import SupervisorState
 from app.agent.prompts.specialist_agent_prompts import (
@@ -192,10 +194,15 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
             "memory_agent/filesystem_agent/browser_agent/email_agent, which don't know who this "
             "client is."
         )
+    # The router is a raw LLM call no middleware wraps, so it gets the same
+    # stale-tool-result clearing as the specialists' context_editing(), on a
+    # copy: the state (and Market Desk's cards) keeps the originals.
+    routing_messages = list(state.get("messages", []))
+    ClearOldTurnToolResults().apply(routing_messages, count_tokens=count_tokens_approximately)
     decision = cast(RoutingDecision, _router.invoke(
         [
             SystemMessage(content=routing_prompt),
-            *state.get("messages", []),
+            *routing_messages,
         ]
     ))
 

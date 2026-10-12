@@ -89,3 +89,11 @@ def test_prompt_never_saves_a_report_for_an_email_request():
 
     assert "Email recipe" in PORTFOLIO_SYSTEM_PROMPT
     assert "NEVER call `save_portfolio_report` for an email request" in PORTFOLIO_SYSTEM_PROMPT
+
+
+def test_prompt_forbids_claiming_an_email_was_sent():
+    """Regression (LangSmith trace 2026-10-12): on "Email Margaret Collins a
+    summary", portfolio_agent ended with "I have emailed Margaret Collins..."
+    before email_agent ran or the user approved anything."""
+    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    assert "never say or imply that an email was sent" in PORTFOLIO_SYSTEM_PROMPT.lower()

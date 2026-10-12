@@ -6,10 +6,12 @@ factory and the middleware every specialist gets.
 """
 
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from langchain.agents.middleware import (
     AgentMiddleware,
+    ContextEditingMiddleware,
     ModelCallLimitMiddleware,
     ModelFallbackMiddleware,
     ModelRequest,
@@ -21,7 +23,8 @@ from langchain.agents.middleware import (
     ToolRetryMiddleware,
     dynamic_prompt,
 )
-from langchain_core.messages import ToolMessage
+from langchain.agents.middleware.context_editing import DEFAULT_TOOL_PLACEHOLDER, TokenCounter
+from langchain_core.messages import AnyMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langchain_openai.middleware import OpenAIModerationMiddleware
@@ -40,6 +43,10 @@ from app.core.config import settings
 MODEL_CALL_LIMIT = 10
 SUMMARY_TRIGGER_TOKENS = 6000
 SUMMARY_KEEP_MESSAGES = 50
+# Past this many (approximate) tokens, tool results from turns older than
+# the last CONTEXT_KEEP_TURNS are cleared from what the model sees.
+CONTEXT_EDIT_TRIGGER_TOKENS = 4000
+CONTEXT_KEEP_TURNS = 2
 
 ToolResult = ToolMessage | Command[Any]
 
@@ -123,11 +130,50 @@ def model_fallback() -> ModelFallbackMiddleware | None:
     return ModelFallbackMiddleware("anthropic:claude-sonnet-5-5")
 
 
+@dataclass
+class ClearOldTurnToolResults:
+    """ContextEdit for the official ContextEditingMiddleware: replaces tool
+    results from turns older than the last `keep_turns` (a turn starts at a
+    HumanMessage) with a placeholder. Unlike ClearToolUsesEdit, which keeps
+    the last N tool *messages*, this never touches the current turn (a RAG
+    comparison can make 3+ searches) and keeps the previous turns' results:
+    specialists don't restate card figures in prose, so "email her that
+    summary" right after a portfolio card needs that ToolMessage. Tool-call
+    arguments are kept, so a follow-up still knows which ticker was asked."""
+
+    trigger: int = CONTEXT_EDIT_TRIGGER_TOKENS
+    keep_turns: int = CONTEXT_KEEP_TURNS
+    placeholder: str = DEFAULT_TOOL_PLACEHOLDER
+
+    def apply(self, messages: list[AnyMessage], *, count_tokens: TokenCounter) -> None:
+        if count_tokens(messages) <= self.trigger:
+            return
+        turn_starts = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+        if len(turn_starts) <= self.keep_turns:
+            return
+        boundary = turn_starts[-1 - self.keep_turns]
+        for i, message in enumerate(messages[:boundary]):
+            if isinstance(message, ToolMessage) and message.content != self.placeholder:
+                messages[i] = message.model_copy(update={"content": self.placeholder, "artifact": None})
+
+
+def context_editing() -> ContextEditingMiddleware:
+    """Request-only: ContextEditingMiddleware edits a deep copy of the
+    messages it sends to the model and never writes back to state, so the
+    checkpointed conversation -- and every Market Desk card rendered from
+    its ToolMessages -- stays intact. This, not summarization(), is what
+    bounds cost per turn: before it, a 6-question thread sent ~23k tokens of
+    stale tool output (price tables, ticker JSON) on every model call."""
+    return ContextEditingMiddleware(edits=[ClearOldTurnToolResults()])
+
+
 def summarization() -> SummarizationMiddleware:
-    """Once the conversation passes SUMMARY_TRIGGER_TOKENS, older messages are
-    replaced by a summary (the last SUMMARY_KEEP_MESSAGES stay verbatim) so
-    cost per turn stays bounded. The specialist shares `messages` with the
-    supervisor, so this compacts the whole conversation — intended."""
+    """Replaces older messages with a summary, but only once there are more
+    than SUMMARY_KEEP_MESSAGES messages -- the trigger is in tokens, yet
+    `keep` is in messages, so below 50 messages there is nothing to cut.
+    Deliberately left that way: unlike context_editing(), summarizing
+    rewrites the shared, checkpointed `messages` (RemoveMessage), which
+    would drop old cards from Market Desk and from reloaded history."""
     return SummarizationMiddleware(
         # The summary is internal: Market Desk (ag-ui-langgraph) must not
         # stream it into the chat as if it were the answer.
@@ -286,7 +332,7 @@ def base_middleware(tools: Sequence[BaseTool]) -> list[AgentMiddleware[Any, Any,
     if moderation_mw is not None:
         # After the card mask, so the moderation API never sees a card number.
         middleware.append(moderation_mw)
-    middleware += [today_prompt, summarization(), call_limit()]
+    middleware += [today_prompt, context_editing(), summarization(), call_limit()]
     fallback = model_fallback()
     if fallback is not None:
         # Must precede model_retry() -- see model_fallback()'s docstring.

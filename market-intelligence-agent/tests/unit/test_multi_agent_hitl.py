@@ -126,3 +126,53 @@ async def test_edit_sends_the_selected_report_filename():
     finally:
         for p in patches:
             p.stop()
+
+
+@tool("send_email")
+async def _failing_send_email(
+    recipient: str,
+    subject: str,
+    body: str,
+    attachment_filename: str | None = None,
+) -> str:
+    """Fake SES rejection."""
+    SENT.append({"recipient": recipient})
+    return "Erreur SES (MessageRejected) : Email address is not verified."
+
+
+@pytest.mark.anyio
+async def test_a_failed_send_is_not_retried_and_asks_no_second_approval():
+    """Regression (LangSmith trace 2026-10-12): approve -> SES rejects ->
+    the model calls send_email again for the same recipient -> a second
+    approval card. The retry must be dropped before HITL sees it."""
+    SENT.clear()
+    retry = {"id": "e2", "name": "send_email",
+             "args": {"recipient": "a@example.com", "subject": "Hi", "body": "Report again"}}
+    fake = FakeToolModel([
+        AIMessage(content="", tool_calls=[_CALL]),
+        AIMessage(content="", tool_calls=[retry]),
+        AIMessage(content="should never be reached"),
+    ])
+    patches = [
+        patch.object(email_mod, "specialist_model", return_value=fake),
+        patch.object(email_mod, "_TOOLS", [_failing_send_email]),
+        patch.object(email_mod, "_is_client_email", _always_known),
+        patch.object(supervisor_mod, "_router"),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        supervisor_mod._router.invoke.return_value = RoutingDecision(next="email_agent", reasoning="email")
+        graph = build_multi_agent_app(InMemorySaver())
+        cfg = {"configurable": {"thread_id": "hitl-retry"}}
+        first = await graph.ainvoke(
+            {"question": "email the report", "messages": [], "documents": [], "next_agent": None, "agent_hops": 0}, cfg)
+        assert first["__interrupt__"]
+        result = await graph.ainvoke(Command(resume={"decisions": [{"type": "approve"}]}), cfg)
+        assert "__interrupt__" not in result
+        assert len(SENT) == 1
+        final = result["messages"][-1].content
+        assert "a@example.com" in final and "not sent" in final.lower()
+    finally:
+        for p in patches:
+            p.stop()

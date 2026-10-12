@@ -126,6 +126,10 @@ def send_email_tool(
             code = exc.response.get("Error", {}).get("Code", "Unknown")
             msg = exc.response.get("Error", {}).get("Message", str(exc))
             logger.error("SEND_EMAIL: SES rejected — %s: %s", code, msg)
+            if code == "MessageRejected":
+                # Unverified recipient (SES sandbox) and similar: the same
+                # send will fail every time, so the model must not retry it.
+                return f"Erreur SES ({code}) : {msg} Permanent failure -- do not retry this send."
             return f"Erreur SES ({code}) : {msg}"
         if isinstance(exc, BotoCoreError):
             logger.exception("SEND_EMAIL: boto layer failed")

@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
+    ContextEditingMiddleware,
     ModelCallLimitMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
@@ -242,12 +243,13 @@ def test_base_middleware_order(monkeypatch):
     assert isinstance(mw[0], PIIMiddleware) and mw[0].pii_type == "credit_card"
     assert isinstance(mw[1], OpenAIModerationMiddleware)
     assert mw[2] is today_prompt
-    assert isinstance(mw[3], SummarizationMiddleware)
-    assert isinstance(mw[4], ModelCallLimitMiddleware)
-    assert isinstance(mw[5], ModelRetryMiddleware)
-    assert mw[6] is tool_errors_to_messages
-    assert isinstance(mw[7], ToolRetryMiddleware)  # inside ToolErrorMiddleware
-    assert len(mw) == 8
+    assert isinstance(mw[3], ContextEditingMiddleware)
+    assert isinstance(mw[4], SummarizationMiddleware)
+    assert isinstance(mw[5], ModelCallLimitMiddleware)
+    assert isinstance(mw[6], ModelRetryMiddleware)
+    assert mw[7] is tool_errors_to_messages
+    assert isinstance(mw[8], ToolRetryMiddleware)  # inside ToolErrorMiddleware
+    assert len(mw) == 9
 
 
 def test_base_middleware_includes_fallback_before_retry_when_key_configured(monkeypatch):
@@ -255,11 +257,11 @@ def test_base_middleware_includes_fallback_before_retry_when_key_configured(monk
     monkeypatch.setattr(mod.settings, "ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setattr(mod.settings, "MODERATION_ENABLED", False)
     mw = base_middleware([read_query])
-    assert isinstance(mw[4], ModelFallbackMiddleware)
-    assert isinstance(mw[5], ModelRetryMiddleware)
-    assert mw[6] is tool_errors_to_messages
-    assert isinstance(mw[7], ToolRetryMiddleware)
-    assert len(mw) == 8
+    assert isinstance(mw[5], ModelFallbackMiddleware)
+    assert isinstance(mw[6], ModelRetryMiddleware)
+    assert mw[7] is tool_errors_to_messages
+    assert isinstance(mw[8], ToolRetryMiddleware)
+    assert len(mw) == 9
 
 
 def test_moderation_is_omitted_when_disabled(monkeypatch):
