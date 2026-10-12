@@ -24,7 +24,7 @@ from email.message import EmailMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from app.report_catalog import resolve_generated_report
+from app.reports.catalog import resolve_generated_report
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

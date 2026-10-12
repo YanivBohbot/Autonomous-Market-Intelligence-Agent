@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from app.report_catalog import list_generated_reports, resolve_generated_report
+from app.reports.catalog import list_generated_reports, resolve_generated_report
 
 
 def _db(path):

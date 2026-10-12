@@ -24,7 +24,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from app.agent.tools.client_portfolio import load_client_portfolio
-from app.report_names import slugify
+from app.reports.names import slugify
 
 # Same categorical palette PortfolioPieChart.tsx already uses in the chat --
 # copied here (not shared/imported; there is no shared Python/TS config

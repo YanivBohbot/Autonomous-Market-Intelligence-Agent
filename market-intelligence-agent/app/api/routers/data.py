@@ -38,7 +38,7 @@ from app.data_import.db import (
     write_holdings,
 )
 from app.data_import.pdf_ingest import ingest_single_pdf
-from app.report_names import slugify
+from app.reports.names import slugify
 from app.data_import.validation import (
     detect_import_type,
     validate_clients_rows,

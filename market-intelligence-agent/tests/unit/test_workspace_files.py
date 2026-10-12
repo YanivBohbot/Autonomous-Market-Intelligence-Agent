@@ -4,7 +4,7 @@
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.report_catalog import GeneratedReport
+from app.reports.catalog import GeneratedReport
 
 
 def _client(tmp_path, monkeypatch):

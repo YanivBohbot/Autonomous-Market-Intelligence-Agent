@@ -8,7 +8,7 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.data_import.db import DB_PATH
-from app.report_names import slugify
+from app.reports.names import slugify
 
 
 @dataclass(frozen=True)

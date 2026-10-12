@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
-from app.report_catalog import list_generated_reports
+from app.reports.catalog import list_generated_reports
 
 router = APIRouter(prefix="/workspace")
 
