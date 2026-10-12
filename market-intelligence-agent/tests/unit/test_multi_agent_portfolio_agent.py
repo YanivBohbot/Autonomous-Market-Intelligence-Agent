@@ -97,3 +97,11 @@ def test_prompt_forbids_claiming_an_email_was_sent():
     before email_agent ran or the user approved anything."""
     from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
     assert "never say or imply that an email was sent" in PORTFOLIO_SYSTEM_PROMPT.lower()
+
+
+def test_prompt_says_not_to_mention_the_email_at_all():
+    """Live 2026-10-12, after the first fix: the reply ended with "This
+    summary will be sent to Margaret Collins via email." -- still announcing
+    a send that depends on the user's approval."""
+    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    assert "do not mention the email at all" in PORTFOLIO_SYSTEM_PROMPT.lower()

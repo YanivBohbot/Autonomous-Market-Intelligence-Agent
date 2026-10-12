@@ -78,3 +78,11 @@ def test_prompt_says_not_to_retry_a_failed_send():
     address, the agent re-called send_email and asked for approval again."""
     from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
     assert "do not call `send_email` again" in EMAIL_SYSTEM_PROMPT.lower()
+
+
+def test_prompt_asks_for_a_plain_text_body_without_markdown():
+    """Live 2026-10-12: the body copied portfolio_agent's Markdown table
+    (| Ticker | Shares |...) into a plain-text email."""
+    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    lowered = EMAIL_SYSTEM_PROMPT.lower()
+    assert "no markdown" in lowered and "no tables" in lowered
