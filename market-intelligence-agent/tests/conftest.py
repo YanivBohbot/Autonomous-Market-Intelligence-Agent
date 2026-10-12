@@ -43,3 +43,15 @@ def base_agent_state():
         "documents": [],
         "messages": [],
     }
+
+
+@pytest.fixture(autouse=True)
+def _isolated_keyword_corpus(tmp_path, monkeypatch):
+    """Unit tests never read or write the real BM25 corpus shipped in
+    app/rag/: every test gets an empty corpus file path of its own."""
+    from app.rag import keyword_search
+
+    monkeypatch.setattr(keyword_search, "CORPUS_PATH", tmp_path / "kb_chunks.jsonl.gz")
+    keyword_search.invalidate()
+    yield
+    keyword_search.invalidate()

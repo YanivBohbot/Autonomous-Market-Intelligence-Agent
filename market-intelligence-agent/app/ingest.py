@@ -1,11 +1,13 @@
 import json
 import os
+import sys
 from pathlib import Path
 
 from app.agent.tools.knowledge_base import KB_MANIFEST_PATH
 from app.rag.ingestion import assign_chunk_ids as _assign_chunk_ids  # noqa: F401  (re-export)
 from app.rag.ingestion import chunk_id as _chunk_id  # noqa: F401  (re-export)
-from app.rag.ingestion import index_documents
+from app.rag.ingestion import index_documents, split_documents
+from app.rag.keyword_search import write_corpus_entries
 from app.rag.loaders import load_pdf
 
 
@@ -20,9 +22,11 @@ def embed_and_upsert_pdf_documents(documents, filename: str) -> list[str]:
     return index_documents(documents, filename)
 
 
-def ingest_document():
+def ingest_document(corpus_only: bool = False):
     """Bulk CLI: load every PDF in ./data with the Document Loader and index
-    it through the shared pipeline (Text Splitter -> Vector Store)."""
+    it through the shared pipeline (Text Splitter -> Vector Store + keyword
+    corpus). corpus_only (`--corpus-only`) rebuilds just the keyword corpus
+    -- same chunks and IDs as Pinecone -- without re-embedding."""
     print(" Starting to ingest to pinecone....")
 
     data_folder = "data"
@@ -43,11 +47,14 @@ def ingest_document():
         # as the upload path, so a PDF ingested by both is overwritten in
         # Pinecone instead of stored twice.
         documents = load_pdf(os.path.join(data_folder, file), filename=file, source=file)
-        index_documents(documents, file)
+        if corpus_only:
+            write_corpus_entries(file, *split_documents(documents, file))
+        else:
+            index_documents(documents, file)
 
     _write_manifest(pdf_files)
     print("✅ Ingestion  finish ! Base Knowledge ready .")
 
 
 if __name__ == "__main__":
-    ingest_document()
+    ingest_document(corpus_only="--corpus-only" in sys.argv)

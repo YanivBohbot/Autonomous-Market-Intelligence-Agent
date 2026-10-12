@@ -9,6 +9,7 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_pinecone import PineconeRerank
 
 from app.core.config import settings
+from app.rag.keyword_search import build_keyword_retriever
 from app.rag.vectorstore import get_vectorstore
 
 logger = logging.getLogger(__name__)
@@ -72,23 +73,36 @@ def _one_per_page(docs: list[Document]) -> list[Document]:
 
 
 class RerankingRetriever(BaseRetriever):
-    """Retriever = candidate retriever (vector store) + document reranker.
+    """Retriever = candidate retrievers (vector store, optionally BM25) +
+    document reranker.
+
+    The keyword retriever only adds candidates when the vector store found
+    at least one chunk above the relevance threshold: BM25 has no score
+    floor and always returns k chunks, so without this gate an off-topic
+    question would come back with sources instead of "no relevant results"
+    (which is what sends rag_agent to web_search).
 
     Falls back to candidate order on any reranker failure (quota, network),
-    so search never breaks because of the reranker."""
+    so search never breaks because of the reranker -- nor because of BM25."""
 
     base_retriever: BaseRetriever
     reranker: BaseDocumentCompressor
     top_n: int
+    keyword_retriever: BaseRetriever | None = None
 
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
-        docs = _drop_duplicate_chunks(
-            self.base_retriever.invoke(query, config={"callbacks": run_manager.get_child()})
-        )
-        if not docs:
+        dense = self.base_retriever.invoke(query, config={"callbacks": run_manager.get_child()})
+        if not dense:
             return []
+        keyword: list[Document] = []
+        if self.keyword_retriever is not None:
+            try:
+                keyword = self.keyword_retriever.invoke(query, config={"callbacks": run_manager.get_child()})
+            except Exception as exc:
+                logger.warning("KB_SEARCH: keyword search failed, using vector candidates only (%s)", exc)
+        docs = _drop_duplicate_chunks(dense + keyword)
         try:
             ranked = list(self.reranker.compress_documents(docs, query))
         except Exception as exc:
@@ -152,7 +166,9 @@ def _reranker_for() -> BaseDocumentCompressor:
 
 def build_kb_retriever(k: int, metadata_filter: dict | None) -> RerankingRetriever:
     """Knowledge-base retriever for one tool call (k and filter vary per call;
-    construction is cheap: the vector store and rerankers are cached)."""
+    construction is cheap: the vector store, reranker and BM25 indexes are
+    cached). Hybrid: vector candidates + BM25 candidates (same filter), then
+    one rerank over both."""
     search_kwargs: dict = {"k": RERANK_CANDIDATES, "score_threshold": RELEVANCE_SCORE_THRESHOLD}
     if metadata_filter is not None:
         search_kwargs["filter"] = metadata_filter
@@ -164,4 +180,11 @@ def build_kb_retriever(k: int, metadata_filter: dict | None) -> RerankingRetriev
     except Exception as exc:
         logger.warning("KB_SEARCH: reranker unavailable, using vector order (%s)", exc)
         reranker = _VectorOrder(top_n=RERANK_TOP_N)
-    return RerankingRetriever(base_retriever=base, reranker=reranker, top_n=min(k, MAX_SOURCES))
+    try:
+        keyword = build_keyword_retriever(metadata_filter)
+    except Exception as exc:
+        logger.warning("KB_SEARCH: keyword retriever unavailable, using vector search only (%s)", exc)
+        keyword = None
+    return RerankingRetriever(
+        base_retriever=base, reranker=reranker, top_n=min(k, MAX_SOURCES), keyword_retriever=keyword
+    )

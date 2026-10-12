@@ -223,3 +223,77 @@ def test_reranking_retriever_keeps_one_chunk_per_page():
     rr = r.RerankingRetriever(base_retriever=_ListRetriever(docs=docs), reranker=_RecordingReranker(), top_n=2)
     out = rr.invoke("q")
     assert [(d.metadata["page"], d.page_content) for d in out] == [(35, "Net sales table"), (36, "AWS sales increased 19%")]
+
+
+class _RaisingRetriever(BaseRetriever):
+    def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun):
+        raise RuntimeError("corpus unreadable")
+
+
+def test_keyword_candidates_are_added_before_rerank():
+    reranker = _RecordingReranker()
+    rr = r.RerankingRetriever(
+        base_retriever=_ListRetriever(docs=_docs("a")),
+        keyword_retriever=_ListRetriever(docs=[Document(page_content="k", metadata={"filename": "y.pdf", "page": 7})]),
+        reranker=reranker,
+        top_n=2,
+    )
+    assert [d.page_content for d in rr.invoke("q")] == ["a", "k"]
+    assert reranker.seen == ["a", "k"]
+
+
+def test_no_keyword_candidates_when_vector_search_finds_nothing():
+    """BM25 has no score floor: without this gate an off-topic question would
+    get sources instead of "no relevant results" (rag_agent's web_search cue)."""
+    reranker = _RecordingReranker()
+    rr = r.RerankingRetriever(
+        base_retriever=_ListRetriever(docs=[]),
+        keyword_retriever=_ListRetriever(docs=_docs("k")),
+        reranker=reranker,
+        top_n=2,
+    )
+    assert rr.invoke("weather in Paris") == []
+    assert reranker.seen is None
+
+
+def test_chunk_found_by_both_searches_is_reranked_once():
+    reranker = _RecordingReranker()
+    rr = r.RerankingRetriever(
+        base_retriever=_ListRetriever(docs=_docs("same", "a")),
+        keyword_retriever=_ListRetriever(docs=_docs("same")),
+        reranker=reranker,
+        top_n=4,
+    )
+    rr.invoke("q")
+    assert reranker.seen == ["same", "a"]
+
+
+def test_keyword_failure_falls_back_to_vector_candidates():
+    rr = r.RerankingRetriever(
+        base_retriever=_ListRetriever(docs=_docs("a", "b")),
+        keyword_retriever=_RaisingRetriever(),
+        reranker=_RecordingReranker(),
+        top_n=2,
+    )
+    assert [d.page_content for d in rr.invoke("q")] == ["a", "b"]
+
+
+def test_build_kb_retriever_passes_the_same_filter_to_keyword_search(monkeypatch):
+    monkeypatch.setattr(r, "get_vectorstore", lambda: _FakeStore())
+    monkeypatch.setattr(r, "CappedPineconeRerank", lambda **kw: _ReverseReranker(top_n=kw["top_n"]))
+    seen = {}
+    monkeypatch.setattr(r, "build_keyword_retriever", lambda f: seen.setdefault("filter", f) and None)
+    rr = r.build_kb_retriever(2, {"filename": {"$in": ["a.pdf"]}})
+    assert seen["filter"] == {"filename": {"$in": ["a.pdf"]}}
+    assert rr.keyword_retriever is None
+
+
+def test_build_kb_retriever_survives_a_broken_keyword_corpus(monkeypatch):
+    monkeypatch.setattr(r, "get_vectorstore", lambda: _FakeStoreWith(_docs("a", "b")))
+    monkeypatch.setattr(r, "CappedPineconeRerank", lambda **kw: _ReverseReranker(top_n=kw["top_n"]))
+
+    def broken(_f):
+        raise OSError("corrupt gzip")
+
+    monkeypatch.setattr(r, "build_keyword_retriever", broken)
+    assert [d.page_content for d in r.build_kb_retriever(2, None).invoke("q")] == ["b", "a"]

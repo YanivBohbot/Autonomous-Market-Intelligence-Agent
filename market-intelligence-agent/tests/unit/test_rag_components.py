@@ -72,3 +72,17 @@ def test_index_documents_tags_filename_and_upserts_with_deterministic_ids(monkey
     (splits, passed_ids), = store.calls
     assert ids == passed_ids == assign_chunk_ids(splits)
     assert all(s.metadata["filename"] == "r.pdf" for s in splits)
+
+
+def test_index_documents_writes_the_same_chunks_to_the_keyword_corpus(monkeypatch):
+    from app.rag import keyword_search
+
+    store = _FakeStore()
+    monkeypatch.setattr(ingestion, "get_vectorstore", lambda: store)
+    docs = [Document(page_content="Some text about Acme.", metadata={"source": "r.pdf", "page": 0})]
+
+    ids = index_documents(docs, "r.pdf")
+
+    entries = keyword_search._read_entries(keyword_search.CORPUS_PATH)
+    assert [e["id"] for e in entries] == ids
+    assert {e["filename"] for e in entries} == {"r.pdf"}
