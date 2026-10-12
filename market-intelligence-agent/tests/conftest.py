@@ -21,6 +21,13 @@ os.environ.setdefault("EMAIL_SMTP_SERVER", "smtp.example.com")
 os.environ.setdefault("EMAIL_SMTP_PORT", "587")
 # Unit tests must never call the OpenAI moderation API.
 os.environ.setdefault("MODERATION_ENABLED", "false")
+# Unit tests must never upload traces to LangSmith -- and tracing breaks the
+# fake models: LangSmith serializes every traced middleware's inputs, model
+# included, which drains GenericFakeChatModel's `messages` iterator before
+# the model is ever called (StopIteration). Forced, not setdefault: a
+# developer's .env or shell may set it to true.
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 
 @pytest.fixture
