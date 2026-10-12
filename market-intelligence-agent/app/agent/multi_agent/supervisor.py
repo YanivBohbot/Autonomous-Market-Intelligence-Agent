@@ -2,14 +2,24 @@ import re
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRequest, dynamic_prompt
+from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.types import Command
 
-from app.agent.middleware import ClearOldTurnToolResults
+from app.agent.guardrails.card_guard import block_credit_cards
+from app.agent.middleware import (
+    ClearOldTurnToolResults,
+    context_editing,
+    fresh_documents_prompt,
+    model_fallback,
+    model_retry,
+)
 from app.core.config import settings
-from app.agent.multi_agent.state import SupervisorState
+from app.agent.multi_agent.state import ClientContextState, SupervisorState
 from app.agent.prompts.specialist_agent_prompts import (
     INGESTED_DOCUMENTS_PLACEHOLDER,
     SUPERVISOR_ROUTING_PROMPT,
@@ -56,6 +66,58 @@ _llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
 _router = _llm.with_structured_output(RoutingDecision).with_config(
     metadata={"emit-messages": False, "emit-tool-calls": False}
 )
+
+# The routing decision is internal: Market Desk (ag-ui-langgraph streams via
+# astream_events) must not render its JSON as chat text.
+_ROUTER_MODEL_METADATA = {"emit-messages": False, "emit-tool-calls": False}
+
+
+@dynamic_prompt
+def client_context_routing_prompt(request: ModelRequest) -> str:
+    """Without this, the router had no idea a client was even active (only
+    portfolio_agent/finance_agent/rag_agent read client_context via their
+    own client_context_prompt middleware) -- a vague client question like
+    "qui est le client" could route to memory_agent or another specialist
+    that has never heard of this client, producing a confused answer."""
+    base = request.system_prompt or ""
+    client_context = request.state.get("client_context")
+    if not client_context:
+        return base
+    return (
+        f"{base}\n\n{client_context} When this client is active and the question "
+        'is about them -- even phrased generically ("who is the client", "what\'s their '
+        'portfolio worth") -- prefer portfolio_agent, finance_agent, or rag_agent over '
+        "memory_agent/filesystem_agent/browser_agent/email_agent, which don't know who this "
+        "client is."
+    )
+
+
+def build_router_agent(model: BaseChatModel | None = None):
+    """The routing LLM call as a create_agent: structured output through
+    response_format, plus the same official middleware the specialists get
+    (card guard, live prompts, context editing, model retry/fallback).
+    supervisor_node invokes it with a COPY of the conversation, so its own
+    messages never enter the shared state (except the card guard's)."""
+    fallback = model_fallback()
+    return create_agent(
+        model=model or ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, metadata=_ROUTER_MODEL_METADATA),
+        tools=[],
+        system_prompt=SUPERVISOR_ROUTING_PROMPT,
+        response_format=RoutingDecision,
+        state_schema=ClientContextState,
+        middleware=[
+            block_credit_cards,
+            fresh_documents_prompt,
+            client_context_routing_prompt,
+            context_editing(),
+            *([fallback] if fallback is not None else []),
+            model_retry(),
+        ],
+        name="supervisor_router",
+    )
+
+
+router_agent = build_router_agent()
 
 MAX_AGENT_HOPS = 4
 
