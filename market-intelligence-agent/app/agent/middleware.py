@@ -7,7 +7,7 @@ factory and the middleware every specialist gets.
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -107,7 +107,7 @@ def call_limit() -> ModelCallLimitMiddleware:
     return ModelCallLimitMiddleware(run_limit=MODEL_CALL_LIMIT, exit_behavior="end")
 
 
-def model_retry(on_failure: str = "continue") -> ModelRetryMiddleware:
+def model_retry(on_failure: Literal["continue", "error"] = "continue") -> ModelRetryMiddleware:
     """A transient OpenAI error (rate limit, timeout, 5xx) during the model
     call itself isn't a tool error -- ToolErrorMiddleware never sees it, and
     nothing else in this stack retries it, so the whole run used to fail
@@ -273,7 +273,7 @@ def tool_retry(tools: Sequence[BaseTool]) -> ToolRetryMiddleware | None:
     send_email/write_file/save_memory could repeat a side effect. `None`
     when the specialist has no read-only tool (`tools=None` would mean
     "retry everything", so an empty filter is never passed)."""
-    names = [t.name for t in tools if is_read_only(t.name)]
+    names: list[BaseTool | str] = [t.name for t in tools if is_read_only(t.name)]
     if not names:
         return None
     return ToolRetryMiddleware(max_retries=2, tools=names, on_failure="error")

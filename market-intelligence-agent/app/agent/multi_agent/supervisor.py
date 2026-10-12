@@ -1,9 +1,14 @@
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware, ModelRequest, dynamic_prompt
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelCallLimitMiddleware,
+    ModelRequest,
+    dynamic_prompt,
+)
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
@@ -95,6 +100,17 @@ def build_router_agent(model: BaseChatModel | None = None):
     Market Desk. `checkpointer=False`: a nested agent otherwise inherits the
     graph's checkpointer and writes a full conversation copy per call."""
     fallback = model_fallback()
+    # Typed like base_middleware(): ModelCallLimitMiddleware carries its own
+    # state type, and an inferred list type then matches no create_agent overload.
+    middleware: list[AgentMiddleware[Any, Any, Any]] = [
+        block_credit_cards,
+        fresh_documents_prompt,
+        client_context_routing_prompt,
+        context_editing(),
+        ModelCallLimitMiddleware(run_limit=ROUTER_MODEL_CALL_LIMIT, exit_behavior="error"),
+        *([fallback] if fallback is not None else []),
+        model_retry(on_failure="error"),
+    ]
     return create_agent(
         model=model
         or ChatOpenAI(
@@ -106,15 +122,7 @@ def build_router_agent(model: BaseChatModel | None = None):
         system_prompt=SUPERVISOR_ROUTING_PROMPT,
         response_format=_ROUTER_RESPONSE_FORMAT,
         state_schema=ClientContextState,
-        middleware=[
-            block_credit_cards,
-            fresh_documents_prompt,
-            client_context_routing_prompt,
-            context_editing(),
-            ModelCallLimitMiddleware(run_limit=ROUTER_MODEL_CALL_LIMIT, exit_behavior="error"),
-            *([fallback] if fallback is not None else []),
-            model_retry(on_failure="error"),
-        ],
+        middleware=middleware,
         checkpointer=False,
     )
 
@@ -213,11 +221,14 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
         )
     # Metadata on the invoke config is inherited by every model call inside
     # the router, the ModelFallbackMiddleware model included.
+    # client_context is a ClientContextState field (state_schema); create_agent's
+    # overloads only type the base InputAgentState, hence the cast.
+    router_input: Any = {
+        "messages": list(messages),
+        "client_context": state.get("client_context"),
+    }
     result = router_agent.invoke(
-        {
-            "messages": list(messages),
-            "client_context": state.get("client_context"),
-        },
+        router_input,
         {"metadata": _ROUTER_MODEL_METADATA},
     )
     decision = result.get("structured_response")
