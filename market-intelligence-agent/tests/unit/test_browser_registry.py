@@ -12,15 +12,15 @@ from unittest.mock import patch
 def _load_registry():
     """Load registry.py directly (bypassing app.agent.tools.__init__,
     which drags in langgraph/transformers and hits the Windows long-path bug)."""
-    if "app.agent.tools.mcp_clients.registry" in sys.modules:
-        return sys.modules["app.agent.tools.mcp_clients.registry"]
+    if "app.agent.mcp_clients.registry" in sys.modules:
+        return sys.modules["app.agent.mcp_clients.registry"]
     base = Path(__file__).resolve().parents[2]  # market-intelligence-agent/
     spec = importlib.util.spec_from_file_location(
-        "app.agent.tools.mcp_clients.registry",
-        base / "app" / "agent" / "tools" / "mcp_clients" / "registry.py",
+        "app.agent.mcp_clients.registry",
+        base / "app" / "agent" / "mcp_clients" / "registry.py",
     )
     mod = importlib.util.module_from_spec(spec)
-    sys.modules["app.agent.tools.mcp_clients.registry"] = mod
+    sys.modules["app.agent.mcp_clients.registry"] = mod
     spec.loader.exec_module(mod)
     return mod
 
@@ -36,7 +36,7 @@ def test_browser_backend_agentcore_uses_custom_server(monkeypatch):
     cfg.settings = cfg.Settings()
 
     # Reload registry so it picks up the fresh settings object
-    sys.modules.pop("app.agent.tools.mcp_clients.registry", None)
+    sys.modules.pop("app.agent.mcp_clients.registry", None)
     registry = _load_registry()
     # Also push fresh settings into the module's namespace
     registry.settings = cfg.settings
@@ -60,7 +60,7 @@ def test_browser_backend_local_uses_playwright_mcp(monkeypatch):
     from app.core import config as cfg
     cfg.settings = cfg.Settings()
 
-    sys.modules.pop("app.agent.tools.mcp_clients.registry", None)
+    sys.modules.pop("app.agent.mcp_clients.registry", None)
     registry = _load_registry()
     registry.settings = cfg.settings
 
@@ -81,7 +81,7 @@ def test_stdio_config_pre_creates_the_reports_folder(monkeypatch, tmp_path):
     monkeypatch.setenv("MCP_TRANSPORT", "stdio")
     from app.core import config as cfg
     cfg.settings = cfg.Settings(WORKSPACE_ROOT=tmp_path)
-    sys.modules.pop("app.agent.tools.mcp_clients.registry", None)
+    sys.modules.pop("app.agent.mcp_clients.registry", None)
     registry = _load_registry()
     registry.settings = cfg.settings
 
@@ -98,7 +98,7 @@ def test_local_browser_runs_in_the_screenshots_folder(monkeypatch):
     monkeypatch.setenv("MCP_TRANSPORT", "stdio")
     from app.core import config as cfg
     cfg.settings = cfg.Settings()
-    sys.modules.pop("app.agent.tools.mcp_clients.registry", None)
+    sys.modules.pop("app.agent.mcp_clients.registry", None)
     registry = _load_registry()
     registry.settings = cfg.settings
 

@@ -4,7 +4,7 @@ This file lists every tool exposed to the agent (native LangChain tools and MCP-
 
 **Rule:** every time a new tool (native or MCP) is added to `TOOLS` in `app/agent/tools/__init__.py`, append an entry to the table below and add a short *Why* paragraph in the "Per-tool details" section. Keep `READ_ONLY_TOOLS` in sync.
 
-All MCP-backed tools are loaded through a single `MultiServerMCPClient` registered in `app/agent/tools/mcp_clients/registry.py`. Tool names come straight from the upstream MCP servers (no controller-side prefix). yfmcp self-namespaces (`yfinance_*`); the filesystem server uses unambiguous names (`read_text_file`, etc.); the CRM server's `read_query` is the one bare name.
+All MCP-backed tools are loaded through a single `MultiServerMCPClient` registered in `app/agent/mcp_clients/registry.py`. Tool names come straight from the upstream MCP servers (no controller-side prefix). yfmcp self-namespaces (`yfinance_*`); the filesystem server uses unambiguous names (`read_text_file`, etc.); the CRM server's `read_query` is the one bare name.
 
 ## Summary table
 
@@ -44,12 +44,12 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **Why:** It is the only native side-effect tool currently shipped. The LLM proposes the recipient, subject, and body; the human can optionally attach an existing generated report before approving. Revalidating the file at execution time keeps the HITL flow useful without trusting a browser-supplied path.
 
 ### 2. `read_query`
-- **File:** `app/agent/tools/mcp_clients/crm_client.py` (selects from registry); prod: `prod/lambdas/sqlite_crm/handler.py`
+- **File:** `app/agent/mcp_clients/crm_client.py` (selects from registry); prod: `prod/lambdas/sqlite_crm/handler.py`
 - **What:** Runs the LLM-supplied query against `customers.db`, the wealth-management DB seeded by `create_db.py` (companies, clients, transactions, derived holdings, watchlists). Read-only. **Local vs prod:** the local `mcp-server-sqlite` only accepts statements starting with `SELECT` — a `WITH` (CTE) query is rejected locally even though it's read-only; the prod Lambda accepts both `SELECT` and `WITH`. Both prompts tell the agent to always start SQL with `SELECT` so behavior is consistent across environments.
 - **Why:** The advisor's private data — who holds what, since when — combined by the agent with live prices (yfinance) and company reports (knowledge base) for multi-step portfolio questions.
 
 ### 3. `yfinance_get_ticker_info`
-- **File:** `app/agent/tools/mcp_clients/yfinance_client.py` (selects from registry)
+- **File:** `app/agent/mcp_clients/yfinance_client.py` (selects from registry)
 - **What:** Spawns `yfmcp` as a stdio subprocess and calls `get_ticker_info(ticker)`. Returns price, change, volume, day stats.
 - **Why:** Most market questions start with "what's it trading at right now?" This is the cheapest, lowest-latency signal the agent can reach for.
 
@@ -64,7 +64,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **Why:** Price moves without context are noise. News headlines provide the narrative thread the synthesis step needs.
 
 ### 6. `read_text_file`
-- **File:** `app/agent/tools/mcp_clients/filesystem_client.py` (selects from registry)
+- **File:** `app/agent/mcp_clients/filesystem_client.py` (selects from registry)
 - **What:** Reads a UTF-8 text file from `data/workspace/<path>` via `@modelcontextprotocol/server-filesystem`. Paths outside the workspace root are rejected by the server.
 - **Why:** The input channel of the workspace. Drop a CSV of tickers, a competitor list, or a briefing note into `data/workspace/` and the agent can consume it without going through the Pinecone ingest pipeline.
 
@@ -79,7 +79,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **Why:** The output channel of the workspace. The agent's synthesis usually lives only in the message history; this lets it persist briefs and snapshots that survive the session. Gated by `HumanInTheLoopMiddleware` — the user sees the path and content in the approval card before anything is written.
 
 ### 9. `browser_navigate`
-- **File:** `app/agent/tools/mcp_clients/browser_client.py` (selects from registry)
+- **File:** `app/agent/mcp_clients/browser_client.py` (selects from registry)
 - **What:** Spawns `@playwright/mcp` as a stdio subprocess (with headless Chromium), navigates the active browser tab to the given URL, returns page metadata.
 - **Why:** The agent's reach was bounded by what Tavily snippets and yfinance metadata could surface. With `browser_navigate` it can open the actual Reuters article, the actual investor-relations page, the actual competitor pricing tier — and feed that into the synthesis step instead of guessing from headlines.
 - **Production backend:** Amazon Bedrock AgentCore Browser via a custom stdio MCP server in `app/mcp_servers/browser/`. Selected via `BROWSER_BACKEND=agentcore`. Dev uses `@playwright/mcp`. See `docs/superpowers/specs/2026-05-27-agentcore-browser-design.md`.
@@ -124,7 +124,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 > **Persistence note:** the v1 backend is `langgraph.store.memory.InMemoryStore` — facts are lost on server restart. Migrating to `AsyncSqliteStore` is a single-function change in `app/agent/memory/store.py`; deferred to a follow-up subsystem when durability matters.
 
 ### 17. `list_tables`
-- **File:** `app/agent/tools/mcp_clients/crm_client.py` (selects from registry); prod: `prod/lambdas/sqlite_crm/handler.py`
+- **File:** `app/agent/mcp_clients/crm_client.py` (selects from registry); prod: `prod/lambdas/sqlite_crm/handler.py`
 - **What:** Returns the table names of `customers.db`. Read-only; in `READ_ONLY_TOOLS`.
 - **Why:** Schema discovery, so prompts don't have to hard-code every column as the DB evolves.
 
@@ -162,7 +162,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 
 ## How to add a new tool
 
-1. **MCP-backed:** add an entry to `_server_config()` in `app/agent/tools/mcp_clients/registry.py`. Create a per-server selector module (or extend an existing one) that filters the registry's tool list by exact name. Native tool: implement under `app/agent/tools/`, wrap with `@tool` if multi-arg.
+1. **MCP-backed:** add an entry to `_server_config()` in `app/agent/mcp_clients/registry.py`. Create a per-server selector module (or extend an existing one) that filters the registry's tool list by exact name. Native tool: implement under `app/agent/tools/`, wrap with `@tool` if multi-arg.
 2. Export the tool symbol from `app/agent/tools/__init__.py` and append it to `TOOLS`.
 3. If the tool is read-only (no side effects, idempotent, safe to retry), add its name to `READ_ONLY_TOOLS` so it bypasses the HITL approval gate.
 4. **Update this file:** add a row to the summary table and a sub-section under "Per-tool details" explaining *what* it does and *why* it earns a slot. Keep entries short — a few sentences each.

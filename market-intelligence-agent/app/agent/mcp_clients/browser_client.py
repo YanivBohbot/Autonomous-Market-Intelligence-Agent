@@ -16,12 +16,12 @@ import logging
 
 from langchain_core.tools import BaseTool
 
-from app.agent.tools.mcp_clients.browser_session import (
+from app.agent.mcp_clients.browser_session import (
     PersistentToolSession,
     open_local_browser_tools,
     persistent_tool,
 )
-from app.agent.tools.mcp_clients.registry import select_tool
+from app.agent.mcp_clients.registry import select_tool
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

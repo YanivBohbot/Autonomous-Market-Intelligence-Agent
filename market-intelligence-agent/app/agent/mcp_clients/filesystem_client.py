@@ -27,7 +27,7 @@ import logging
 
 from langchain_core.tools import BaseTool
 
-from app.agent.tools.mcp_clients.registry import select_tool
+from app.agent.mcp_clients.registry import select_tool
 
 logger = logging.getLogger(__name__)
 

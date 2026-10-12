@@ -2,7 +2,7 @@
 
 Replaces the @modelcontextprotocol/server-filesystem stdio server for production.
 Same three tool names + argument shapes as the local dev path, so the agent code
-in app/agent/tools/mcp_clients/filesystem_client.py is unchanged when
+in app/agent/mcp_clients/filesystem_client.py is unchanged when
 MCP_TRANSPORT=gateway.
 
 Sandbox: all paths are interpreted as keys inside the single S3 bucket named by

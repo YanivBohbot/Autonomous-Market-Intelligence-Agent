@@ -129,7 +129,7 @@ def test_price_history_parses_the_real_mcp_content_block_shape(monkeypatch):
     # and the hand-off to normalize_price_history -- never actually ran.
     # yfinance_get_price_history's raw output is a markdown table (unlike
     # the quote tool's JSON), wrapped in local-stdio content blocks.
-    import app.agent.tools.mcp_clients.yfinance_client as yf_client_module
+    import app.agent.mcp_clients.yfinance_client as yf_client_module
 
     class FakeHistoryTool:
         args = {"symbol": {}, "period": {}}
@@ -569,7 +569,7 @@ def test_quote_snapshot_builds_symbol_name_price_change_pct(monkeypatch):
         args = {"symbol": {}}
         ainvoke = staticmethod(fake_tool)
 
-    import app.agent.tools.mcp_clients.yfinance_client as yf_client_module
+    import app.agent.mcp_clients.yfinance_client as yf_client_module
     monkeypatch.setattr(yf_client_module, "yf_quote_tool", FakeQuoteTool())
 
     result = asyncio.run(data_router_module._quote_snapshot("AAPL"))
@@ -584,7 +584,7 @@ def test_quote_snapshot_uses_the_given_name_override(monkeypatch):
         args = {"symbol": {}}
         ainvoke = staticmethod(fake_tool)
 
-    import app.agent.tools.mcp_clients.yfinance_client as yf_client_module
+    import app.agent.mcp_clients.yfinance_client as yf_client_module
     monkeypatch.setattr(yf_client_module, "yf_quote_tool", FakeQuoteTool())
 
     result = asyncio.run(data_router_module._quote_snapshot("^GSPC", name="S&P 500"))
@@ -599,7 +599,7 @@ def test_quote_snapshot_falls_back_to_fulldaychangepercent(monkeypatch):
         args = {"symbol": {}}
         ainvoke = staticmethod(fake_tool)
 
-    import app.agent.tools.mcp_clients.yfinance_client as yf_client_module
+    import app.agent.mcp_clients.yfinance_client as yf_client_module
     monkeypatch.setattr(yf_client_module, "yf_quote_tool", FakeQuoteTool())
 
     result = asyncio.run(data_router_module._quote_snapshot("X"))

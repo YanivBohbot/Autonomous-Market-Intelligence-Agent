@@ -9,7 +9,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from langchain_core.messages import AIMessageChunk, ToolMessage
 
 from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING
-from app.agent.tools.mcp_clients.browser_client import SCREENSHOT_TOOL_NAME
+from app.agent.mcp_clients.browser_client import SCREENSHOT_TOOL_NAME
 from app.api.models.models import StreamRequest
 from app.api.routers._helpers import (
     get_action_description,

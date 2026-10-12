@@ -56,7 +56,7 @@ This scenario showcases the agent chaining a structured data query (MCP), a docu
 
 ### 🛠️ Available Tools (14)
 
-The tool surface is unified through a single `MultiServerMCPClient` registry (see `app/agent/tools/mcp_clients/registry.py`). The `approval_node` gates **only** the side-effect tools; read-only tools flow straight through.
+The tool surface is unified through a single `MultiServerMCPClient` registry (see `app/agent/mcp_clients/registry.py`). The `approval_node` gates **only** the side-effect tools; read-only tools flow straight through.
 
 | # | Tool | Type | Backend | Description |
 |---|---|---|---|---|

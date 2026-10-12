@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import pytest
 from langchain_core.tools import StructuredTool
 
-from app.agent.tools.mcp_clients.browser_session import (
+from app.agent.mcp_clients.browser_session import (
     PersistentToolSession,
     persistent_tool,
 )
@@ -124,7 +124,7 @@ def test_wrapper_keeps_the_llm_facing_schema():
 
 
 def test_local_backend_wraps_tools_agentcore_does_not(monkeypatch):
-    from app.agent.tools.mcp_clients import browser_client as bc
+    from app.agent.mcp_clients import browser_client as bc
 
     sentinel = StructuredTool(name="browser_navigate", description="d", coroutine=None,
                               func=lambda **k: None, args_schema={"type": "object", "properties": {}})
@@ -139,7 +139,7 @@ def test_local_backend_wraps_tools_agentcore_does_not(monkeypatch):
 
 
 def test_screenshot_filename_is_reduced_to_a_bare_name():
-    from app.agent.tools.mcp_clients.browser_session import bare_screenshot_filename
+    from app.agent.mcp_clients.browser_session import bare_screenshot_filename
     assert bare_screenshot_filename({"filename": "screenshots/tv10.png"}) == {"filename": "tv10.png"}
     assert bare_screenshot_filename({"filename": "..\..\evil.png", "fullPage": True}) == {"filename": "evil.png", "fullPage": True}
     assert bare_screenshot_filename({"fullPage": True}) == {"fullPage": True}

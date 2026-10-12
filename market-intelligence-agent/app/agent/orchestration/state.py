@@ -10,16 +10,8 @@ class SupervisorState(TypedDict):
     documents: List[str]
     next_agent: Optional[str]
     agent_hops: int
-    # Unlike next_agent (cleared to None whenever a turn finishes), this
-    # never resets -- it's the specialist the supervisor last routed to
-    # (set at routing time, not verified to have actually answered), used
-    # by the supervisor's deterministic sticky-routing rule.
     last_agent: Optional[str]
-    # Set every turn by load_client_context, from the thread id -- see that
-    # function's docstring. None on every thread except a client workspace's.
     client_context: Optional[str]
-    # Transport that originated the current turn. Voice messages remain in
-    # checkpoint state for context but are filtered from visual history.
     turn_source: Literal["text", "voice"]
 
 
@@ -31,4 +23,5 @@ class ClientContextState(AgentState):
     graph's state is never forwarded into the specialist subgraph, and
     request.state.get("client_context") inside client_context_prompt would
     always be None. Key name must match SupervisorState.client_context."""
+
     client_context: Optional[str]

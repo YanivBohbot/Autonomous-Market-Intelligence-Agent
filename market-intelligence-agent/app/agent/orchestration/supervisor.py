@@ -79,7 +79,7 @@ def client_context_routing_prompt(request: ModelRequest) -> str:
 
 
 _ROUTER_RESPONSE_FORMAT = ToolStrategy(RoutingDecision)
-# Retries x model calls bound a failing router (3 x 3 attempts at most).
+
 ROUTER_MODEL_CALL_LIMIT = 3
 
 
@@ -95,8 +95,7 @@ def build_router_agent(model: BaseChatModel | None = None):
     Market Desk. `checkpointer=False`: a nested agent otherwise inherits the
     graph's checkpointer and writes a full conversation copy per call."""
     fallback = model_fallback()
-    # Typed like base_middleware(): ModelCallLimitMiddleware carries its own
-    # state type, and an inferred list type then matches no create_agent overload.
+
     middleware: list[AgentMiddleware[Any, Any, Any]] = [
         block_credit_cards,
         fresh_documents_prompt,

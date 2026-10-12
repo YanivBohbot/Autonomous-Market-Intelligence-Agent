@@ -13,7 +13,7 @@ uv run python -m app.ingest
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
 uv run python test_agent.py
 uv run pytest tests/ -v
-uv run python app/agent/tools/mcp_clients/crm_client.py
+uv run python app/agent/mcp_clients/crm_client.py
 ```
 
 `create_db.py` rebuilds the committed wealth-management SQLite database, `customers.db`. `app.ingest` reads PDFs in `data/`, embeds them in Pinecone, and rewrites `app/agent/tools/kb_documents.json`; commit that manifest whenever ingesting content. Install the local browser once with `npx -y @playwright/mcp@latest install-browser chrome-for-testing`.
@@ -41,8 +41,12 @@ Important optional settings include `LOG_LEVEL`, `API_URL`, `YFINANCE_TIMEOUT_S`
   - `orchestration/`: graph wiring — `graph.py` (StateGraph build), `supervisor.py` (supervisor node + router agent), `state.py`.
   - `agents_specialist/`: one `create_agent` per specialist (`rag`, `finance`, `portfolio`, `browser`, `email`, `filesystem`, `memory`).
   - `prompts/`: `orchestration_prompt.py` (router prompt), `agents_specialist_prompts.py` (one system prompt per specialist), `ingested_documents_prompt.py` (ingested-PDF list injected into both), `__init__.py` (`with_today`).
-  - `middleware.py`, `guardrails/`, `memory/`, `tools/`, `display.py` (Market Desk card normalizers, also used by `/data`).
+  - `tools/`: native LangChain tools + the `TOOLS` / `READ_ONLY_TOOLS` registry (which also lists the MCP-backed tools).
+  - `mcp_clients/`: MCP clients — `registry.py` (one `MultiServerMCPClient`), then `crm_client.py`, `yfinance_client.py`, `filesystem_client.py`, `browser_client.py` (+ `browser_session.py`).
+  - `middleware.py`, `guardrails/`, `memory/`, `display.py` (Market Desk card normalizers, also used by `/data`).
 - `app/voice/`: GPT-Live delegation worker, shared voice graph, and HITL handling.
+- `app/mcp_servers/`: MCP servers we run ourselves (`browser/`, the AgentCore Browser MCP server used when `BROWSER_BACKEND=agentcore`).
+- `app/narratives/`: LLM-written market/portfolio narratives for the `/data` Briefing and Clients pages (not agent tools).
 - `app/data_import/`: deterministic, non-agentic SQLite/PDF import logic.
 - `frontend/src/`: React console features such as Desk, Clients, Data, Reports, and Briefing.
 - `tests/unit/`: pytest suite. Frontend Vitest tests are colocated with components.
@@ -58,7 +62,7 @@ The former single-agent graph (`app/agent/graph.py`, `app/agent/nodes/`, `prompt
 
 ## Tools and Safety Rules
 
-`app/agent/tools/__init__.py` is the tool registry. MCP-backed tools are created once through `MultiServerMCPClient` in `app/agent/tools/mcp_clients/registry.py` and re-exported by the server-specific modules.
+`app/agent/tools/__init__.py` is the tool registry. MCP-backed tools are created once through `MultiServerMCPClient` in `app/agent/mcp_clients/registry.py` and re-exported by the server-specific modules.
 
 - CRM: `read_query`, `list_tables`, and `describe_table` access the SQLite wealth database.
 - Financial analysis: `portfolio_metrics`, `pct_change`, `concentration_screen`, and `yfinance_*` read market and portfolio data.

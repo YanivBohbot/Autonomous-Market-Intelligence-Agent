@@ -101,7 +101,7 @@ async def open_local_browser_tools():
     from langchain_mcp_adapters.client import MultiServerMCPClient
     from langchain_mcp_adapters.tools import load_mcp_tools
 
-    from app.agent.tools.mcp_clients.registry import _browser_entry
+    from app.agent.mcp_clients.registry import _browser_entry
     from app.core.config import settings
 
     connections = cast(Any, {"browser": _browser_entry(settings.WORKSPACE_ROOT.resolve())})

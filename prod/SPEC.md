@@ -71,9 +71,9 @@ Caller ──SigV4──▶ AgentCore Runtime (/invocations)
 
 1. **`app/api/server.py`** — add an `/invocations` POST handler that wraps `chat_router` for AgentCore's contract. Keep `/chat` for local dev parity.
 2. **`app/agent/memory/checkpointer.py`** — add an `AgentCoreMemoryCheckpointer` implementation; choose backend via `CHECKPOINTER_BACKEND=agentcore|sqlite` env var.
-3. **`app/agent/tools/mcp_clients/registry.py`** — when `MCP_TRANSPORT=gateway`, build clients over `streamable-http` to `$AGENTCORE_GATEWAY_URL` instead of stdio.
+3. **`app/agent/mcp_clients/registry.py`** — when `MCP_TRANSPORT=gateway`, build clients over `streamable-http` to `$AGENTCORE_GATEWAY_URL` instead of stdio.
 4. **New: `prod/lambdas/yfinance/`, `prod/lambdas/filesystem/`, `prod/lambdas/sqlite-crm/`** — Lambda handlers that wrap each MCP server.
-5. **`app/agent/tools/mcp_clients/filesystem_client.py`** — file ops must target S3 when `WORKSPACE_BACKEND=s3`.
+5. **`app/agent/mcp_clients/filesystem_client.py`** — file ops must target S3 when `WORKSPACE_BACKEND=s3`.
 6. **`app/core/logging.py`** — add a redaction filter that masks the four secret values (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `TAVILY_API_KEY`, `EMAIL_PASSWORD`) from any log record. Unit test asserting redaction (see security finding F3).
 
 ### 3.4 Deferred to v1.1+
@@ -330,7 +330,7 @@ These touch the existing `market-intelligence-agent/app/` code, not `prod/`:
 
 1. Add `/invocations` handler to `app/api/server.py` (AgentCore contract: POST, JSON body, returns JSON).
 2. Add `CHECKPOINTER_BACKEND={sqlite|agentcore}` env switch in `app/agent/memory/checkpointer.py`.
-3. Add `MCP_TRANSPORT={stdio|gateway}` switch in `app/agent/tools/mcp_clients/registry.py`.
+3. Add `MCP_TRANSPORT={stdio|gateway}` switch in `app/agent/mcp_clients/registry.py`.
 4. Add `WORKSPACE_BACKEND={local|s3}` switch in `filesystem_client.py`.
 5. Add logger redaction filter in `app/core/logging.py` + unit test (Phase 3 finding F3).
 6. Add OpenAI prompt caching for system prompt + RAG context (Phase 4 optimization #1).

@@ -4,17 +4,17 @@ from app.agent.tools.memory import (
     recall_memory_tool,
     list_memories_tool,
 )
-from app.agent.tools.mcp_clients.crm_client import crm_tool, crm_list_tables_tool, crm_describe_table_tool
+from app.agent.mcp_clients.crm_client import crm_tool, crm_list_tables_tool, crm_describe_table_tool
 from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool
 from app.agent.tools.concentration import concentration_screen_tool
 from app.agent.tools.client_portfolio import client_portfolio_tool
 from app.agent.tools.portfolio_report import save_portfolio_report_tool
-from app.agent.tools.mcp_clients.yfinance_client import (
+from app.agent.mcp_clients.yfinance_client import (
     yf_quote_tool,
     yf_history_tool,
     yf_news_tool,
 )
-from app.agent.tools.mcp_clients.filesystem_client import (
+from app.agent.mcp_clients.filesystem_client import (
     fs_read_file_tool,
     fs_list_dir_tool,
     fs_write_file_tool,
@@ -26,7 +26,7 @@ from app.agent.tools.knowledge_base import search_knowledge_base_tool, web_searc
 # matching tools and select_tool() would raise at import. Defer that error
 # to actual call sites instead.
 try:
-    from app.agent.tools.mcp_clients.browser_client import (
+    from app.agent.mcp_clients.browser_client import (
         browser_navigate_tool,
         browser_snapshot_tool,
         browser_screenshot_tool,

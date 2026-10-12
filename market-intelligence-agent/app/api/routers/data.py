@@ -81,7 +81,7 @@ async def _fetch_live_price(ticker: str) -> float:
     # Deferred import: avoids connecting to the yfinance MCP server at
     # module import time for every test that imports this router, same
     # convention as client_portfolio_tool / concentration_screen_tool.
-    from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
+    from app.agent.mcp_clients.yfinance_client import yf_quote_tool
 
     symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"
     return price_from_quote(parse_tool_payload(await yf_quote_tool.ainvoke({symbol_arg: ticker})))
@@ -154,7 +154,7 @@ def _change_pct_from_quote(info: dict) -> float:
 
 
 async def _quote_snapshot(symbol: str, *, name: str | None = None) -> dict:
-    from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
+    from app.agent.mcp_clients.yfinance_client import yf_quote_tool
 
     symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"
     info = parse_tool_payload(await yf_quote_tool.ainvoke({symbol_arg: symbol}))
@@ -406,7 +406,7 @@ def _tool_content_text(result) -> str:
 
 async def _price_history(ticker: str) -> list[dict]:
     from app.agent.display import normalize_price_history
-    from app.agent.tools.mcp_clients.yfinance_client import yf_history_tool
+    from app.agent.mcp_clients.yfinance_client import yf_history_tool
 
     symbol_arg = "symbol" if "symbol" in yf_history_tool.args else "ticker"
     raw = await yf_history_tool.ainvoke({symbol_arg: ticker, "period": "3mo"})
