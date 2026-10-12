@@ -32,12 +32,16 @@ PINECONE_API_KEY, PINECONE_INDEX_NAME, TAVILY_API_KEY
 EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT
 ```
 
-Important optional settings include `LOG_LEVEL`, `API_URL`, `YFINANCE_TIMEOUT_S`, `WORKSPACE_ROOT`, `BROWSER_BACKEND`, `BROWSER_TOOL_ID`, `BROWSER_IDLE_TTL_S`, `COPILOT_ENABLED`, and `ANTHROPIC_API_KEY`. Do not commit `.env` files or credentials. Email simulates when the sender is a placeholder or no real Amazon SES identity is configured.
+Important optional settings include `LOG_LEVEL`, `API_URL`, `YFINANCE_TIMEOUT_S`, `WORKSPACE_ROOT`, `BROWSER_BACKEND`, `BROWSER_TOOL_ID`, `BROWSER_IDLE_TTL_S`, `COPILOT_ENABLED`, `MODERATION_ENABLED`, and `ANTHROPIC_API_KEY`. Do not commit `.env` files or credentials. Email simulates when the sender is a placeholder or no real Amazon SES identity is configured.
 
 ## Project Layout
 
 - `app/api/`: FastAPI server, request models, and routers.
-- `app/agent/`: multi-agent LangGraph graph (supervisor + specialists), prompts, guardrails, memory, and tools.
+- `app/agent/`: the multi-agent LangGraph system.
+  - `orchestration/`: graph wiring — `graph.py` (StateGraph build), `supervisor.py` (supervisor node + router agent), `state.py`.
+  - `agents_specialist/`: one `create_agent` per specialist (`rag`, `finance`, `portfolio`, `browser`, `email`, `filesystem`, `memory`).
+  - `prompts/`: `orchestration_prompt.py` (router prompt), `agents_specialist_prompts.py` (one system prompt per specialist), `ingested_documents_prompt.py` (ingested-PDF list injected into both), `__init__.py` (`with_today`).
+  - `middleware.py`, `guardrails/`, `memory/`, `tools/`, `display.py` (Market Desk card normalizers, also used by `/data`).
 - `app/voice/`: GPT-Live delegation worker, shared voice graph, and HITL handling.
 - `app/data_import/`: deterministic, non-agentic SQLite/PDF import logic.
 - `frontend/src/`: React console features such as Desk, Clients, Data, Reports, and Briefing.
@@ -46,11 +50,11 @@ Important optional settings include `LOG_LEVEL`, `API_URL`, `YFINANCE_TIMEOUT_S`
 
 ## Runtime Architecture
 
-FastAPI compiles one multi-agent graph with the configured checkpointer and store. That same object is assigned to `app.state.agent_app` and wrapped by `app.state.market_desk_agent`; `/stream`, `/approve`, AgentCore `/invocations`, and opt-in `/copilot/market-desk` therefore share checkpoints and conversation state. The graph routes `load_client_context -> record_question -> input_guard -> supervisor -> specialist -> supervisor -> END` (`input_guard` blocks credit-card numbers before any LLM call) across RAG, finance, portfolio, browser, email, filesystem, and memory specialists.
+FastAPI compiles one multi-agent graph with the configured checkpointer and store. That same object is assigned to `app.state.agent_app` and wrapped by `app.state.market_desk_agent`; `/stream`, `/approve`, AgentCore `/invocations`, and opt-in `/copilot/market-desk` therefore share checkpoints and conversation state. The graph routes `load_client_context -> record_question -> supervisor -> specialist -> supervisor -> finalize_turn -> END` across RAG, finance, portfolio, browser, email, filesystem, and memory specialists. The supervisor keeps its deterministic routing rules in Python and makes its one LLM decision through a `create_agent` router (`build_router_agent()`, structured `RoutingDecision`). Credit-card numbers are blocked before any model call by the `block_credit_cards` `@before_agent` middleware on that router (`app/agent/guardrails/card_guard.py`).
 
 Side effects use `HumanInTheLoopMiddleware`. Legacy boolean approval is expanded into `Command(resume={"decisions": [...]})`, with one `approve` or `reject` decision per pending action. Nested specialist state must be inspected with `subgraphs=True` before describing or resuming an interrupt.
 
-The former single-agent graph (`app/agent/graph.py` and `app/agent/nodes/`) was removed on 2026-10-12; the multi-agent graph is the only graph.
+The former single-agent graph (`app/agent/graph.py`, `app/agent/nodes/`, `prompts/system.py`) was removed on 2026-10-12; the multi-agent graph is the only graph, so there is no global system prompt — each specialist and the router have their own.
 
 ## Tools and Safety Rules
 
@@ -70,7 +74,7 @@ When adding, renaming, or removing a tool, update `TOOLS` and `READ_ONLY_TOOLS` 
 
 The multi-agent graph (`app/agent/orchestration/graph.py`, specialists in `app/agent/agents_specialist/`) is the primary text runtime used by `/stream`, `/approve`, AgentCore, and Market Desk. `COPILOT_ENABLED=true` only exposes the AG-UI `/copilot/market-desk` wrapper; it does not change which graph the other text transports use.
 
-Shared middleware lives in `app/agent/middleware.py`: sensitive-data checks, date prompting, message summarization, credit-card masking, call limits, optional Anthropic fallback, model retry, and tool-error conversion. Multi-agent HITL supports one `approve`, `reject`, or `edit` decision per pending call.
+Shared middleware lives in `app/agent/middleware.py` (used by both `orchestration/` and `agents_specialist/`): credit-card masking, OpenAI moderation (off when `MODERATION_ENABLED=false`, as in unit tests), date prompting, context editing of old tool results, message summarization, model call limits, optional Anthropic fallback, model retry, tool-error conversion, and read-only tool retry. `rag`/`finance`/`browser` also redact email addresses from what the model sees. Multi-agent HITL supports one `approve`, `reject`, or `edit` decision per pending call.
 
 ## API and Voice
 
