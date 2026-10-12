@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage
 
-from app.agent.tools import market_narrative as narrative_mod
-from app.agent.tools.market_narrative import generate_market_narrative
+from app.narratives import market_narrative as narrative_mod
+from app.narratives.market_narrative import generate_market_narrative
 
 _MARKET = {
     "indices": [

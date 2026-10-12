@@ -13,7 +13,7 @@ uv run python -m app.ingest
 uv run uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
 uv run python test_agent.py
 uv run pytest tests/ -v
-uv run python app/agent/tools/mcp_clients/mcp_client.py
+uv run python app/agent/tools/mcp_clients/crm_client.py
 ```
 
 `create_db.py` rebuilds the committed wealth-management SQLite database, `customers.db`. `app.ingest` reads PDFs in `data/`, embeds them in Pinecone, and rewrites `app/agent/tools/kb_documents.json`; commit that manifest whenever ingesting content. Install the local browser once with `npx -y @playwright/mcp@latest install-browser chrome-for-testing`.

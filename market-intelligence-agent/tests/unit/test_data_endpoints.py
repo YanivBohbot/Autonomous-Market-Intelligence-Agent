@@ -215,7 +215,7 @@ def test_get_client_report_with_no_holdings_skips_the_llm_call_via_the_real_narr
     # happens inside generate_portfolio_narrative itself (unit-tested in
     # test_portfolio_narrative.py), this just confirms data.py wires the
     # real function through rather than always using a canned string.
-    from app.agent.tools.portfolio_narrative import generate_portfolio_narrative
+    from app.narratives.portfolio_narrative import generate_portfolio_narrative
 
     monkeypatch.setattr(data_router_module, "_generate_narrative", generate_portfolio_narrative)
     resp = client.get("/data/clients/1/report")
@@ -1119,7 +1119,7 @@ def test_generate_market_narrative_wrapper_falls_back_when_the_llm_raises(monkey
     async def failing_narrative(market):
         raise RuntimeError("OpenAI is down")
 
-    import app.agent.tools.market_narrative as market_narrative_module
+    import app.narratives.market_narrative as market_narrative_module
     monkeypatch.setattr(market_narrative_module, "generate_market_narrative", failing_narrative)
 
     result = asyncio.run(data_router_module._generate_market_narrative({"indices": [], "sectors": []}))
@@ -1136,7 +1136,7 @@ def test_get_briefing_narrative_failure_does_not_affect_the_rest(client, monkeyp
     async def failing_generate(market):
         raise RuntimeError("OpenAI is down")
 
-    import app.agent.tools.market_narrative as market_narrative_module
+    import app.narratives.market_narrative as market_narrative_module
     monkeypatch.setattr(market_narrative_module, "generate_market_narrative", failing_generate)
     monkeypatch.setattr(data_router_module, "_cached_quote_snapshot", fake_snapshot)
     monkeypatch.setattr(data_router_module, "_price_history", lambda ticker: _async_const([]))

@@ -4,7 +4,7 @@ from app.agent.tools.memory import (
     recall_memory_tool,
     list_memories_tool,
 )
-from app.agent.tools.mcp_clients.mcp_client import crm_tool, crm_list_tables_tool, crm_describe_table_tool
+from app.agent.tools.mcp_clients.crm_client import crm_tool, crm_list_tables_tool, crm_describe_table_tool
 from app.agent.tools.finance_calc import portfolio_metrics_tool, pct_change_tool
 from app.agent.tools.concentration import concentration_screen_tool
 from app.agent.tools.client_portfolio import client_portfolio_tool

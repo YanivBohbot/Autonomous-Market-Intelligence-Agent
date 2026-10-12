@@ -176,7 +176,7 @@ async def save_portfolio_report_tool(client_name: str) -> dict:
         }
 
     from app.agent.tools.concentration import parse_tool_payload, price_from_quote
-    from app.agent.tools.mcp_clients.mcp_client import crm_tool
+    from app.agent.tools.mcp_clients.crm_client import crm_tool
     from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
 
     symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"

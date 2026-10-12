@@ -36,13 +36,13 @@ def test_lazy_start_calls_start_session_on_first_get_page(
     """First .get_page() call must start an AgentCore session and a Playwright
     connection. Subsequent calls must reuse them (no second start)."""
     with patch(
-        "app.mcp.browser.session_manager.BrowserClient",
+        "app.mcp_servers.browser.session_manager.BrowserClient",
         return_value=fake_browser_client,
     ), patch(
-        "app.mcp.browser.session_manager._connect_playwright",
+        "app.mcp_servers.browser.session_manager._connect_playwright",
         return_value=(MagicMock(), MagicMock(), fake_playwright_page),
     ) as fake_connect:
-        from app.mcp.browser.session_manager import BrowserSessionManager
+        from app.mcp_servers.browser.session_manager import BrowserSessionManager
 
         mgr = BrowserSessionManager(
             browser_arn="arn:aws:bedrock-agentcore:us-east-1:1:browser/foo",
@@ -66,13 +66,13 @@ def test_connect_playwright_failure_cleans_up_server_session(fake_browser_client
     pw_error = RuntimeError("CDP connect failed")
 
     # Import the module first so patch targets are resolvable.
-    from app.mcp.browser.session_manager import BrowserSessionManager
+    from app.mcp_servers.browser.session_manager import BrowserSessionManager
 
     with patch(
-        "app.mcp.browser.session_manager.BrowserClient",
+        "app.mcp_servers.browser.session_manager.BrowserClient",
         return_value=fake_browser_client,
     ), patch(
-        "app.mcp.browser.session_manager._connect_playwright",
+        "app.mcp_servers.browser.session_manager._connect_playwright",
         side_effect=pw_error,
     ):
         mgr = BrowserSessionManager(
@@ -94,13 +94,13 @@ def test_evict_if_idle_stops_session_past_ttl(fake_browser_client, fake_playwrig
     """If now() - last_activity > idle_ttl_s, evict_if_idle stops the session.
     Next get_page() must lazy-start a fresh one."""
     with patch(
-        "app.mcp.browser.session_manager.BrowserClient",
+        "app.mcp_servers.browser.session_manager.BrowserClient",
         return_value=fake_browser_client,
     ), patch(
-        "app.mcp.browser.session_manager._connect_playwright",
+        "app.mcp_servers.browser.session_manager._connect_playwright",
         return_value=(MagicMock(), MagicMock(), fake_playwright_page),
     ):
-        from app.mcp.browser import session_manager as sm
+        from app.mcp_servers.browser import session_manager as sm
         clock = {"t": 1000.0}
         with patch.object(sm.time, "monotonic", side_effect=lambda: clock["t"]):
             mgr = sm.BrowserSessionManager(
@@ -124,17 +124,17 @@ def test_auto_reconnect_on_disconnect(fake_browser_client):
     """If the cached page raises ConnectionError on use, the manager must drop
     the session and restart on the next get_page() call. Up to 3 retries before
     surfacing the error."""
-    from app.mcp.browser import session_manager as sm
+    from app.mcp_servers.browser import session_manager as sm
 
     bad_page = MagicMock(name="DeadPage")
     bad_page.evaluate.side_effect = ConnectionError("ws closed")
     good_page = MagicMock(name="LivePage")
 
     with patch(
-        "app.mcp.browser.session_manager.BrowserClient",
+        "app.mcp_servers.browser.session_manager.BrowserClient",
         return_value=fake_browser_client,
     ), patch(
-        "app.mcp.browser.session_manager._connect_playwright",
+        "app.mcp_servers.browser.session_manager._connect_playwright",
         side_effect=[
             (MagicMock(), MagicMock(), bad_page),
             (MagicMock(), MagicMock(), good_page),

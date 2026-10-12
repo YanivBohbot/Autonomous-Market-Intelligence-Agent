@@ -46,7 +46,7 @@
 
 | Tool | Backend | What it does |
 |---|---|---|
-| `browser_navigate` | Custom stdio MCP server in `app/mcp/browser/` → AgentCore Browser (managed Chromium) | Navigate the page to a URL |
+| `browser_navigate` | Custom stdio MCP server in `app/mcp_servers/browser/` → AgentCore Browser (managed Chromium) | Navigate the page to a URL |
 | `browser_snapshot` | same | Return the body inner text of the current page |
 | `browser_take_screenshot` | same | Save a PNG into the workspace; AgentCore session recording captured separately to S3 |
 

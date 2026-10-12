@@ -45,7 +45,7 @@ def _screenshot_filename(content) -> str | None:
       [{"type": "text", "text": "### Result\\n- [Screenshot of viewport]"
         "(./evidence.png)\\n### Ran Playwright code\\n...", "id": "..."}]
       — the filename is a markdown link inside the block's 'text'.
-    - app/mcp/browser/server.py (BROWSER_BACKEND=agentcore): a plain
+    - app/mcp_servers/browser/server.py (BROWSER_BACKEND=agentcore): a plain
       workspace-relative path string, e.g. "screenshots/evidence.png".
     """
     if isinstance(content, list):

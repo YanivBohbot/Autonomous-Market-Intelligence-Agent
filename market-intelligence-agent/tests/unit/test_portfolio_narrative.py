@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage
 
-from app.agent.tools import portfolio_narrative as narrative_mod
-from app.agent.tools.portfolio_narrative import generate_portfolio_narrative
+from app.narratives import portfolio_narrative as narrative_mod
+from app.narratives.portfolio_narrative import generate_portfolio_narrative
 
 _REPORT = {
     "name": "Jane Doe",

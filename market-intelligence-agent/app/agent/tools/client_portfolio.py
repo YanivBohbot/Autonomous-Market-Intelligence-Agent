@@ -65,7 +65,7 @@ async def client_portfolio_tool(client_name: str) -> dict:
     performance. The tool itself resolves the client, loads their holdings
     from the database, and fetches live prices -- do NOT query holdings or
     prices first, and do NOT compute the total yourself."""
-    from app.agent.tools.mcp_clients.mcp_client import crm_tool
+    from app.agent.tools.mcp_clients.crm_client import crm_tool
     from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
 
     symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"

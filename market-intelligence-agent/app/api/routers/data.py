@@ -217,7 +217,7 @@ async def _generate_narrative(report: dict) -> str:
     # Deferred import: avoids constructing a ChatOpenAI client (and
     # requiring OPENAI_API_KEY) at module import time for every test that
     # imports this router, same convention as _live_price's yfinance import.
-    from app.agent.tools.portfolio_narrative import generate_portfolio_narrative
+    from app.narratives.portfolio_narrative import generate_portfolio_narrative
 
     return await generate_portfolio_narrative(report)
 
@@ -245,7 +245,7 @@ async def _fetch_market_news(query: str = "US stock market today") -> list[dict]
 
 
 async def _generate_market_narrative(market: dict) -> str:
-    from app.agent.tools.market_narrative import generate_market_narrative
+    from app.narratives.market_narrative import generate_market_narrative
 
     try:
         return await generate_market_narrative(market)

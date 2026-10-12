@@ -29,7 +29,7 @@ uv run pytest tests/ -v
 npx -y @playwright/mcp@latest install-browser chrome-for-testing
 
 # Test the MCP CRM tool in isolation
-uv run python app/agent/tools/mcp_clients/mcp_client.py
+uv run python app/agent/tools/mcp_clients/crm_client.py
 ```
 
 ## Dependency versions
@@ -59,12 +59,12 @@ There is a single agent graph: the multi-agent supervisor graph: wiring in `app/
 
 ### Tools (`app/agent/tools/__init__.py`)
 
-All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agent/tools/mcp_clients/registry.py`; per-server modules (`mcp_client.py`, `yfinance_client.py`, `filesystem_client.py`) filter that list and re-export public symbols. Tool names come from the upstream MCP servers (no controller-side prefix). yfmcp self-namespaces with `yfinance_`; the filesystem server uses unambiguous names; CRM's `read_query` is the one bare name.
+All MCP-backed tools are loaded via a single `MultiServerMCPClient` in `app/agent/tools/mcp_clients/registry.py`; per-server modules (`crm_client.py`, `yfinance_client.py`, `filesystem_client.py`) filter that list and re-export public symbols. Tool names come from the upstream MCP servers (no controller-side prefix). yfmcp self-namespaces with `yfinance_`; the filesystem server uses unambiguous names; CRM's `read_query` is the one bare name.
 
 | Tool name | File | Type | What it does |
 |---|---|---|---|
 | `send_email` | `app/agent/tools/emails.py` | side-effect | Sends via **Amazon SES** (boto3) using the verified `EMAIL_SENDER` identity. Simulates if `EMAIL_SENDER` is empty or an `@example.com` placeholder. SMTP fields kept optional for legacy local dev only. |
-| `read_query` | `app/agent/tools/mcp_clients/mcp_client.py` | read-only | MCP stdio client → `mcp-server-sqlite` → `read_query` against `customers.db` (wealth-management DB: companies, clients, transactions, holdings, watchlists; seeded by `create_db.py`). |
+| `read_query` | `app/agent/tools/mcp_clients/crm_client.py` | read-only | MCP stdio client → `mcp-server-sqlite` → `read_query` against `customers.db` (wealth-management DB: companies, clients, transactions, holdings, watchlists; seeded by `create_db.py`). |
 | `list_tables` / `describe_table` | same | read-only | Schema discovery on `customers.db`. |
 | `portfolio_metrics` / `pct_change` | `app/agent/tools/finance_calc.py` | read-only | Deterministic portfolio math (value, P&L, weights, sectors) and % change. |
 | `concentration_screen` | `app/agent/tools/concentration.py` | read-only | Finds clients with more than `threshold_pct` (default 30) of their portfolio in one stock. The LLM passes only a filter (`risk_profile`, `client_names`); the tool loads holdings via `read_query` and live prices via yfinance itself, then computes `breaches` with `finance_calc.compute_concentration_screen`. ETFs (`exclude_sectors`, default `["ETF"]`) count in totals but are never flagged. No position copying by the LLM = deterministic answers with gpt-4o-mini. |

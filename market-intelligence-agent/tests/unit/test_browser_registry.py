@@ -49,7 +49,7 @@ def test_browser_backend_agentcore_uses_custom_server(monkeypatch):
     assert browser["transport"] == "stdio"
     assert browser["command"] in {"python", "uv"}
     args = " ".join(browser["args"])
-    assert "app.mcp.browser.server" in args
+    assert "app.mcp_servers.browser.server" in args
     assert browser["env"]["BROWSER_TOOL_ID"].startswith("arn:aws:bedrock-agentcore")
 
 

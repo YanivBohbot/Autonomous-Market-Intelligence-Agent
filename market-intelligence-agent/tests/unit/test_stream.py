@@ -291,7 +291,7 @@ def test_stream_emits_screenshot_event_for_playwright_mcp_result():
 
 
 def test_stream_emits_screenshot_event_for_custom_agentcore_server_result():
-    """The custom stdio server (app/mcp/browser/server.py, BROWSER_BACKEND=
+    """The custom stdio server (app/mcp_servers/browser/server.py, BROWSER_BACKEND=
     agentcore) returns a plain workspace-relative path string instead."""
     tokens = [
         ((), AIMessageChunk(content="Here it is"), {"langgraph_node": "agent"}),

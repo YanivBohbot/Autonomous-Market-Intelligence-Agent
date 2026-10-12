@@ -140,7 +140,7 @@ async def concentration_screen_tool(
     prices first and do NOT pass positions. Just pass the filter (risk_profile
     and/or client_names) and the threshold. Report exactly the clients and
     tickers in `breaches`; `screened_labels` lists every client checked."""
-    from app.agent.tools.mcp_clients.mcp_client import crm_tool
+    from app.agent.tools.mcp_clients.crm_client import crm_tool
     from app.agent.tools.mcp_clients.yfinance_client import yf_quote_tool
 
     symbol_arg = "symbol" if "symbol" in yf_quote_tool.args else "ticker"

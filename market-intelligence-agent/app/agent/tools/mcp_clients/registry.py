@@ -2,7 +2,7 @@
 
 Exposes `get_mcp_tools()`, a sync function that returns the full list of LangChain
 BaseTool objects produced by the registered MCP servers. Per-server modules
-(`mcp_client.py`, `yfinance_client.py`, `filesystem_client.py`) filter this list
+(`crm_client.py`, `yfinance_client.py`, `filesystem_client.py`) filter this list
 by name to re-export their public tool symbols.
 
 Tool names come straight from the upstream MCP servers (no controller-side prefix).
@@ -109,7 +109,7 @@ def _browser_entry(workspace_root) -> dict:
         env.setdefault("BROWSER_THREAD_ID", "default")
         return {
             "command": "python",
-            "args": ["-m", "app.mcp.browser.server"],
+            "args": ["-m", "app.mcp_servers.browser.server"],
             "transport": "stdio",
             "env": env,
             "cwd": str(workspace_root),

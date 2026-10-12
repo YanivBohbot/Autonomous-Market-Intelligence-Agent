@@ -6,7 +6,7 @@ talks to Amazon Bedrock AgentCore Browser via the bedrock-agentcore Python SDK.
 
 Spawn:
     BROWSER_TOOL_ID=<arn> BROWSER_THREAD_ID=<thread> \
-        python -m app.mcp.browser.server
+        python -m app.mcp_servers.browser.server
 """
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from app.mcp.browser.session_manager import BrowserSessionManager
+from app.mcp_servers.browser.session_manager import BrowserSessionManager
 
-logger = logging.getLogger("app.mcp.browser.server")
+logger = logging.getLogger("app.mcp_servers.browser.server")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 mcp = FastMCP("browser")
