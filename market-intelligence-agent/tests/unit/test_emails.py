@@ -140,3 +140,23 @@ def test_ses_rejection_is_reported_as_permanent(monkeypatch):
     })
     assert result.startswith("Erreur SES (MessageRejected)")
     assert "permanent" in result.lower() and "do not retry" in result.lower()
+
+
+def test_markdown_is_stripped_from_the_plain_text_body(monkeypatch):
+    """Live 2026-10-12: even with the prompt rule, the model wrote
+    "### Holdings Breakdown:" and "**Total**" into a plain-text email."""
+    client = FakeSesClient()
+    monkeypatch.setattr(emails.settings, "EMAIL_SENDER", "advisor@firm.com")
+    monkeypatch.setattr(emails, "_create_ses_client", lambda: client)
+    emails.send_email_tool.invoke({
+        "recipient": "margaret@example.com",
+        "subject": "Report",
+        "body": "### Holdings Breakdown:\n- **NVDA**: 400 shares\n## Total\n**$156,532**",
+    })
+    sent = client.send_email_calls[0]["Message"]["Body"]["Text"]["Data"]
+    assert sent == "Holdings Breakdown:\n- NVDA: 400 shares\nTotal\n$156,532"
+
+
+def test_plain_text_helper_keeps_ordinary_text_untouched():
+    text = "Dear Margaret,\n\n- NVDA: 58.6% of the portfolio\nC# and 3 * 4 stay as they are."
+    assert emails.plain_text_body(text) == text

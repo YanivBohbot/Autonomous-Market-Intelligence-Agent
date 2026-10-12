@@ -16,6 +16,7 @@ placeholder — the tool returns a fake-success string and never calls SES.
 from __future__ import annotations
 
 import logging
+import re
 import mimetypes
 import os
 from email.message import EmailMessage
@@ -56,6 +57,17 @@ def _create_ses_client():
     return boto3.client("ses", region_name=os.environ.get("AWS_REGION", "us-east-1"))
 
 
+_MD_HEADING = re.compile(r"^#{1,6}\s+", re.MULTILINE)
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
+
+
+def plain_text_body(body: str) -> str:
+    """The email goes out as plain text, but the model writes Markdown out of
+    habit (a prompt rule alone didn't stop "### Holdings Breakdown:" live).
+    Strips only unambiguous markers: line-leading #-headings and **bold**."""
+    return _MD_BOLD.sub(r"\1", _MD_HEADING.sub("", body))
+
+
 @tool("send_email", args_schema=EmailInput)
 def send_email_tool(
     recipient: str,
@@ -69,6 +81,7 @@ def send_email_tool(
 
     if not subject.strip() or not body.strip():
         return "Email blocked: subject and body must not be empty."
+    body = plain_text_body(body)
 
     report = None
     if attachment_filename:
