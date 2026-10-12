@@ -3,13 +3,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelRequest, dynamic_prompt
+from langchain.agents.middleware import ModelCallLimitMiddleware, ModelRequest, dynamic_prompt
+from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
 from app.agent.guardrails.card_guard import block_credit_cards
+from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING
 from app.agent.middleware import (
     context_editing,
     fresh_documents_prompt,
@@ -71,28 +73,49 @@ def client_context_routing_prompt(request: ModelRequest) -> str:
     )
 
 
+# ToolStrategy, not the auto-selected ProviderStrategy: for OpenAI the latter
+# always sends `tools: []`, and with it gpt-4o-mini emitted TWO routing JSON
+# objects for "email X her portfolio" (portfolio, then email) -- 3/3 runs vs
+# 0/3 without the empty list (LangSmith trace 01a13021, 2026-10-12). A single
+# tool call, with parallel_tool_calls=False on the model, is one decision.
+_ROUTER_RESPONSE_FORMAT = ToolStrategy(RoutingDecision)
+# Retries x model calls bound a failing router (3 x 3 attempts at most).
+ROUTER_MODEL_CALL_LIMIT = 3
+
+
 def build_router_agent(model: BaseChatModel | None = None):
     """The routing LLM call as a create_agent: structured output through
     response_format, plus the same official middleware the specialists get
     (card guard, live prompts, context editing, model retry/fallback).
     supervisor_node invokes it with a COPY of the conversation, so its own
-    messages never enter the shared state (except the card guard's)."""
+    messages never enter the shared state (except the card guard's).
+
+    No `name=`: it would set lc_agent_name, and ag-ui-langgraph would then
+    stream the router as a subagent (SUBAGENT_STARTED, router steps) into
+    Market Desk. `checkpointer=False`: a nested agent otherwise inherits the
+    graph's checkpointer and writes a full conversation copy per call."""
     fallback = model_fallback()
     return create_agent(
-        model=model or ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, metadata=_ROUTER_MODEL_METADATA),
+        model=model
+        or ChatOpenAI(
+            model=settings.OPENAI_MODEL,
+            temperature=0,
+            model_kwargs={"parallel_tool_calls": False},
+        ),
         tools=[],
         system_prompt=SUPERVISOR_ROUTING_PROMPT,
-        response_format=RoutingDecision,
+        response_format=_ROUTER_RESPONSE_FORMAT,
         state_schema=ClientContextState,
         middleware=[
             block_credit_cards,
             fresh_documents_prompt,
             client_context_routing_prompt,
             context_editing(),
+            ModelCallLimitMiddleware(run_limit=ROUTER_MODEL_CALL_LIMIT, exit_behavior="error"),
             *([fallback] if fallback is not None else []),
-            model_retry(),
+            model_retry(on_failure="error"),
         ],
-        name="supervisor_router",
+        checkpointer=False,
     )
 
 
@@ -131,37 +154,24 @@ def _message_text(message) -> str:
         return content
     if isinstance(content, list):
         return "\n".join(
-            block.get("text", "") for block in content
+            block.get("text", "")
+            for block in content
             if isinstance(block, dict) and block.get("type") == "text"
         )
     return str(content or "")
 
 
 def supervisor_node(state: SupervisorState) -> Command[Route]:
-    # agent_hops is a per-turn recursion guard. record_question appends the
-    # new HumanMessage before this node runs, so a fresh HumanMessage as the
-    # last message means a new turn just started: any hops left over from a
-    # previous turn no longer apply. Without this reset, hops accumulated
-    # across the WHOLE conversation instead of per turn, and after ~4 hops
-    # total (often just 2-3 user turns) the supervisor would silently
-    # short-circuit to FINISH below with no LLM call and no answer, for
-    # every subsequent turn of the conversation.
+    """The multi-agent supervisor node: route to a specialist or finalize the
+    turn. The router agent is invoked with a COPY of the conversation, so its
+    own messages never enter the shared state (except the card guard's)."""
+
     messages = state.get("messages", [])
     last = messages[-1] if messages else None
     hops = 0 if isinstance(last, HumanMessage) else state.get("agent_hops", 0)
     if hops >= MAX_AGENT_HOPS:
         return _finish()
 
-    # Deterministic finish: once a specialist hands control back with a
-    # plain completed answer (no further tool_calls), the turn is done.
-    # Live QA showed the LLM router unreliably kept re-routing to the same
-    # specialist to fetch the same answer again instead of picking FINISH —
-    # prompt wording alone couldn't fully fix this non-determinism, so we
-    # don't ask the LLM to reconfirm something we can already tell.
-    # Exception: an email request whose content needs portfolio facts goes
-    # portfolio_agent -> email_agent within the same turn, so the email uses
-    # real numbers. Without this the finish rule below would end the turn
-    # after portfolio_agent's answer. email_agent's own answer then finishes.
     if (
         state.get("next_agent") == "portfolio_agent"
         and isinstance(last, AIMessage)
@@ -170,7 +180,11 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     ):
         return Command(
             goto="email_agent",
-            update={"next_agent": "email_agent", "last_agent": "email_agent", "agent_hops": hops + 1},
+            update={
+                "next_agent": "email_agent",
+                "last_agent": "email_agent",
+                "agent_hops": hops + 1,
+            },
         )
 
     if (
@@ -180,19 +194,6 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     ):
         return _finish()
 
-    # Deterministic sticky route: two rounds of prose/worked-example prompt
-    # fixes both failed live re-testing -- the LLM router still sent a
-    # "save it" follow-up to filesystem_agent instead of portfolio_agent,
-    # producing a hand-typed .txt with no chart. Prompt wording alone isn't
-    # reliable here, so -- like the FINISH-after-plain-answer rule above --
-    # this is now decided in code: a fresh human turn that mentions
-    # save/export/download, arriving right after portfolio_agent itself
-    # OFFERED A REPORT, stays with portfolio_agent without asking the LLM.
-    # Requiring the prior AIMessage to mention report/brief (not just
-    # last_agent == portfolio_agent) matters: without it, "Save that my
-    # investment horizon is 10 years" right after an unrelated portfolio
-    # question would also stick to portfolio_agent, which has no
-    # save_memory tool, and the fact would silently never get saved.
     if (
         hops == 0
         and isinstance(last, HumanMessage)
@@ -204,28 +205,35 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     ):
         return Command(
             goto="portfolio_agent",
-            update={"next_agent": "portfolio_agent", "last_agent": "portfolio_agent", "agent_hops": 1},
+            update={
+                "next_agent": "portfolio_agent",
+                "last_agent": "portfolio_agent",
+                "agent_hops": 1,
+            },
         )
-
-    # NOTE: the conversation history already carries the user's question as
-    # its first HumanMessage (record_question runs before this node), so we
-    # don't re-inject it here. An earlier version did, and live QA showed the
-    # duplicate "fresh-looking" question made the router think it was still
-    # unanswered even right after a specialist gave a complete answer,
-    # causing it to loop to MAX_AGENT_HOPS instead of picking FINISH.
-    # The prompt (live PDF list, active client), stale-tool-result clearing,
-    # the card guard and model retry/fallback are all router_agent middleware.
-    result = router_agent.invoke({
-        "messages": list(messages),
-        "client_context": state.get("client_context"),
-    })
+    # Metadata on the invoke config is inherited by every model call inside
+    # the router, the ModelFallbackMiddleware model included.
+    result = router_agent.invoke(
+        {
+            "messages": list(messages),
+            "client_context": state.get("client_context"),
+        },
+        {"metadata": _ROUTER_MODEL_METADATA},
+    )
     decision = result.get("structured_response")
     if decision is None:
+        last_message = result["messages"][-1] if result.get("messages") else None
+        if getattr(last_message, "content", None) != SENSITIVE_DATA_WARNING:
+            raise RuntimeError("Router agent ended without a routing decision.")
         # block_credit_cards ended the router run (@before_agent jump_to
         # "end"): carry its masked question (same id, so it replaces the raw
         # one) and its warning into the shared conversation, then end the turn.
-        latest = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
-        carried = [m for m in result["messages"] if latest is not None and m.id == latest.id]
+        latest = next(
+            (m for m in reversed(messages) if isinstance(m, HumanMessage)), None
+        )
+        carried = [
+            m for m in result["messages"] if latest is not None and m.id == latest.id
+        ]
         return Command(
             goto="finalize_turn",
             update={"messages": [*carried, result["messages"][-1]], "next_agent": None},
@@ -235,15 +243,16 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     if next_agent == "FINISH":
         if _has_answer_to_latest_question(messages):
             return _finish()
-        # Live QA showed the router returning FINISH on the first hop for
-        # multi-specialist questions (its reasoning said "I need to route"),
-        # ending the turn with no answer. Never finish unanswered — fall
-        # back to the general-purpose specialist.
+
         next_agent = "rag_agent"
 
     return Command(
         goto=next_agent,
-        update={"next_agent": next_agent, "last_agent": next_agent, "agent_hops": hops + 1},
+        update={
+            "next_agent": next_agent,
+            "last_agent": next_agent,
+            "agent_hops": hops + 1,
+        },
     )
 
 

@@ -353,22 +353,6 @@ def test_hops_still_cap_mid_turn_even_right_after_a_human_message_was_seen_earli
     mock.invoke.assert_not_called()
 
 
-def test_router_output_is_hidden_from_ag_ui_streams():
-    # ag-ui-langgraph streams via astream_events and drops LLM chunks whose run
-    # metadata says emit-messages/emit-tool-calls False. The routing JSON
-    # ({"next": ...}) must never show up as chat text in Market Desk.
-    built = {}
-
-    def fake_chat_openai(**kwargs):
-        built.update(kwargs)
-        return FakeToolModel([])
-
-    with patch.object(supervisor_mod, "ChatOpenAI", fake_chat_openai):
-        supervisor_mod.build_router_agent()
-    assert built["metadata"]["emit-messages"] is False
-    assert built["metadata"]["emit-tool-calls"] is False
-
-
 def test_supervisor_routes_users_own_preference_questions_to_memory_agent():
     """Regression (QA row 14): "what is my preferred report format?" must match
     memory_agent, while client/market questions stay elsewhere."""
@@ -436,3 +420,26 @@ def test_card_block_copies_the_masked_question_and_warning_then_finalizes():
     assert result.goto == "finalize_turn"
     assert [m.content for m in result.update["messages"]] == ["card ****-****-****-1111", SENSITIVE_DATA_WARNING]
     assert result.update["messages"][0].id == "h1"
+
+
+def test_node_hides_every_router_model_from_ag_ui_via_invoke_config():
+    """Reviewer Important 3: metadata on the ChatOpenAI instance only did not
+    cover the ModelFallbackMiddleware model. Passed on the invoke config, it
+    is inherited by every model call inside the router."""
+    with patch.object(supervisor_mod, "router_agent") as agent:
+        agent.invoke.return_value = routed("finance_agent")
+        supervisor_node(_state(messages=[HumanMessage("NVDA?")]))
+    config = agent.invoke.call_args.args[1]
+    assert config["metadata"]["emit-messages"] is False
+    assert config["metadata"]["emit-tool-calls"] is False
+
+
+def test_node_raises_when_the_router_ends_without_a_decision_or_a_card_block():
+    """Reviewer Important 4: a missing structured_response is only a card
+    block when the last message IS the warning; anything else is an error,
+    never text copied into the conversation."""
+    import pytest
+    with patch.object(supervisor_mod, "router_agent") as agent:
+        agent.invoke.return_value = {"messages": [HumanMessage("q", id="h1"), AIMessage("Model call failed after 3 attempts")]}
+        with pytest.raises(RuntimeError):
+            supervisor_node(_state(messages=[HumanMessage("q", id="h1")]))

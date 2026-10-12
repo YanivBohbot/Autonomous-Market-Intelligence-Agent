@@ -107,14 +107,17 @@ def call_limit() -> ModelCallLimitMiddleware:
     return ModelCallLimitMiddleware(run_limit=MODEL_CALL_LIMIT, exit_behavior="end")
 
 
-def model_retry() -> ModelRetryMiddleware:
+def model_retry(on_failure: str = "continue") -> ModelRetryMiddleware:
     """A transient OpenAI error (rate limit, timeout, 5xx) during the model
     call itself isn't a tool error -- ToolErrorMiddleware never sees it, and
     nothing else in this stack retries it, so the whole run used to fail
     outright. Defaults (2 retries, exponential backoff with jitter) retry
     only the model call, before any tool executes -- safe even for
-    specialists with side-effect tools."""
-    return ModelRetryMiddleware()
+    specialists with side-effect tools. The supervisor's router passes
+    on_failure="error": with "continue", exhausted retries return an
+    AIMessage with no structured_response, which create_agent sends straight
+    back to the model -- an outage became a near-endless loop."""
+    return ModelRetryMiddleware(on_failure=on_failure)
 
 
 def model_fallback() -> ModelFallbackMiddleware | None:

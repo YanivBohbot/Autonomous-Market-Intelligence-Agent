@@ -440,3 +440,12 @@ def test_stream_emits_conflict_without_invoking_graph_when_voice_owns_thread():
         ("error", {"error": "Voice mode is active for this thread."})
     ]
     assert fake.stream_calls == 0
+
+
+def test_supervisor_update_text_is_streamed_only_when_it_is_the_card_warning():
+    """Reviewer Important 4: any AIMessage on a supervisor update used to be
+    emitted as a token."""
+    updates = [((), {"supervisor": {"messages": [AIMessage(content="Model call failed after 3 attempts")]}})]
+    app.state.agent_app = _FakeAgentApp([], updates=updates)
+    response = TestClient(app).post("/stream", json={"query": "q", "thread_id": "t-sup-text"})
+    assert [d for e, d in _parse_sse(response.text) if e == "token"] == []

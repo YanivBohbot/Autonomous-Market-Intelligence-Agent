@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from langchain_core.messages import AIMessageChunk, ToolMessage
 
+from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING
 from app.agent.tools.mcp_clients.browser_client import SCREENSHOT_TOOL_NAME
 from app.api.models.models import StreamRequest
 from app.api.routers._helpers import (
@@ -90,7 +91,12 @@ def _static_message_content(node_name: str, update) -> str | None:
     messages = update.get("messages")
     if not messages:
         return None
-    return messages[-1].content or None
+    content = messages[-1].content or None
+    # The supervisor writes a message to state only for a card block; any
+    # other text there is not something to show as a chat token.
+    if node_name == "supervisor" and content != SENSITIVE_DATA_WARNING:
+        return None
+    return content
 
 
 def _screenshot_urls_from_update(update) -> list[str]:

@@ -68,3 +68,77 @@ def test_a_card_blocks_the_router_with_no_structured_response():
 
 def test_module_router_agent_is_built():
     assert hasattr(supervisor_mod.router_agent, "invoke")
+
+
+# --- Final-review fix pass (2026-10-12) -------------------------------------
+
+def test_router_uses_tool_strategy_with_one_decision_per_call():
+    """Live bug (LangSmith trace 01a13021): with ProviderStrategy create_agent
+    always sends `tools: []`, and gpt-4o-mini then emitted TWO routing JSON
+    objects (3/3 vs 0/3 without the empty list) -> parse error -> retries.
+    ToolStrategy + parallel_tool_calls=False allows exactly one decision."""
+    built = {}
+
+    def fake_chat_openai(**kwargs):
+        built.update(kwargs)
+        return FakeToolModel([])
+
+    from unittest.mock import patch
+    with patch.object(supervisor_mod, "ChatOpenAI", fake_chat_openai):
+        supervisor_mod.build_router_agent()
+    assert built["model_kwargs"] == {"parallel_tool_calls": False}
+    from langchain.agents.structured_output import ToolStrategy
+    assert isinstance(supervisor_mod._ROUTER_RESPONSE_FORMAT, ToolStrategy)
+
+
+class _RaisingModel(FakeToolModel):
+    def _generate(self, messages, *args, **kwargs):
+        self.seen.append(list(messages))
+        raise RuntimeError("provider down")
+
+
+def test_a_failing_router_model_raises_instead_of_looping():
+    """Reviewer Critical 1: ModelRetryMiddleware(on_failure="continue") turned
+    an outage into an AIMessage without structured_response, and create_agent
+    sent it back to the model up to 9,999 times. It must raise, fast."""
+    import pytest
+    model = _RaisingModel([])
+    with pytest.raises(Exception):
+        build_router_agent(model).invoke({"messages": [HumanMessage("NVDA?")]})
+    assert len(model.seen) <= 9  # bounded: retries x call cap, never thousands
+
+
+def test_a_router_that_never_produces_a_decision_raises():
+    """Two parallel decisions (or none) every time must hit the call cap and
+    raise, not loop."""
+    import pytest
+    two = AIMessage(content="", tool_calls=[
+        {"id": "a", "name": "RoutingDecision", "args": {"next": "portfolio_agent", "reasoning": "r"}},
+        {"id": "b", "name": "RoutingDecision", "args": {"next": "email_agent", "reasoning": "r"}}])
+    model = FakeToolModel([two] * 20)
+    with pytest.raises(Exception):
+        build_router_agent(model).invoke({"messages": [HumanMessage("email her")]})
+    assert len(model.seen) <= 9
+
+
+def test_router_is_not_named_so_ag_ui_does_not_see_a_subagent():
+    """Reviewer Important 1: name= sets lc_agent_name, and ag-ui-langgraph
+    then emits SUBAGENT_STARTED/STEP events for the router in Market Desk."""
+    agent = build_router_agent(FakeToolModel([]))
+    assert "lc_agent_name" not in ((agent.config or {}).get("metadata") or {})
+
+
+def test_router_runs_do_not_write_checkpoints():
+    """Reviewer Important 2: the nested router inherited the graph's
+    checkpointer and wrote a full conversation copy per call."""
+    from unittest.mock import patch
+    from langgraph.checkpoint.memory import InMemorySaver
+    from app.agent.multi_agent import build_multi_agent_app
+    from app.agent.multi_agent import rag_agent as rag_mod
+
+    saver = InMemorySaver()
+    with patch.object(supervisor_mod, "router_agent", build_router_agent(FakeToolModel([_decides("rag_agent")]))), \
+         patch.object(rag_mod, "specialist_model", return_value=FakeToolModel([AIMessage(content="ok")])):
+        build_multi_agent_app(saver).invoke({"question": "what's new?"}, {"configurable": {"thread_id": "ck"}})
+    namespaces = {c.config["configurable"].get("checkpoint_ns", "") for c in saver.list({"configurable": {"thread_id": "ck"}})}
+    assert not any(ns.startswith("supervisor:") for ns in namespaces)
