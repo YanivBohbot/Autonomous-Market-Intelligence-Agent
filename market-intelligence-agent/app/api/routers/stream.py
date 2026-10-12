@@ -62,13 +62,22 @@ def _screenshot_filename(content) -> str | None:
 
 
 # Nodes that add a blocking AIMessage straight to state instead of streaming
-# it: the graph-level input_guard, and OpenAIModerationMiddleware's hooks
-# inside a specialist subgraph.
+# it: the supervisor node, which copies the card guard's warning into state,
+# and OpenAIModerationMiddleware's hooks inside a specialist subgraph.
 _STATIC_MESSAGE_NODES = {
-    "input_guard",
+    "supervisor",
     "OpenAIModerationMiddleware.before_model",
     "OpenAIModerationMiddleware.after_model",
 }
+
+
+def _inside_supervisor(namespace) -> bool:
+    """Events from the supervisor's own router agent (a create_agent run
+    inside the supervisor node): its "model" node streams the routing JSON,
+    which must never reach the chat, and its internal nodes are not graph
+    steps the client tracks. The card warning still arrives once, through
+    the supervisor node's own update."""
+    return bool(namespace) and str(namespace[0]).startswith("supervisor:")
 
 
 def _static_message_content(node_name: str, update) -> str | None:
@@ -126,12 +135,14 @@ async def stream_endpoint(
         return
 
     try:
-        async for _namespace, mode, chunk in agent_app.astream(
+        async for namespace, mode, chunk in agent_app.astream(
             inputs,
             config,
             stream_mode=["updates", "messages"],
             subgraphs=True,
         ):
+            if _inside_supervisor(namespace):
+                continue
             if mode == "updates":
                 for node_name, update in chunk.items():
                     yield ServerSentEvent(

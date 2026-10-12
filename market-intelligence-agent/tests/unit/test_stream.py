@@ -316,16 +316,21 @@ def test_stream_emits_screenshot_event_for_custom_agentcore_server_result():
     assert screenshot_events == [{"url": "/workspace/screenshots/evidence.png"}]
 
 
-def test_stream_emits_input_guard_warning_as_token():
-    """input_guard, the graph node before the supervisor, adds its warning
-    AIMessage straight to state -- it is never streamed as an AIMessageChunk.
-    Live check 2026-10-12: a guard block produced node events and `done`
-    with zero token events, so the user saw nothing at all."""
+def test_blocked_turn_emits_the_warning_exactly_once():
+    """The card guard (block_credit_cards, on the supervisor's router agent)
+    adds its warning AIMessage straight to state -- never as an
+    AIMessageChunk. The supervisor node copies it into the conversation, so
+    it shows up twice in the update stream: inside the router agent
+    (namespace supervisor:...) and as the supervisor's own update. Only the
+    latter may reach the client, once."""
+    from langchain_core.messages import HumanMessage
     from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING
 
+    masked = HumanMessage(content="my card is ****-****-****-1111", id="h1")
     warning_msg = AIMessage(content=SENSITIVE_DATA_WARNING)
     updates = [
-        ((), {"input_guard": {"messages": [warning_msg]}}),
+        (("supervisor:abc",), {"block_credit_cards.before_agent": {"messages": [masked, warning_msg]}}),
+        ((), {"supervisor": {"messages": [masked, warning_msg], "next_agent": None}}),
     ]
     fake = _FakeAgentApp([], updates=updates)
 
@@ -338,12 +343,33 @@ def test_stream_emits_input_guard_warning_as_token():
 
     assert response.status_code == 200
     events = _parse_sse(response.text)
-
     token_events = [d["token"] for e, d in events if e == "token"]
     assert token_events == [SENSITIVE_DATA_WARNING]
     assert events[-1][0] == "done"
 
 
+def test_stream_skips_router_tokens_and_node_events_from_inside_the_supervisor():
+    """The router agent's "model" node streams the routing JSON; it runs
+    inside the supervisor node (namespace supervisor:...) and must never
+    reach the client as chat text or as node events."""
+    routing_json = '{"next":"rag_agent","reasoning":"r"}'
+    updates = [
+        (("supervisor:abc",), {"model": {"messages": [AIMessage(content=routing_json)]}}),
+        ((), {"supervisor": {"next_agent": "rag_agent", "last_agent": "rag_agent", "agent_hops": 1}}),
+    ]
+    tokens = [
+        (("supervisor:abc",), AIMessageChunk(content=routing_json), {"langgraph_node": "model"}),
+        (("rag_agent:def",), AIMessageChunk(content="answer"), {"langgraph_node": "model"}),
+    ]
+    fake = _FakeAgentApp(tokens, updates=updates)
+
+    app.state.agent_app = fake
+    client = TestClient(app)
+    response = client.post("/stream", json={"query": "what's new?", "thread_id": "t-router"})
+
+    events = _parse_sse(response.text)
+    assert [d["token"] for e, d in events if e == "token"] == ["answer"]
+    assert [d["node"] for e, d in events if e == "node"] == ["supervisor"]
 def test_stream_emits_moderation_violation_as_token():
     from app.agent.middleware import MODERATION_VIOLATION_MESSAGE
     msg = AIMessage(content=MODERATION_VIOLATION_MESSAGE)
