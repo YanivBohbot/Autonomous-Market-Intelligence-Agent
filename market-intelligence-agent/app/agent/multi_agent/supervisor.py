@@ -213,11 +213,6 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     # duplicate "fresh-looking" question made the router think it was still
     # unanswered even right after a specialist gave a complete answer,
     # causing it to loop to MAX_AGENT_HOPS instead of picking FINISH.
-    # with_structured_output is typed as dict | BaseModel; with a pydantic
-    # schema it returns a RoutingDecision instance.
-    # Substituted fresh on every call, not baked in at import time -- a PDF
-    # uploaded via /data/import/pdf while the server is already running
-    # must be recognized immediately, not only after a restart.
     # The prompt (live PDF list, active client), stale-tool-result clearing,
     # the card guard and model retry/fallback are all router_agent middleware.
     result = router_agent.invoke({

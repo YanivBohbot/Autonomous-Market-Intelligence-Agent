@@ -1,6 +1,5 @@
 """`generate_portfolio_narrative` -- a single, direct LLM call (same
-lightweight pattern as the multi-agent supervisor's own `_router`: no
-tool-calling loop, no agent graph) that writes a grounded financial-
+lightweight pattern: no tool-calling loop, no agent graph) that writes a grounded financial-
 reasoning paragraph for the Reports dashboard.
 
 The LLM is given the report's already-computed totals/positions/

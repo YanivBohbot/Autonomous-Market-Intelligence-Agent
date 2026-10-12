@@ -196,8 +196,9 @@ MODERATION_VIOLATION_MESSAGE = (
 def mask_credit_cards() -> PIIMiddleware:
     """No specialist needs a card number: mask it (last 4 digits kept) in
     user input, in tool results and in the model's own answer. Defense in
-    depth behind the graph-level input_guard, which blocks cards in the
-    user's message before the supervisor."""
+    depth behind block_credit_cards, the supervisor router agent's
+    @before_agent guard, which blocks cards in the user's message before any
+    routing model call."""
     return PIIMiddleware(
         "credit_card",
         strategy="mask",
