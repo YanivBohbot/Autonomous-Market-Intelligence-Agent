@@ -1,8 +1,12 @@
 from unittest.mock import patch
 
-import pytest
-
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
+
+from app.agent.multi_agent import rag_agent as rag_mod
+from app.agent.multi_agent import supervisor as supervisor_mod
+from app.agent.multi_agent.supervisor import build_router_agent
+from tests.unit.fake_chat import FakeToolModel
 
 from app.agent.guardrails import SENSITIVE_DATA_WARNING, contains_sensitive_data
 from app.agent.guardrails.detection import contains_credit_card, contains_email
@@ -49,11 +53,6 @@ def test_detection_does_not_call_pii_middleware_hooks():
     assert "before_model" not in inspect.getsource(detection)
 
 
-class _RouterReached(Exception):
-    """Raised by the mocked supervisor router: proves the LLM router was
-    reached without running any specialist (which would call a real model)."""
-
-
 def _graph():
     from app.agent.multi_agent import build_multi_agent_app
     return build_multi_agent_app(InMemorySaver())
@@ -63,46 +62,42 @@ def _ask(graph, question: str, thread_id: str):
     return graph.invoke({"question": question}, {"configurable": {"thread_id": thread_id}})
 
 
-def test_input_guard_blocks_card_before_the_supervisor_llm_is_called():
-    import app.agent.multi_agent.supervisor as supervisor_mod
-    with patch.object(supervisor_mod, "router_agent") as router_mock:
-        router_mock.invoke.side_effect = _RouterReached
+def _decides(next_agent: str) -> AIMessage:
+    return AIMessage(content="", tool_calls=[{
+        "id": "rd", "name": "RoutingDecision", "args": {"next": next_agent, "reasoning": "r"}}])
+
+
+def test_card_is_blocked_before_any_model_call_and_history_keeps_it_masked():
+    """The real block_credit_cards guard runs inside the real router agent:
+    no model call, the warning ends the turn, and the stored question is the
+    masked one (same id), so no later turn sends the raw number anywhere."""
+    model = FakeToolModel([])
+    with patch.object(supervisor_mod, "router_agent", build_router_agent(model)):
         result = _ask(_graph(), "my card is 4111 1111 1111 1111", "t-guard-1")
-    router_mock.invoke.assert_not_called()
+    assert model.seen == []
     assert result["messages"][-1].content == SENSITIVE_DATA_WARNING
+    assert "4111 1111 1111 1111" not in result["messages"][-2].content
+    assert len([m for m in result["messages"] if m.type == "human"]) == 1
 
 
-def test_input_guard_lets_clean_questions_reach_the_supervisor():
-    import app.agent.multi_agent.supervisor as supervisor_mod
-    with patch.object(supervisor_mod, "router_agent") as router_mock:
-        router_mock.invoke.side_effect = _RouterReached
-        with pytest.raises(_RouterReached):
-            _ask(_graph(), "what is the price of AAPL?", "t-guard-2")
-    assert router_mock.invoke.called  # RetryPolicy re-runs supervisor on error
-
-
-def test_clean_turn_after_blocked_turn_reaches_supervisor():
-    import app.agent.multi_agent.supervisor as supervisor_mod
-    with patch.object(supervisor_mod, "router_agent") as router_mock:
-        router_mock.invoke.side_effect = _RouterReached
-        graph = _graph()
-        _ask(graph, "my card is 4111 1111 1111 1111", "t-guard-3")
-        router_mock.invoke.assert_not_called()
-        with pytest.raises(_RouterReached):
-            _ask(graph, "what is the price of AAPL?", "t-guard-3")
-    assert router_mock.invoke.called  # RetryPolicy re-runs supervisor on error
+def test_clean_question_reaches_the_router_model():
+    model = FakeToolModel([_decides("rag_agent")])
+    with patch.object(supervisor_mod, "router_agent", build_router_agent(model)),          patch.object(rag_mod, "specialist_model", return_value=FakeToolModel([AIMessage(content="answer")])):
+        result = _ask(_graph(), "what is in the Amazon report?", "t-guard-2")
+    assert len(model.seen) == 1
+    assert result["messages"][-1].content == "answer"
 
 
 def test_blocked_card_never_reaches_the_router_on_the_next_turn():
-    """The raw card message must not stay in history: the supervisor router
-    sends the whole conversation to OpenAI on every later turn."""
-    import app.agent.multi_agent.supervisor as supervisor_mod
-    with patch.object(supervisor_mod, "router_agent") as router_mock:
-        router_mock.invoke.side_effect = _RouterReached
+    """The raw card message must not stay in history: the router sends the
+    whole conversation to OpenAI on every later turn."""
+    next_model = FakeToolModel([_decides("rag_agent")])
+    with patch.object(rag_mod, "specialist_model", return_value=FakeToolModel([AIMessage(content="ok")])):
         graph = _graph()
-        _ask(graph, "my card is 4111 1111 1111 1111", "t-guard-4")
-        with pytest.raises(_RouterReached):
-            _ask(graph, "what is the price of AAPL?", "t-guard-4")
-    sent = " ".join(str(m.content) for m in router_mock.invoke.call_args.args[0]["messages"])
+        with patch.object(supervisor_mod, "router_agent", build_router_agent(FakeToolModel([]))):
+            _ask(graph, "my card is 4111 1111 1111 1111", "t-guard-3")
+        with patch.object(supervisor_mod, "router_agent", build_router_agent(next_model)):
+            _ask(graph, "what is the price of AAPL?", "t-guard-3")
+    sent = " ".join(str(m.content) for m in next_model.seen[0])
     assert "4111 1111 1111 1111" not in sent
     assert "4111111111111111" not in sent

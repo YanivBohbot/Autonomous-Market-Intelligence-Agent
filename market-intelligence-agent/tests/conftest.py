@@ -28,6 +28,12 @@ os.environ.setdefault("MODERATION_ENABLED", "false")
 # developer's .env or shell may set it to true.
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
+# Unit tests must never reach a real provider. With ANTHROPIC_API_KEY set in
+# a developer's .env, model_fallback() adds ModelFallbackMiddleware, and a
+# fake model that fails (e.g. a graph built outside its patch) silently
+# fell back to the real Anthropic API. Tests that need the fallback set the
+# key explicitly with monkeypatch.
+os.environ["ANTHROPIC_API_KEY"] = ""
 
 
 @pytest.fixture

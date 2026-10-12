@@ -16,7 +16,6 @@ def test_graph_has_supervisor_and_specialist_nodes():
     for name in (
         "load_client_context",
         "record_question",
-        "input_guard",
         "supervisor",
         "rag_agent",
         "finance_agent",
@@ -42,17 +41,17 @@ def test_create_agent_specialists_return_to_supervisor():
         assert (name, "supervisor") in edges
 
 
-def test_supervisor_node_has_a_retry_policy():
-    # supervisor_node calls the model directly (no create_agent middleware
-    # stack attaches to it), so a transient OpenAI error has nothing else
-    # retrying it -- RetryPolicy is the only available safety net here.
-    app = _build()
-    assert app.builder.nodes["supervisor"].retry_policy is not None
+def test_supervisor_has_no_node_retry_policy():
+    # The routing call is a create_agent now: ModelRetryMiddleware retries
+    # the model call itself, so no node-level RetryPolicy re-runs the node.
+    assert not _build().builder.nodes["supervisor"].retry_policy
 
 
-def test_input_guard_sits_between_record_question_and_supervisor():
-    edges = {(e.source, e.target) for e in _build().get_graph().edges}
-    assert ("record_question", "input_guard") in edges
-    assert ("record_question", "supervisor") not in edges
-    assert ("input_guard", "supervisor") in edges
-    assert ("input_guard", "finalize_turn") in edges
+def test_record_question_feeds_the_supervisor_directly():
+    # The card guard is block_credit_cards, a @before_agent middleware on the
+    # supervisor's router agent -- no separate input_guard graph node.
+    graph = _build().get_graph()
+    edges = {(e.source, e.target) for e in graph.edges}
+    assert ("record_question", "supervisor") in edges
+    assert "input_guard" not in graph.nodes
+    assert ("supervisor", "finalize_turn") in edges

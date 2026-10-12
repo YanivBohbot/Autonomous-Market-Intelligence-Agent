@@ -6,8 +6,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.store.base import BaseStore
-from langgraph.types import RetryPolicy
-from app.agent.guardrails import input_guard
 from app.agent.multi_agent.browser_agent import build_browser_agent
 from app.agent.multi_agent.email_agent import build_email_agent
 from app.agent.multi_agent.filesystem_agent import build_filesystem_agent
@@ -108,25 +106,17 @@ def _build_workflow() -> StateGraph:
     workflow = StateGraph(SupervisorState)
     workflow.add_node("load_client_context", load_client_context)
     workflow.add_node("record_question", record_multi_agent_question)
-    # Before the supervisor: its router is a raw LLM call no middleware wraps.
-    workflow.add_node(
-        "input_guard", input_guard, destinations=("supervisor", "finalize_turn")
-    )
-    # supervisor_node's _router.invoke() is a raw ChatOpenAI call outside any
-    # create_agent middleware stack -- ModelRetryMiddleware can't attach to
-    # it, so a transient OpenAI error here has nothing else retrying it.
-    # RetryPolicy is safe at this specific node: no tool/side-effect runs
-    # inside supervisor_node, so re-executing it on retry can't double a
-    # side effect (unlike a specialist node, where retrying the whole
-    # subgraph could re-run a tool that already succeeded).
-    workflow.add_node("supervisor", supervisor_node, retry_policy=RetryPolicy())
+    # The routing call is a create_agent (supervisor.router_agent): its
+    # middleware covers the card guard (block_credit_cards) and transient
+    # OpenAI errors (ModelRetryMiddleware), so no guard node or RetryPolicy.
+    workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("finalize_turn", finalize_turn)
     for name, agent_specialist in SPECIALISTS.items():
         workflow.add_node(name, agent_specialist())
         workflow.add_edge(name, "supervisor")
     workflow.add_edge(START, "load_client_context")
     workflow.add_edge("load_client_context", "record_question")
-    workflow.add_edge("record_question", "input_guard")
+    workflow.add_edge("record_question", "supervisor")
     workflow.add_edge("finalize_turn", END)
     return workflow
 
