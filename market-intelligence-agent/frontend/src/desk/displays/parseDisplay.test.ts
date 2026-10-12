@@ -55,4 +55,17 @@ describe("parseDisplay", () => {
     }));
     expect(envelope?.displays).toEqual([portfolioTable]);
   });
+  it("validates a file_list display", () => {
+    const fileList = { type: "file_list", path: ".", dirs: ["reports"], files: [{ name: "notes.txt", url: null }] };
+    const envelope = parseDisplay(JSON.stringify({ summary: "text", displays: [fileList] }));
+    expect(envelope?.displays).toEqual([fileList]);
+  });
+
+  it("drops a file_list entry missing its files array", () => {
+    const envelope = parseDisplay(JSON.stringify({
+      summary: "text",
+      displays: [portfolioTable, { type: "file_list", path: ".", dirs: [] }],
+    }));
+    expect(envelope?.displays).toEqual([portfolioTable]);
+  });
 });

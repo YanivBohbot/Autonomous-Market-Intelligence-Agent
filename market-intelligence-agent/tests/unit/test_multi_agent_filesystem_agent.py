@@ -4,6 +4,7 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.multi_agent import filesystem_agent as mod
 from app.agent.middleware import RedactEmailsForModel, base_middleware
+from app.agent.multi_agent.display import market_desk_display
 
 
 def _kwargs():
@@ -27,7 +28,8 @@ def test_create_agent_call_with_hitl_on_write_file():
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
     assert isinstance(mw[len(base)], HumanInTheLoopMiddleware)
     assert set(mw[len(base)].interrupt_on) == {"write_file"}
-    assert len(mw) == len(base) + 1
+    assert mw[len(base) + 1] is market_desk_display
+    assert len(mw) == len(base) + 2
 
 
 def test_builds_a_real_agent_with_hitl_node():
@@ -48,3 +50,10 @@ def test_prompt_tells_the_model_not_to_pre_confirm_in_prose():
     real HITL approval card (which already asks for consent) ever appeared."""
     from app.agent.prompts.specialist_agent_prompts import FILESYSTEM_SYSTEM_PROMPT
     assert "do not ask the user to confirm in your reply" in FILESYSTEM_SYSTEM_PROMPT.lower()
+
+
+def test_prompt_tells_the_model_the_card_already_shows_the_listing():
+    """The Market Desk file_list card renders list_directory's result, so the
+    reply must not repeat the whole listing in prose."""
+    from app.agent.prompts.specialist_agent_prompts import FILESYSTEM_SYSTEM_PROMPT
+    assert "card already lists" in FILESYSTEM_SYSTEM_PROMPT.lower()

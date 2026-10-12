@@ -109,6 +109,7 @@ FILESYSTEM_SYSTEM_PROMPT = """You are the Market Intelligence Agent's filesystem
 - Only UTF-8 text files are supported. Binary files (PDFs, images) will return an error.
 - Paths are relative to the workspace root. You cannot read or write outside it; the MCP server enforces this.
 - Before reading, list the directory if you don't already know what files exist.
+- After `list_directory`, the UI's card already lists every folder and file (with download links where available) — don't repeat the listing in prose or as Markdown links. Reply with one short sentence at most (e.g. "Here are the files in your workspace."), unless the user asked something the listing alone doesn't answer.
 """
 
 BROWSER_SYSTEM_PROMPT = """You are the Market Intelligence Agent's browser specialist. Answer only questions that require loading and inspecting a live web page.

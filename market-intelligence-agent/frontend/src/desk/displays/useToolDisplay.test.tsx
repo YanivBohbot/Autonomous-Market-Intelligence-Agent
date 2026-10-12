@@ -19,10 +19,10 @@ function Harness() {
 }
 
 describe("useToolDisplay", () => {
-  it("registers a renderer for all 9 displayable tools", () => {
+  it("registers a renderer for all 10 displayable tools", () => {
     render(<Harness />);
     expect(Object.keys(registrations).sort()).toEqual([
-      "browser_take_screenshot", "client_portfolio", "concentration_screen", "portfolio_metrics",
+      "browser_take_screenshot", "client_portfolio", "concentration_screen", "list_directory", "portfolio_metrics",
       "save_portfolio_report", "search_knowledge_base", "yfinance_get_price_history",
       "yfinance_get_ticker_info", "yfinance_get_ticker_news",
     ]);

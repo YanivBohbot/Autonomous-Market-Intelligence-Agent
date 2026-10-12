@@ -16,6 +16,7 @@ const VALIDATORS: Record<DisplayPayload["type"], (d: Record<string, unknown>) =>
   screenshot: (d) => typeof d.url === "string",
   rag_sources: (d) => Array.isArray(d.sources),
   report_file: (d) => typeof d.filename === "string" && typeof d.url === "string",
+  file_list: (d) => Array.isArray(d.dirs) && Array.isArray(d.files),
 };
 
 function isValidDisplay(entry: unknown): entry is DisplayPayload {

@@ -10,6 +10,7 @@ import { ConcentrationAlert } from "./ConcentrationAlert";
 import { ScreenshotCard } from "./ScreenshotCard";
 import { RagSourceCards } from "./RagSourceCards";
 import { ReportFileCard } from "./ReportFileCard";
+import { FileListCard } from "./FileListCard";
 import type { DisplayPayload } from "./types";
 
 function Rendered({ displays, toolCallId }: { displays: DisplayPayload[]; toolCallId?: string }) {
@@ -26,6 +27,7 @@ function Rendered({ displays, toolCallId }: { displays: DisplayPayload[]; toolCa
           case "screenshot": return <ScreenshotCard key={i} display={d} />;
           case "rag_sources": return <RagSourceCards key={i} display={d} toolCallId={toolCallId} />;
           case "report_file": return <ReportFileCard key={i} display={d} />;
+          case "file_list": return <FileListCard key={i} display={d} />;
         }
       })}
     </div>
@@ -52,6 +54,7 @@ const DISPLAYABLE_TOOLS = [
   "search_knowledge_base",
   "browser_take_screenshot",
   "save_portfolio_report",
+  "list_directory",
 ] as const;
 
 // One named registration per tool — leaves every other tool call (read_query,

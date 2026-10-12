@@ -265,3 +265,55 @@ def test_write_file_has_no_special_casing_anymore():
     # to CopilotKit's default card via the same "unregistered tool" path
     # every other tool uses.
     assert "write_file" not in display.DISPLAY_NORMALIZERS
+
+
+# Real list_directory output from @modelcontextprotocol/server-filesystem,
+# captured live on data/workspace/ (2026-10-12 QA).
+WORKSPACE_LISTING = (
+    "[FILE] .gitkeep\n[FILE] notes.txt\n[FILE] tv10-homepage.png\n"
+    "[DIR] reports\n[DIR] screenshots\n[FILE] old-brief.xlsx"
+)
+
+
+def test_normalize_file_list_splits_dirs_and_files_and_hides_dotfiles():
+    displays = display.DISPLAY_NORMALIZERS["list_directory"](WORKSPACE_LISTING, {"path": "."})
+    assert displays == [{
+        "type": "file_list",
+        "path": ".",
+        "dirs": ["reports", "screenshots"],
+        "files": [
+            {"name": "notes.txt", "url": None},
+            {"name": "tv10-homepage.png", "url": "/workspace/screenshots/tv10-homepage.png"},
+            # /workspace/files/ only serves reports/ -- a root .xlsx has no route.
+            {"name": "old-brief.xlsx", "url": None},
+        ],
+    }]
+
+
+def test_normalize_file_list_links_every_file_inside_the_reports_folder():
+    # /workspace/files/{name} serves any file under reports/, not just .xlsx.
+    text = "[FILE] martin-levy-portfolio-brief-2026-10-12.xlsx\n[FILE] readme.txt"
+    displays = display.DISPLAY_NORMALIZERS["list_directory"](text, {"path": "./reports/"})
+    assert displays[0]["path"] == "reports"
+    assert displays[0]["files"] == [
+        {"name": "martin-levy-portfolio-brief-2026-10-12.xlsx",
+         "url": "/workspace/files/martin-levy-portfolio-brief-2026-10-12.xlsx"},
+        {"name": "readme.txt", "url": "/workspace/files/readme.txt"},
+    ]
+
+
+def test_normalize_file_list_links_pngs_inside_the_screenshots_folder():
+    displays = display.DISPLAY_NORMALIZERS["list_directory"]("[FILE] qa_example.png", {"path": "screenshots"})
+    assert displays[0]["files"] == [{"name": "qa_example.png", "url": "/workspace/screenshots/qa_example.png"}]
+
+
+def test_normalize_file_list_does_not_link_pngs_in_other_subfolders():
+    displays = display.DISPLAY_NORMALIZERS["list_directory"]("[FILE] chart.png", {"path": "uploads"})
+    assert displays[0]["files"] == [{"name": "chart.png", "url": None}]
+
+
+def test_normalize_file_list_on_an_error_or_empty_folder_shows_nothing():
+    normalize = display.DISPLAY_NORMALIZERS["list_directory"]
+    assert normalize("ENOENT: no such file or directory, scandir 'x'", {"path": "x"}) == []
+    assert normalize("", {"path": "."}) == []
+    assert normalize("[FILE] .gitkeep", {"path": "."}) == []

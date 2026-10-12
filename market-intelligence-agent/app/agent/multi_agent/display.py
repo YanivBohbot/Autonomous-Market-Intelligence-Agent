@@ -251,6 +251,42 @@ def normalize_saved_report(text: str, args: dict) -> list[dict]:
     return [{"type": "report_file", "filename": filename, "url": f"/workspace/files/{filename}"}]
 
 
+_LISTING_LINE = re.compile(r"^\[(FILE|DIR)\]\s+(.+)$")
+
+
+def _file_url(folder: tuple[str, ...], name: str) -> str | None:
+    """Link only what app/api/routers/workspace.py already serves: reports
+    from reports/, PNGs from the workspace root or screenshots/. Anything
+    else is listed without a link -- no new download route."""
+    lower = name.lower()
+    if folder == ("reports",):
+        return f"/workspace/files/{name}"
+    if folder in ((), ("screenshots",)) and lower.endswith(".png"):
+        return f"/workspace/screenshots/{name}"
+    return None
+
+
+def normalize_file_list(text: str, args: dict) -> list[dict]:
+    raw_path = str(args.get("path") or ".").replace("\\", "/")
+    folder = tuple(part for part in raw_path.split("/") if part not in ("", "."))
+    dirs, files = [], []
+    for line in text.splitlines():
+        match = _LISTING_LINE.match(line.strip())
+        if not match:
+            continue
+        kind, name = match.group(1), match.group(2).strip()
+        if name.startswith("."):
+            continue
+        if kind == "DIR":
+            dirs.append(name)
+        else:
+            files.append({"name": name, "url": _file_url(folder, name)})
+    if not dirs and not files:
+        return []
+    return [{"type": "file_list", "path": "/".join(folder) or ".", "dirs": dirs, "files": files}]
+
+
+DISPLAY_NORMALIZERS["list_directory"] = normalize_file_list
 DISPLAY_NORMALIZERS["search_knowledge_base"] = normalize_rag_sources
 DISPLAY_NORMALIZERS["browser_take_screenshot"] = normalize_screenshot
 DISPLAY_NORMALIZERS["save_portfolio_report"] = normalize_saved_report
