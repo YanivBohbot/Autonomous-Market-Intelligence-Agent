@@ -21,7 +21,7 @@ def test_tools():
 
 def test_create_agent_call():
     kw = _kwargs()
-    from app.agent.prompts.specialist_agent_prompts import FINANCE_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import FINANCE_SYSTEM_PROMPT
     assert kw["system_prompt"] == FINANCE_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "finance_agent"

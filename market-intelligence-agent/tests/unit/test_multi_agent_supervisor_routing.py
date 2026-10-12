@@ -3,7 +3,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from app.agent.orchestration import supervisor as supervisor_mod
 from app.agent.orchestration.supervisor import supervisor_node, MAX_AGENT_HOPS
-from app.agent.prompts.specialist_agent_prompts import (
+from app.agent.prompts.ingested_documents_prompt import (
     INGESTED_DOCUMENTS_PLACEHOLDER,
     ingested_documents_list,
 )

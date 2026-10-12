@@ -17,7 +17,7 @@ def test_tools():
 
 
 def test_prompt_looks_up_client_email_via_read_query_before_sending():
-    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import EMAIL_SYSTEM_PROMPT
     assert "`read_query`" in EMAIL_SYSTEM_PROMPT
     assert "FROM clients WHERE name LIKE" in EMAIL_SYSTEM_PROMPT
     assert "ask the user if it's missing" not in EMAIL_SYSTEM_PROMPT
@@ -32,7 +32,7 @@ def test_read_query_is_not_gated_by_hitl():
 
 
 def test_create_agent_call_with_hitl_on_send_email():
-    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import EMAIL_SYSTEM_PROMPT
     kw = _kwargs()
     assert kw["system_prompt"] == EMAIL_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
@@ -62,13 +62,13 @@ def test_keeps_email_addresses_it_needs_to_work():
 
 
 def test_prompt_opens_empty_draft_instead_of_asking_for_content():
-    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import EMAIL_SYSTEM_PROMPT
     assert 'EMPTY `subject` and `body` ("")' in EMAIL_SYSTEM_PROMPT
     assert "Never ask the user for the subject or body" in EMAIL_SYSTEM_PROMPT
 
 
 def test_prompt_forbids_inventing_figures():
-    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import EMAIL_SYSTEM_PROMPT
     assert "never invent figures" in EMAIL_SYSTEM_PROMPT
     assert "portfolio_agent's answer" in EMAIL_SYSTEM_PROMPT
 
@@ -76,13 +76,13 @@ def test_prompt_forbids_inventing_figures():
 def test_prompt_says_not_to_retry_a_failed_send():
     """Regression (LangSmith trace 2026-10-12): after SES rejected the
     address, the agent re-called send_email and asked for approval again."""
-    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import EMAIL_SYSTEM_PROMPT
     assert "do not call `send_email` again" in EMAIL_SYSTEM_PROMPT.lower()
 
 
 def test_prompt_asks_for_a_plain_text_body_without_markdown():
     """Live 2026-10-12: the body copied portfolio_agent's Markdown table
     (| Ticker | Shares |...) into a plain-text email."""
-    from app.agent.prompts.specialist_agent_prompts import EMAIL_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import EMAIL_SYSTEM_PROMPT
     lowered = EMAIL_SYSTEM_PROMPT.lower()
     assert "no markdown" in lowered and "no tables" in lowered

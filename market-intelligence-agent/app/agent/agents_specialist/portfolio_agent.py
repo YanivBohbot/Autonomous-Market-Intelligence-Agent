@@ -4,7 +4,7 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 from app.agent.middleware import base_middleware, client_context_prompt, specialist_model
 from app.agent.display import market_desk_display
 from app.agent.orchestration.state import ClientContextState
-from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+from app.agent.prompts.agents_specialist_prompts import PORTFOLIO_SYSTEM_PROMPT
 from app.agent.tools import (
     client_portfolio_tool,
     concentration_screen_tool,

@@ -20,7 +20,7 @@ def test_tools():
 
 def test_create_agent_call():
     kw = _kwargs()
-    from app.agent.prompts.specialist_agent_prompts import RAG_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import RAG_SYSTEM_PROMPT
     assert kw["system_prompt"] == RAG_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "rag_agent"

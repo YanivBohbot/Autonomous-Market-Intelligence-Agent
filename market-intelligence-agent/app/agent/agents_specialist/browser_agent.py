@@ -2,7 +2,7 @@ from langchain.agents import create_agent
 
 from app.agent.middleware import base_middleware, redact_emails, specialist_model, strip_tool_images, tool_call_limit
 from app.agent.display import market_desk_display
-from app.agent.prompts.specialist_agent_prompts import BROWSER_SYSTEM_PROMPT
+from app.agent.prompts.agents_specialist_prompts import BROWSER_SYSTEM_PROMPT
 from app.agent.tools import browser_navigate_tool, browser_screenshot_tool, browser_snapshot_tool
 
 _TOOLS = [browser_navigate_tool, browser_snapshot_tool, browser_screenshot_tool]

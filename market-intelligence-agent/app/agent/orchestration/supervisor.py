@@ -25,7 +25,7 @@ from app.agent.middleware import (
 )
 from app.core.config import settings
 from app.agent.orchestration.state import ClientContextState, SupervisorState
-from app.agent.prompts.specialist_agent_prompts import SUPERVISOR_ROUTING_PROMPT
+from app.agent.prompts.orchestration_prompt import SUPERVISOR_ROUTING_PROMPT
 
 
 SpecialistName = Literal[
@@ -78,11 +78,6 @@ def client_context_routing_prompt(request: ModelRequest) -> str:
     )
 
 
-# ToolStrategy, not the auto-selected ProviderStrategy: for OpenAI the latter
-# always sends `tools: []`, and with it gpt-4o-mini emitted TWO routing JSON
-# objects for "email X her portfolio" (portfolio, then email) -- 3/3 runs vs
-# 0/3 without the empty list (LangSmith trace 01a13021, 2026-10-12). A single
-# tool call, with parallel_tool_calls=False on the model, is one decision.
 _ROUTER_RESPONSE_FORMAT = ToolStrategy(RoutingDecision)
 # Retries x model calls bound a failing router (3 x 3 attempts at most).
 ROUTER_MODEL_CALL_LIMIT = 3
@@ -107,7 +102,9 @@ def build_router_agent(model: BaseChatModel | None = None):
         fresh_documents_prompt,
         client_context_routing_prompt,
         context_editing(),
-        ModelCallLimitMiddleware(run_limit=ROUTER_MODEL_CALL_LIMIT, exit_behavior="error"),
+        ModelCallLimitMiddleware(
+            run_limit=ROUTER_MODEL_CALL_LIMIT, exit_behavior="error"
+        ),
         *([fallback] if fallback is not None else []),
         model_retry(on_failure="error"),
     ]

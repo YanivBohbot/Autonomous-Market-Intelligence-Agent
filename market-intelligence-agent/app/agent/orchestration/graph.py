@@ -20,9 +20,7 @@ from app.data_import.db import DB_PATH, get_client_with_holdings
 _CLIENT_THREAD_RE = re.compile(r"^clients_(\d+)$")
 
 
-def record_multi_agent_question(
-    state: SupervisorState, config: RunnableConfig
-) -> dict:
+def record_multi_agent_question(state: SupervisorState, config: RunnableConfig) -> dict:
     """Persist a turn with its transport source for presentation filtering."""
     question = state.get("question")
     if not question:
@@ -85,10 +83,12 @@ def load_client_context(state: SupervisorState, config: RunnableConfig) -> dict:
         conn.close()
     if client is None:
         return {"client_context": None}
-    return {"client_context": (
-        f"Active client: {client['name']}, segment {client['segment']}, "
-        f"risk {client['risk_profile']}, advisor {client['advisor']}."
-    )}
+    return {
+        "client_context": (
+            f"Active client: {client['name']}, segment {client['segment']}, "
+            f"risk {client['risk_profile']}, advisor {client['advisor']}."
+        )
+    }
 
 
 SPECIALISTS = {
@@ -106,9 +106,6 @@ def _build_workflow() -> StateGraph:
     workflow = StateGraph(SupervisorState)
     workflow.add_node("load_client_context", load_client_context)
     workflow.add_node("record_question", record_multi_agent_question)
-    # The routing call is a create_agent (supervisor.router_agent): its
-    # middleware covers the card guard (block_credit_cards) and transient
-    # OpenAI errors (ModelRetryMiddleware), so no guard node or RetryPolicy.
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("finalize_turn", finalize_turn)
     for name, agent_specialist in SPECIALISTS.items():

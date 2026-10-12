@@ -30,7 +30,7 @@ from app.agent.middleware import (
     tool_errors_to_messages,
 )
 from app.agent.orchestration.state import ClientContextState
-from app.agent.prompts.specialist_agent_prompts import INGESTED_DOCUMENTS_PLACEHOLDER
+from app.agent.prompts.ingested_documents_prompt import INGESTED_DOCUMENTS_PLACEHOLDER
 from tests.unit.fake_chat import FakeToolModel
 
 
@@ -135,7 +135,7 @@ async def test_fresh_documents_prompt_substitutes_the_live_manifest(tmp_path, mo
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text('["report-a.pdf"]', encoding="utf-8")
     monkeypatch.setattr(
-        "app.agent.prompts.specialist_agent_prompts._KB_MANIFEST_PATH", manifest
+        "app.agent.prompts.ingested_documents_prompt._KB_MANIFEST_PATH", manifest
     )
 
     model = FakeToolModel([AIMessage(content="hi"), AIMessage(content="hi again")])

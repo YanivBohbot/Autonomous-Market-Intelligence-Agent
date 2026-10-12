@@ -15,6 +15,7 @@ unaffected by any of this. A normalizer's only job is to produce `displays`
 from that same text; if it fails, the ToolMessage is left exactly as it was
 (fail open — a broken display must never break the answer).
 """
+
 from __future__ import annotations
 
 import json
@@ -54,7 +55,8 @@ def _content_text(content: Any) -> str:
         return content
     if isinstance(content, list):
         return "\n".join(
-            block.get("text", "") for block in content
+            block.get("text", "")
+            for block in content
             if isinstance(block, dict) and block.get("type") == "text"
         )
     return str(content)
@@ -71,11 +73,6 @@ class MarketDeskDisplayMiddleware(AgentMiddleware):
         if not isinstance(result, ToolMessage):
             return result
         if result.status == "error":
-            # handle_tool_errors=True (the default) turns a raised tool
-            # exception into ToolMessage(status="error") rather than
-            # propagating it -- the same shape as a success. Enveloping an
-            # error built a working-looking report_file card (filename +
-            # Download button) for a write that never happened.
             return result
         normalizer = DISPLAY_NORMALIZERS.get(result.name or "")
         if normalizer is None:
@@ -110,19 +107,21 @@ market_desk_display = MarketDeskDisplayMiddleware()
 def normalize_portfolio(text: str, args: dict) -> list[dict]:
     data = json.loads(text)
     if "error" in data:
-        # client_portfolio's documented no-match / ambiguous-match shape has
-        # no "positions" key at all (see load_client_portfolio) -- same
-        # fail-open contract as normalize_saved_report below.
         return []
     positions = data["positions"]
     table = {
         "type": "portfolio_table",
         "positions": [
             {
-                "ticker": p["ticker"], "shares": p["shares"], "price": p["price"],
-                "market_value": p["market_value"], "cost_basis": p["cost_basis"],
-                "unrealized_pnl": p["unrealized_pnl"], "unrealized_pnl_pct": p["unrealized_pnl_pct"],
-                "weight_pct": p["weight_pct"], "sector": p["sector"],
+                "ticker": p["ticker"],
+                "shares": p["shares"],
+                "price": p["price"],
+                "market_value": p["market_value"],
+                "cost_basis": p["cost_basis"],
+                "unrealized_pnl": p["unrealized_pnl"],
+                "unrealized_pnl_pct": p["unrealized_pnl_pct"],
+                "weight_pct": p["weight_pct"],
+                "sector": p["sector"],
             }
             for p in positions
         ],
@@ -130,7 +129,9 @@ def normalize_portfolio(text: str, args: dict) -> list[dict]:
     }
     chart = {
         "type": "portfolio_chart",
-        "slices": [{"ticker": p["ticker"], "weight_pct": p["weight_pct"]} for p in positions],
+        "slices": [
+            {"ticker": p["ticker"], "weight_pct": p["weight_pct"]} for p in positions
+        ],
     }
     return [table, chart]
 
@@ -144,14 +145,21 @@ def normalize_concentration(text: str, args: dict) -> list[dict]:
     breaches = data.get("breaches") or []
     if not breaches:
         return []
-    return [{
-        "type": "concentration_alert",
-        "threshold_pct": data["threshold_pct"],
-        "breaches": [
-            {"label": b["label"], "ticker": b["ticker"], "weight_pct": b["weight_pct"], "market_value": b["market_value"]}
-            for b in breaches
-        ],
-    }]
+    return [
+        {
+            "type": "concentration_alert",
+            "threshold_pct": data["threshold_pct"],
+            "breaches": [
+                {
+                    "label": b["label"],
+                    "ticker": b["ticker"],
+                    "weight_pct": b["weight_pct"],
+                    "market_value": b["market_value"],
+                }
+                for b in breaches
+            ],
+        }
+    ]
 
 
 DISPLAY_NORMALIZERS["concentration_screen"] = normalize_concentration
@@ -185,14 +193,20 @@ def normalize_ticker_info(text: str, args: dict) -> list[dict]:
     price = data.get("currentPrice") or data.get("regularMarketPrice")
     if price is None:
         return []
-    return [{
-        "type": "ticker_info", "ticker": _row_ticker(args) or str(data.get("symbol") or ""),
-        "name": data.get("shortName") or data.get("longName") or "",
-        "sector": data.get("sector"), "industry": data.get("industry"),
-        "current_price": float(price), "currency": data.get("currency") or "USD",
-        "market_cap": data.get("marketCap"), "fifty_two_week_low": data.get("fiftyTwoWeekLow"),
-        "fifty_two_week_high": data.get("fiftyTwoWeekHigh"),
-    }]
+    return [
+        {
+            "type": "ticker_info",
+            "ticker": _row_ticker(args) or str(data.get("symbol") or ""),
+            "name": data.get("shortName") or data.get("longName") or "",
+            "sector": data.get("sector"),
+            "industry": data.get("industry"),
+            "current_price": float(price),
+            "currency": data.get("currency") or "USD",
+            "market_cap": data.get("marketCap"),
+            "fifty_two_week_low": data.get("fiftyTwoWeekLow"),
+            "fifty_two_week_high": data.get("fiftyTwoWeekHigh"),
+        }
+    ]
 
 
 def normalize_ticker_news(text: str, args: dict) -> list[dict]:
@@ -201,14 +215,20 @@ def normalize_ticker_news(text: str, args: dict) -> list[dict]:
     for entry in entries:
         content = entry.get("content", {}) if isinstance(entry, dict) else {}
         title = content.get("title")
-        url = (content.get("canonicalUrl") or {}).get("url") or (content.get("clickThroughUrl") or {}).get("url")
+        url = (content.get("canonicalUrl") or {}).get("url") or (
+            content.get("clickThroughUrl") or {}
+        ).get("url")
         if not title or not url:
             continue
-        items.append({
-            "title": title, "summary": content.get("summary") or "",
-            "source": (content.get("provider") or {}).get("displayName") or "",
-            "url": url, "published_at": content.get("pubDate") or "",
-        })
+        items.append(
+            {
+                "title": title,
+                "summary": content.get("summary") or "",
+                "source": (content.get("provider") or {}).get("displayName") or "",
+                "url": url,
+                "published_at": content.get("pubDate") or "",
+            }
+        )
     if not items:
         return []
     return [{"type": "ticker_news", "items": items[:MAX_NEWS_ITEMS]}]
@@ -231,7 +251,13 @@ def normalize_rag_sources(text: str, args: dict) -> list[dict]:
     for i, m in enumerate(matches):
         start = m.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        sources.append({"filename": m.group(1), "page": m.group(2), "excerpt": text[start:end].strip()})
+        sources.append(
+            {
+                "filename": m.group(1),
+                "page": m.group(2),
+                "excerpt": text[start:end].strip(),
+            }
+        )
     return [{"type": "rag_sources", "sources": sources}]
 
 
@@ -248,7 +274,13 @@ def normalize_saved_report(text: str, args: dict) -> list[dict]:
     if "error" in data:
         return []
     filename = data["filename"]
-    return [{"type": "report_file", "filename": filename, "url": f"/workspace/files/{filename}"}]
+    return [
+        {
+            "type": "report_file",
+            "filename": filename,
+            "url": f"/workspace/files/{filename}",
+        }
+    ]
 
 
 _LISTING_LINE = re.compile(r"^\[(FILE|DIR)\]\s+(.+)$")
@@ -283,7 +315,14 @@ def normalize_file_list(text: str, args: dict) -> list[dict]:
             files.append({"name": name, "url": _file_url(folder, name)})
     if not dirs and not files:
         return []
-    return [{"type": "file_list", "path": "/".join(folder) or ".", "dirs": dirs, "files": files}]
+    return [
+        {
+            "type": "file_list",
+            "path": "/".join(folder) or ".",
+            "dirs": dirs,
+            "files": files,
+        }
+    ]
 
 
 DISPLAY_NORMALIZERS["list_directory"] = normalize_file_list

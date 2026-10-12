@@ -3,7 +3,7 @@ from langchain.agents import create_agent
 from app.agent.middleware import base_middleware, client_context_prompt, fresh_documents_prompt, redact_emails, specialist_model, tool_call_limit
 from app.agent.display import market_desk_display
 from app.agent.orchestration.state import ClientContextState
-from app.agent.prompts.specialist_agent_prompts import RAG_SYSTEM_PROMPT
+from app.agent.prompts.agents_specialist_prompts import RAG_SYSTEM_PROMPT
 from app.agent.tools import search_knowledge_base_tool, web_search_tool
 
 _TOOLS = [search_knowledge_base_tool, web_search_tool]

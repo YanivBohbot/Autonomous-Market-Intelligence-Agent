@@ -28,7 +28,7 @@ def test_prompt_lists_the_ingested_documents_live(tmp_path, monkeypatch):
     manifest = tmp_path / "kb_documents.json"
     manifest.write_text('["brand-new-upload.pdf"]', encoding="utf-8")
     monkeypatch.setattr(
-        "app.agent.prompts.specialist_agent_prompts._KB_MANIFEST_PATH", manifest
+        "app.agent.prompts.ingested_documents_prompt._KB_MANIFEST_PATH", manifest
     )
     model = FakeToolModel([_decides("rag_agent")])
     build_router_agent(model).invoke({"messages": [HumanMessage("what's in the new upload?")]})

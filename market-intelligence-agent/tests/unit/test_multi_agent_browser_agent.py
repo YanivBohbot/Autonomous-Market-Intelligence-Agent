@@ -19,7 +19,7 @@ def test_tools():
 
 def test_create_agent_call():
     kw = _kwargs()
-    from app.agent.prompts.specialist_agent_prompts import BROWSER_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import BROWSER_SYSTEM_PROMPT
     assert kw["system_prompt"] == BROWSER_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "browser_agent"
@@ -44,10 +44,10 @@ def test_prompt_says_snapshot_takes_no_arguments():
     hallucinated `target` arg (e.g. "h1") the tool doesn't support, get a
     clean tool-error, then wrongly report the whole source unreachable even
     though browser_navigate had already succeeded earlier in the turn."""
-    from app.agent.prompts.specialist_agent_prompts import BROWSER_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import BROWSER_SYSTEM_PROMPT
     assert "takes no arguments" in BROWSER_SYSTEM_PROMPT.lower()
 
 
 def test_prompt_distinguishes_navigate_failure_from_snapshot_or_screenshot_failure():
-    from app.agent.prompts.specialist_agent_prompts import BROWSER_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import BROWSER_SYSTEM_PROMPT
     assert "is not the same thing" in BROWSER_SYSTEM_PROMPT.lower()

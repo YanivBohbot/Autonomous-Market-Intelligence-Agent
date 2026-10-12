@@ -23,7 +23,7 @@ def test_tools():
 
 def test_create_agent_call():
     kw = _kwargs()
-    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import PORTFOLIO_SYSTEM_PROMPT
     assert kw["system_prompt"] == PORTFOLIO_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
     assert kw["name"] == "portfolio_agent"
@@ -59,7 +59,7 @@ def test_keeps_email_addresses_it_needs_to_work():
 
 
 def test_portfolio_recipe_defers_to_report_recipe_for_save_or_export_requests():
-    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import PORTFOLIO_SYSTEM_PROMPT
 
     portfolio_bullet = PORTFOLIO_SYSTEM_PROMPT.split("Portfolio recipe:")[1].split("\n-")[0]
     assert "report recipe" in portfolio_bullet.lower()
@@ -70,7 +70,7 @@ def test_report_recipe_calls_the_single_atomic_save_tool():
     # write_file with its output pasted in) is gone -- there is exactly
     # one tool call now, and nothing about "unedited"/"pass its output"
     # should remain, since there is no longer any content to pass.
-    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import PORTFOLIO_SYSTEM_PROMPT
 
     report_section = PORTFOLIO_SYSTEM_PROMPT.split("Report recipe:")[1]
     assert "save_portfolio_report" in report_section
@@ -85,7 +85,7 @@ def test_prompt_never_saves_a_report_for_an_email_request():
     """Live QA 2026-10-11: "Send an email to Margaret Collins with a short
     summary of her portfolio" sometimes called save_portfolio_report (report
     approval card) instead of client_portfolio, so the email card never came."""
-    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import PORTFOLIO_SYSTEM_PROMPT
 
     assert "Email recipe" in PORTFOLIO_SYSTEM_PROMPT
     assert "NEVER call `save_portfolio_report` for an email request" in PORTFOLIO_SYSTEM_PROMPT
@@ -95,7 +95,7 @@ def test_prompt_forbids_claiming_an_email_was_sent():
     """Regression (LangSmith trace 2026-10-12): on "Email Margaret Collins a
     summary", portfolio_agent ended with "I have emailed Margaret Collins..."
     before email_agent ran or the user approved anything."""
-    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import PORTFOLIO_SYSTEM_PROMPT
     assert "never say or imply that an email was sent" in PORTFOLIO_SYSTEM_PROMPT.lower()
 
 
@@ -103,5 +103,5 @@ def test_prompt_says_not_to_mention_the_email_at_all():
     """Live 2026-10-12, after the first fix: the reply ended with "This
     summary will be sent to Margaret Collins via email." -- still announcing
     a send that depends on the user's approval."""
-    from app.agent.prompts.specialist_agent_prompts import PORTFOLIO_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import PORTFOLIO_SYSTEM_PROMPT
     assert "do not mention the email at all" in PORTFOLIO_SYSTEM_PROMPT.lower()

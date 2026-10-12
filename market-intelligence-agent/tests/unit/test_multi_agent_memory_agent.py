@@ -17,7 +17,7 @@ def test_tools():
 
 
 def test_create_agent_call_with_hitl_on_save_memory():
-    from app.agent.prompts.specialist_agent_prompts import MEMORY_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import MEMORY_SYSTEM_PROMPT
     kw = _kwargs()
     assert kw["system_prompt"] == MEMORY_SYSTEM_PROMPT
     assert kw["tools"] == mod._TOOLS
@@ -44,7 +44,7 @@ def test_keeps_email_addresses_it_needs_to_work():
 def test_prompt_requires_checking_memory_before_answering_preference_questions():
     """Regression (QA row 14): a new thread asked "What is my preferred report
     format?" answered "no info" without calling any tool."""
-    from app.agent.prompts.specialist_agent_prompts import MEMORY_SYSTEM_PROMPT
+    from app.agent.prompts.agents_specialist_prompts import MEMORY_SYSTEM_PROMPT
     p = MEMORY_SYSTEM_PROMPT
     assert "ALWAYS call `list_memories`" in p
     assert "own facts or preferences" in p

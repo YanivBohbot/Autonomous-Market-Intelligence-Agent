@@ -15,9 +15,6 @@ logger = logging.getLogger(__name__)
 _tavily = TavilyClient(api_key=settings.TAVILY_API_KEY)
 
 
-# Written by app/ingest.py. Lives inside app/ (not data/) because the
-# AgentCore image only ships app/ — listing ./data/*.pdf at query time made
-# every source_filter miss in prod, where no PDFs exist.
 KB_MANIFEST_PATH = Path(__file__).with_name("kb_documents.json")
 
 
@@ -25,7 +22,9 @@ def _list_ingested_pdfs(manifest_path: Path = KB_MANIFEST_PATH) -> list[str]:
     try:
         return sorted(json.loads(Path(manifest_path).read_text(encoding="utf-8")))
     except FileNotFoundError:
-        logger.warning("KB_SEARCH: manifest %s missing — run `python -m app.ingest`", manifest_path)
+        logger.warning(
+            "KB_SEARCH: manifest %s missing — run `python -m app.ingest`", manifest_path
+        )
         return []
 
 
@@ -33,18 +32,22 @@ def _resolve_source_filter(source_filter: str) -> list[str] | None:
     """Case-insensitive substring match against ingested filenames. Returns
     the matched bare filenames (used to filter on the `filename` metadata
     field, which is OS/path independent), or None if nothing matches."""
-    matches = [
-        f for f in _list_ingested_pdfs()
-        if source_filter.lower() in f.lower()
-    ]
+    matches = [f for f in _list_ingested_pdfs() if source_filter.lower() in f.lower()]
     if not matches:
         return None
     return matches
 
 
 class KBSearchInput(BaseModel):
-    query: str = Field(description="The search query against the internal knowledge base.")
-    k: int = Field(default=2, ge=1, le=10, description="Number of sources to return (at most 2 are returned, each from a different page).")
+    query: str = Field(
+        description="The search query against the internal knowledge base."
+    )
+    k: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        description="Number of sources to return (at most 2 are returned, each from a different page).",
+    )
     source_filter: str | None = Field(
         default=None,
         description=(
@@ -64,7 +67,9 @@ def _display_page(page) -> str:
 
 
 @tool("search_knowledge_base", args_schema=KBSearchInput)
-def search_knowledge_base_tool(query: str, k: int = 4, source_filter: str | None = None) -> str:
+def search_knowledge_base_tool(
+    query: str, k: int = 4, source_filter: str | None = None
+) -> str:
     """Search the internal knowledge base of ingested company reports/documents.
     Use for questions about specific companies' financials, risk factors, or
     any content from ingested PDFs. Pass source_filter to target one document

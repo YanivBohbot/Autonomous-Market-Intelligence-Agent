@@ -34,7 +34,7 @@ from langgraph.types import Command
 from app.agent.guardrails.detection import redact_emails_in
 from app.agent.prompts import with_today
 from app.agent.tools import is_read_only
-from app.agent.prompts.specialist_agent_prompts import (
+from app.agent.prompts.ingested_documents_prompt import (
     INGESTED_DOCUMENTS_PLACEHOLDER,
     ingested_documents_list,
 )
