@@ -1,6 +1,6 @@
 from langgraph.checkpoint.memory import InMemorySaver
 
-from app.agent.multi_agent import build_multi_agent_app
+from app.agent.orchestration.graph import build_multi_agent_app
 
 
 def _build():
@@ -35,7 +35,7 @@ def test_graph_does_not_use_static_interrupt_before():
 
 
 def test_create_agent_specialists_return_to_supervisor():
-    from app.agent.multi_agent.graph import SPECIALISTS
+    from app.agent.orchestration.graph import SPECIALISTS
     edges = {(e.source, e.target) for e in _build().get_graph().edges}
     for name in SPECIALISTS:
         assert (name, "supervisor") in edges

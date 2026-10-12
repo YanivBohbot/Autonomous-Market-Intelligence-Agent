@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
-from app.agent.multi_agent import email_agent as mod
+from app.agent.agents_specialist import email_agent as mod
 from app.agent.middleware import RedactEmailsForModel, base_middleware
 
 

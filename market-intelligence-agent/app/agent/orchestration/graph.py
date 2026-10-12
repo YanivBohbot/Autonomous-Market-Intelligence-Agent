@@ -6,15 +6,15 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.store.base import BaseStore
-from app.agent.multi_agent.browser_agent import build_browser_agent
-from app.agent.multi_agent.email_agent import build_email_agent
-from app.agent.multi_agent.filesystem_agent import build_filesystem_agent
-from app.agent.multi_agent.finance_agent import build_finance_agent
-from app.agent.multi_agent.memory_agent import build_memory_agent
-from app.agent.multi_agent.portfolio_agent import build_portfolio_agent
-from app.agent.multi_agent.rag_agent import build_rag_agent
-from app.agent.multi_agent.state import SupervisorState
-from app.agent.multi_agent.supervisor import supervisor_node
+from app.agent.agents_specialist.browser_agent import build_browser_agent
+from app.agent.agents_specialist.email_agent import build_email_agent
+from app.agent.agents_specialist.filesystem_agent import build_filesystem_agent
+from app.agent.agents_specialist.finance_agent import build_finance_agent
+from app.agent.agents_specialist.memory_agent import build_memory_agent
+from app.agent.agents_specialist.portfolio_agent import build_portfolio_agent
+from app.agent.agents_specialist.rag_agent import build_rag_agent
+from app.agent.orchestration.state import SupervisorState
+from app.agent.orchestration.supervisor import supervisor_node
 from app.data_import.db import DB_PATH, get_client_with_holdings
 
 _CLIENT_THREAD_RE = re.compile(r"^clients_(\d+)$")

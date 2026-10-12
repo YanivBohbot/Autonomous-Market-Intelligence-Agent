@@ -4,8 +4,8 @@ unknown address still sends nothing."""
 import pytest
 from langchain_core.messages import ToolMessage
 
-from app.agent.multi_agent import email_agent as mod
-from app.agent.multi_agent.email_agent import EmailRecipientGuard
+from app.agent.agents_specialist import email_agent as mod
+from app.agent.agents_specialist.email_agent import EmailRecipientGuard
 
 
 class _Req:

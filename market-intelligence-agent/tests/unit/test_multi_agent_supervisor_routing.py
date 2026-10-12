@@ -1,8 +1,8 @@
 from unittest.mock import patch
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.agent.multi_agent import supervisor as supervisor_mod
-from app.agent.multi_agent.supervisor import supervisor_node, MAX_AGENT_HOPS
+from app.agent.orchestration import supervisor as supervisor_mod
+from app.agent.orchestration.supervisor import supervisor_node, MAX_AGENT_HOPS
 from app.agent.prompts.specialist_agent_prompts import (
     INGESTED_DOCUMENTS_PLACEHOLDER,
     ingested_documents_list,

@@ -43,7 +43,7 @@ function renderDisplayResult(props: { status: string; result?: string; toolCallI
   return <Rendered displays={envelope.displays} toolCallId={props.toolCallId} />;
 }
 
-// Mirrors app/agent/multi_agent/display.py's DISPLAY_NORMALIZERS keys exactly.
+// Mirrors app/agent/display.py's DISPLAY_NORMALIZERS keys exactly.
 const DISPLAYABLE_TOOLS = [
   "portfolio_metrics",
   "concentration_screen",

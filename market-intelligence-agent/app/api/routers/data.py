@@ -405,7 +405,7 @@ def _tool_content_text(result) -> str:
 
 
 async def _price_history(ticker: str) -> list[dict]:
-    from app.agent.multi_agent.display import normalize_price_history
+    from app.agent.display import normalize_price_history
     from app.agent.tools.mcp_clients.yfinance_client import yf_history_tool
 
     symbol_arg = "symbol" if "symbol" in yf_history_tool.args else "ticker"

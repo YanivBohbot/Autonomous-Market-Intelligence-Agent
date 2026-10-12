@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 
-from app.agent.multi_agent import build_multi_agent_app
+from app.agent.orchestration.graph import build_multi_agent_app
 from app.api import server
 from app.api.routers.copilot import MARKET_DESK_AGENT_NAME
 from app.core.config import Settings

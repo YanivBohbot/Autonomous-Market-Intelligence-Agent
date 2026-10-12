@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
-from app.agent.multi_agent import build_multi_agent_app
+from app.agent.orchestration.graph import build_multi_agent_app
 from app.agent.turn_coordinator import ThreadTurnCoordinator
 from app.api.routers.agentcore import router as agentcore_router
 from app.api.routers.approve import router as approve_router

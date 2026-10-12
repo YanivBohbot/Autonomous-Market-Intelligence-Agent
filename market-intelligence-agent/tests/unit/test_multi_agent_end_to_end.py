@@ -6,10 +6,10 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
-from app.agent.multi_agent import build_multi_agent_app
-from app.agent.multi_agent import finance_agent as finance_agent_mod
-from app.agent.multi_agent import supervisor as supervisor_mod
-from app.agent.multi_agent.supervisor import RoutingDecision
+from app.agent.orchestration.graph import build_multi_agent_app
+from app.agent.agents_specialist import finance_agent as finance_agent_mod
+from app.agent.orchestration import supervisor as supervisor_mod
+from app.agent.orchestration.supervisor import RoutingDecision
 from tests.unit.fake_chat import FakeToolModel
 from tests.unit.router_fakes import routed
 

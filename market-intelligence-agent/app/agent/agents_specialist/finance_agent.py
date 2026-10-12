@@ -6,8 +6,8 @@ from app.agent.middleware import (
     redact_emails,
     specialist_model,
 )
-from app.agent.multi_agent.display import market_desk_display
-from app.agent.multi_agent.state import ClientContextState
+from app.agent.display import market_desk_display
+from app.agent.orchestration.state import ClientContextState
 from app.agent.prompts.specialist_agent_prompts import FINANCE_SYSTEM_PROMPT
 from app.agent.tools import yf_history_tool, yf_news_tool, yf_quote_tool
 

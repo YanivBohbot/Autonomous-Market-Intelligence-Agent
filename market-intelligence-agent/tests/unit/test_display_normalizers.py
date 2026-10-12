@@ -3,7 +3,7 @@ tool actually produces (captured live where the tool is MCP-backed and this
 repo has no fixture of its own)."""
 import json
 
-from app.agent.multi_agent import display
+from app.agent import display
 
 # Trimmed real output of compute_portfolio_metrics (finance_calc.py) for one
 # client — field names and value shapes copied verbatim.

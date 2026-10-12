@@ -8,10 +8,10 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from app.agent.multi_agent import build_multi_agent_app
-from app.agent.multi_agent import email_agent as email_mod
-from app.agent.multi_agent import supervisor as supervisor_mod
-from app.agent.multi_agent.supervisor import RoutingDecision
+from app.agent.orchestration.graph import build_multi_agent_app
+from app.agent.agents_specialist import email_agent as email_mod
+from app.agent.orchestration import supervisor as supervisor_mod
+from app.agent.orchestration.supervisor import RoutingDecision
 from tests.unit.fake_chat import FakeToolModel
 from tests.unit.router_fakes import routed
 

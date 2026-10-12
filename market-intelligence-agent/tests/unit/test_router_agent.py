@@ -4,8 +4,8 @@ create_agent falls back to ToolStrategy, so the fake answers with a tool
 call named after the schema (RoutingDecision)."""
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from app.agent.multi_agent import supervisor as supervisor_mod
-from app.agent.multi_agent.supervisor import RoutingDecision, build_router_agent
+from app.agent.orchestration import supervisor as supervisor_mod
+from app.agent.orchestration.supervisor import RoutingDecision, build_router_agent
 from tests.unit.fake_chat import FakeToolModel
 
 BIG = "x" * 4000
@@ -133,8 +133,8 @@ def test_router_runs_do_not_write_checkpoints():
     checkpointer and wrote a full conversation copy per call."""
     from unittest.mock import patch
     from langgraph.checkpoint.memory import InMemorySaver
-    from app.agent.multi_agent import build_multi_agent_app
-    from app.agent.multi_agent import rag_agent as rag_mod
+    from app.agent.orchestration.graph import build_multi_agent_app
+    from app.agent.agents_specialist import rag_agent as rag_mod
 
     saver = InMemorySaver()
     with patch.object(supervisor_mod, "router_agent", build_router_agent(FakeToolModel([_decides("rag_agent")]))), \

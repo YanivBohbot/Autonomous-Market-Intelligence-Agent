@@ -13,7 +13,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 
 import create_db as seed
-from app.agent.multi_agent import build_multi_agent_app
+from app.agent.orchestration.graph import build_multi_agent_app
 
 if not seed.DB_PATH.exists():
     raise FileNotFoundError(

@@ -79,7 +79,7 @@ def today_prompt(request: ModelRequest) -> str:
 @dynamic_prompt
 def client_context_prompt(request: ModelRequest) -> str:
     """Appends the active client's profile blurb (set by
-    load_client_context, see app/agent/multi_agent/graph.py) to the system
+    load_client_context, see app/agent/orchestration/graph.py) to the system
     prompt when this thread is scoped to a client; leaves the prompt
     untouched on every other thread."""
     client_context = request.state.get("client_context")

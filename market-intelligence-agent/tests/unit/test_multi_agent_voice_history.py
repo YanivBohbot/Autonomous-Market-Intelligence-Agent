@@ -1,12 +1,12 @@
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import END
 
-from app.agent.multi_agent.graph import (
+from app.agent.orchestration.graph import (
     _build_workflow,
     finalize_turn,
     record_multi_agent_question,
 )
-from app.agent.multi_agent.supervisor import _finish
+from app.agent.orchestration.supervisor import _finish
 
 
 def test_record_multi_agent_question_defaults_to_text_source():

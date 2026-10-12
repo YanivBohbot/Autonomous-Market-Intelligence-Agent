@@ -29,7 +29,7 @@ from app.agent.middleware import (
     today_prompt,
     tool_errors_to_messages,
 )
-from app.agent.multi_agent.state import ClientContextState
+from app.agent.orchestration.state import ClientContextState
 from app.agent.prompts.specialist_agent_prompts import INGESTED_DOCUMENTS_PLACEHOLDER
 from tests.unit.fake_chat import FakeToolModel
 
@@ -354,8 +354,8 @@ async def test_read_only_tool_is_retried_after_a_transient_failure():
 
 def test_tool_call_limits_on_rag_and_browser():
     from unittest.mock import patch
-    import app.agent.multi_agent.rag_agent as rag_mod
-    import app.agent.multi_agent.browser_agent as browser_mod
+    import app.agent.agents_specialist.rag_agent as rag_mod
+    import app.agent.agents_specialist.browser_agent as browser_mod
     for mod, build, tool_name, limit in (
         (rag_mod, "build_rag_agent", "web_search", 3),
         (browser_mod, "build_browser_agent", "browser_navigate", 5),

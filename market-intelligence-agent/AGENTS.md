@@ -68,7 +68,7 @@ When adding, renaming, or removing a tool, update `TOOLS` and `READ_ONLY_TOOLS` 
 
 ## Multi-Agent Mode
 
-`app/agent/multi_agent/` is the primary text runtime used by `/stream`, `/approve`, AgentCore, and Market Desk. `COPILOT_ENABLED=true` only exposes the AG-UI `/copilot/market-desk` wrapper; it does not change which graph the other text transports use.
+The multi-agent graph (`app/agent/orchestration/graph.py`, specialists in `app/agent/agents_specialist/`) is the primary text runtime used by `/stream`, `/approve`, AgentCore, and Market Desk. `COPILOT_ENABLED=true` only exposes the AG-UI `/copilot/market-desk` wrapper; it does not change which graph the other text transports use.
 
 Shared middleware lives in `app/agent/middleware.py`: sensitive-data checks, date prompting, message summarization, credit-card masking, call limits, optional Anthropic fallback, model retry, and tool-error conversion. Multi-agent HITL supports one `approve`, `reject`, or `edit` decision per pending call.
 

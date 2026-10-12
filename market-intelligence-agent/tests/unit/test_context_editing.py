@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
 
 from app.agent import middleware as mw
-from app.agent.multi_agent import supervisor as supervisor_mod
+from app.agent.orchestration import supervisor as supervisor_mod
 from tests.unit.fake_chat import FakeToolModel
 from tests.unit.router_fakes import routed
 

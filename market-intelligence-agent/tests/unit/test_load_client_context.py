@@ -6,8 +6,8 @@ conversation show up immediately; it is never cached onto the checkpoint.
 """
 import sqlite3
 
-import app.agent.multi_agent.graph as graph_module
-from app.agent.multi_agent.graph import load_client_context
+import app.agent.orchestration.graph as graph_module
+from app.agent.orchestration.graph import load_client_context
 
 
 def _seed(db_path):

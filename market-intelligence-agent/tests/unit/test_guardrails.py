@@ -3,9 +3,9 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
-from app.agent.multi_agent import rag_agent as rag_mod
-from app.agent.multi_agent import supervisor as supervisor_mod
-from app.agent.multi_agent.supervisor import build_router_agent
+from app.agent.agents_specialist import rag_agent as rag_mod
+from app.agent.orchestration import supervisor as supervisor_mod
+from app.agent.orchestration.supervisor import build_router_agent
 from tests.unit.fake_chat import FakeToolModel
 
 from app.agent.guardrails import SENSITIVE_DATA_WARNING, contains_sensitive_data
@@ -54,7 +54,7 @@ def test_detection_does_not_call_pii_middleware_hooks():
 
 
 def _graph():
-    from app.agent.multi_agent import build_multi_agent_app
+    from app.agent.orchestration.graph import build_multi_agent_app
     return build_multi_agent_app(InMemorySaver())
 
 

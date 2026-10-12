@@ -9,7 +9,7 @@ import pytest
 from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 
-from app.agent.multi_agent import display
+from app.agent import display
 
 
 def _request(name: str, args: dict) -> ToolCallRequest:

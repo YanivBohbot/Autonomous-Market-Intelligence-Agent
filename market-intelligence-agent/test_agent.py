@@ -12,7 +12,7 @@ from langgraph.types import Command
 
 from app.agent.memory.checkpointer import create_checkpointer
 from app.agent.memory.store import create_store
-from app.agent.multi_agent import build_multi_agent_app
+from app.agent.orchestration.graph import build_multi_agent_app
 
 
 async def run_test():

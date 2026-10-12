@@ -24,7 +24,7 @@ from app.agent.middleware import (
     model_retry,
 )
 from app.core.config import settings
-from app.agent.multi_agent.state import ClientContextState, SupervisorState
+from app.agent.orchestration.state import ClientContextState, SupervisorState
 from app.agent.prompts.specialist_agent_prompts import SUPERVISOR_ROUTING_PROMPT
 
 

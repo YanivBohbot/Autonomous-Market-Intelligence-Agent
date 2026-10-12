@@ -2,10 +2,10 @@ from unittest.mock import patch
 
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
-from app.agent.multi_agent import rag_agent as mod
+from app.agent.agents_specialist import rag_agent as mod
 from app.agent.middleware import RedactEmailsForModel, base_middleware, client_context_prompt, fresh_documents_prompt
-from app.agent.multi_agent.display import market_desk_display
-from app.agent.multi_agent.state import ClientContextState
+from app.agent.display import market_desk_display
+from app.agent.orchestration.state import ClientContextState
 
 
 def _kwargs():
