@@ -11,13 +11,14 @@ from app.agent.multi_agent import finance_agent as finance_agent_mod
 from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import RoutingDecision
 from tests.unit.fake_chat import FakeToolModel
+from tests.unit.router_fakes import routed
 
 
 def test_supervisor_routes_to_finance_then_finishes():
     fake = FakeToolModel([AIMessage(content="AAPL is trading at $200.")])
     with patch.object(finance_agent_mod, "specialist_model", return_value=fake), \
-         patch.object(supervisor_mod, "_router") as router_mock:
-        router_mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="stock question")
+         patch.object(supervisor_mod, "router_agent") as router_mock:
+        router_mock.invoke.return_value = routed("finance_agent", "stock question")
         graph = build_multi_agent_app(InMemorySaver())
         result = graph.invoke(
             {"question": "AAPL price?", "messages": [], "documents": [], "next_agent": None, "agent_hops": 0},

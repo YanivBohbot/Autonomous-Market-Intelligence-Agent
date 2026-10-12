@@ -13,6 +13,7 @@ from app.agent.multi_agent import email_agent as email_mod
 from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import RoutingDecision
 from tests.unit.fake_chat import FakeToolModel
+from tests.unit.router_fakes import routed
 
 SENT = []
 
@@ -49,11 +50,11 @@ async def _run_until_interrupt():
         patch.object(email_mod, "specialist_model", return_value=fake),
         patch.object(email_mod, "_TOOLS", [_fake_send_email]),
         patch.object(email_mod, "_is_client_email", _always_known),
-        patch.object(supervisor_mod, "_router"),
+        patch.object(supervisor_mod, "router_agent"),
     ]
     for p in patches:
         p.start()
-    supervisor_mod._router.invoke.return_value = RoutingDecision(next="email_agent", reasoning="email")
+    supervisor_mod.router_agent.invoke.return_value = routed("email_agent", "email")
     graph = build_multi_agent_app(InMemorySaver())
     cfg = {"configurable": {"thread_id": "hitl"}}
     first = await graph.ainvoke(
@@ -157,12 +158,12 @@ async def test_a_failed_send_is_not_retried_and_asks_no_second_approval():
         patch.object(email_mod, "specialist_model", return_value=fake),
         patch.object(email_mod, "_TOOLS", [_failing_send_email]),
         patch.object(email_mod, "_is_client_email", _always_known),
-        patch.object(supervisor_mod, "_router"),
+        patch.object(supervisor_mod, "router_agent"),
     ]
     for p in patches:
         p.start()
     try:
-        supervisor_mod._router.invoke.return_value = RoutingDecision(next="email_agent", reasoning="email")
+        supervisor_mod.router_agent.invoke.return_value = routed("email_agent", "email")
         graph = build_multi_agent_app(InMemorySaver())
         cfg = {"configurable": {"thread_id": "hitl-retry"}}
         first = await graph.ainvoke(

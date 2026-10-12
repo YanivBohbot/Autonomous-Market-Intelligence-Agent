@@ -10,8 +10,8 @@ from langchain_core.messages.utils import count_tokens_approximately
 
 from app.agent import middleware as mw
 from app.agent.multi_agent import supervisor as supervisor_mod
-from app.agent.multi_agent.supervisor import RoutingDecision
 from tests.unit.fake_chat import FakeToolModel
+from tests.unit.router_fakes import routed
 
 BIG = "x" * 4000  # ~1000 tokens per tool result
 
@@ -84,12 +84,15 @@ async def test_model_sees_cleared_results_but_the_stored_conversation_keeps_them
     assert stored_tools[0].content.startswith("RESULT1")
 
 
-def test_supervisor_router_gets_old_tool_results_cleared_and_state_is_untouched():
+def test_supervisor_node_passes_the_full_conversation_to_router_agent():
+    """Clearing is router_agent's ContextEditingMiddleware (see
+    test_router_agent.py): the node hands over the conversation as is and
+    never edits the shared state."""
     history = _history(5) + [HumanMessage("question 6")]
     state = {"messages": history, "next_agent": None, "agent_hops": 0}
-    with patch.object(supervisor_mod, "_router") as router:
-        router.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="r")
+    with patch.object(supervisor_mod, "router_agent") as router:
+        router.invoke.return_value = routed("rag_agent", "r")
         supervisor_mod.supervisor_node(state)
-    sent = router.invoke.call_args.args[0]
-    assert _tool_contents(sent)[:3] == ["[cleare"] * 3
+    sent = router.invoke.call_args.args[0]["messages"]
+    assert _tool_contents(sent)[0] == "RESULT1"
     assert _tool_contents(history)[0] == "RESULT1"

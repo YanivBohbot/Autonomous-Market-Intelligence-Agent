@@ -1,18 +1,16 @@
 import re
-from typing import Literal, cast
+from typing import Literal
 
 from pydantic import BaseModel, Field
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest, dynamic_prompt
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
-from langchain_core.messages.utils import count_tokens_approximately
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
 from app.agent.guardrails.card_guard import block_credit_cards
 from app.agent.middleware import (
-    ClearOldTurnToolResults,
     context_editing,
     fresh_documents_prompt,
     model_fallback,
@@ -20,11 +18,7 @@ from app.agent.middleware import (
 )
 from app.core.config import settings
 from app.agent.multi_agent.state import ClientContextState, SupervisorState
-from app.agent.prompts.specialist_agent_prompts import (
-    INGESTED_DOCUMENTS_PLACEHOLDER,
-    SUPERVISOR_ROUTING_PROMPT,
-    ingested_documents_list,
-)
+from app.agent.prompts.specialist_agent_prompts import SUPERVISOR_ROUTING_PROMPT
 
 
 SpecialistName = Literal[
@@ -51,21 +45,6 @@ class RoutingDecision(BaseModel):
     )
     reasoning: str = Field(description="One sentence: why this specialist (or FINISH).")
 
-
-# Deliberately not the official `langgraph-supervisor` package (handoff
-# tools the LLM calls, routed via Command(goto=..., graph=Command.PARENT)):
-# that pattern gives the LLM the routing decision as a tool call, with no
-# plain-Python hook before it takes effect. The sticky-rule override below
-# (a deterministic route that skips the LLM entirely for one specific
-# follow-up) needs exactly that hook, so this supervisor stays a plain node
-# that calls `with_structured_output` itself and returns `Command` directly.
-_llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
-# The routing decision is internal: Market Desk (ag-ui-langgraph, which streams
-# via astream_events) must not render its JSON as chat text. The decision stays
-# visible through state.next_agent and STEP_STARTED events.
-_router = _llm.with_structured_output(RoutingDecision).with_config(
-    metadata={"emit-messages": False, "emit-tool-calls": False}
-)
 
 # The routing decision is internal: Market Desk (ag-ui-langgraph streams via
 # astream_events) must not render its JSON as chat text.
@@ -239,34 +218,23 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     # Substituted fresh on every call, not baked in at import time -- a PDF
     # uploaded via /data/import/pdf while the server is already running
     # must be recognized immediately, not only after a restart.
-    routing_prompt = SUPERVISOR_ROUTING_PROMPT.replace(
-        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
-    )
-    # Without this, the router had no idea a client was even active (only
-    # portfolio_agent/finance_agent/rag_agent read client_context via their
-    # own client_context_prompt middleware) -- a vague client question like
-    # "qui est le client" could route to memory_agent or another specialist
-    # that has never heard of this client, producing a confused answer.
-    client_context = state.get("client_context")
-    if client_context:
-        routing_prompt = (
-            f"{routing_prompt}\n\n{client_context} When this client is active and the question "
-            "is about them -- even phrased generically (\"who is the client\", \"what's their "
-            "portfolio worth\") -- prefer portfolio_agent, finance_agent, or rag_agent over "
-            "memory_agent/filesystem_agent/browser_agent/email_agent, which don't know who this "
-            "client is."
+    # The prompt (live PDF list, active client), stale-tool-result clearing,
+    # the card guard and model retry/fallback are all router_agent middleware.
+    result = router_agent.invoke({
+        "messages": list(messages),
+        "client_context": state.get("client_context"),
+    })
+    decision = result.get("structured_response")
+    if decision is None:
+        # block_credit_cards ended the router run (@before_agent jump_to
+        # "end"): carry its masked question (same id, so it replaces the raw
+        # one) and its warning into the shared conversation, then end the turn.
+        latest = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+        carried = [m for m in result["messages"] if latest is not None and m.id == latest.id]
+        return Command(
+            goto="finalize_turn",
+            update={"messages": [*carried, result["messages"][-1]], "next_agent": None},
         )
-    # The router is a raw LLM call no middleware wraps, so it gets the same
-    # stale-tool-result clearing as the specialists' context_editing(), on a
-    # copy: the state (and Market Desk's cards) keeps the originals.
-    routing_messages = list(state.get("messages", []))
-    ClearOldTurnToolResults().apply(routing_messages, count_tokens=count_tokens_approximately)
-    decision = cast(RoutingDecision, _router.invoke(
-        [
-            SystemMessage(content=routing_prompt),
-            *routing_messages,
-        ]
-    ))
 
     next_agent = decision.next
     if next_agent == "FINISH":

@@ -15,6 +15,7 @@ from app.agent.multi_agent import portfolio_agent as portfolio_agent_mod
 from app.agent.multi_agent import supervisor as supervisor_mod
 from app.agent.multi_agent.supervisor import RoutingDecision
 from tests.unit.fake_chat import FakeToolModel
+from tests.unit.router_fakes import routed
 
 
 def test_portfolio_agent_sees_the_active_client_in_its_system_prompt(tmp_path, monkeypatch):
@@ -46,8 +47,8 @@ def test_portfolio_agent_sees_the_active_client_in_its_system_prompt(tmp_path, m
 
     fake = FakeToolModel([AIMessage(content="Your portfolio is worth $100.")])
     with patch.object(portfolio_agent_mod, "specialist_model", return_value=fake), \
-         patch.object(supervisor_mod, "_router") as router_mock:
-        router_mock.invoke.return_value = RoutingDecision(next="portfolio_agent", reasoning="portfolio question")
+         patch.object(supervisor_mod, "router_agent") as router_mock:
+        router_mock.invoke.return_value = routed("portfolio_agent", "portfolio question")
         graph = build_multi_agent_app(InMemorySaver())
         graph.invoke(
             {"question": "What's my portfolio worth?", "messages": [], "documents": [],

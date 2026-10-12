@@ -22,6 +22,7 @@ from app.agent.multi_agent.supervisor import RoutingDecision
 from app.agent.turn_coordinator import ThreadTurnCoordinator
 from app.api.routers.copilot import attach_market_desk, router
 from tests.unit.fake_chat import FakeToolModel, StreamingFakeToolModel
+from tests.unit.router_fakes import routed
 
 PATH = "/copilot/market-desk"
 SENT: list[dict] = []
@@ -49,8 +50,8 @@ def _run_input(thread_id: str, run_id: str, messages: list[dict], **extra) -> di
 
 
 def _client_with(stack: ExitStack, route_to: str) -> tuple[TestClient, FastAPI]:
-    router_mock = stack.enter_context(patch.object(supervisor_mod, "_router"))
-    router_mock.invoke.return_value = RoutingDecision(next=route_to, reasoning="test")
+    router_mock = stack.enter_context(patch.object(supervisor_mod, "router_agent"))
+    router_mock.invoke.return_value = routed(route_to, "test")
     app = FastAPI()
     app.include_router(router)
     graph = build_multi_agent_app(InMemorySaver(), None)
@@ -177,7 +178,7 @@ def test_graph_error_becomes_run_error_event():
     # A crash mid-run must reach the browser as RUN_ERROR, not a cut stream.
     with ExitStack() as stack:
         client, app = _client_with(stack, "finance_agent")
-        supervisor_mod._router.invoke.side_effect = RuntimeError("router down")
+        supervisor_mod.router_agent.invoke.side_effect = RuntimeError("router down")
         resp = client.post(PATH, json=_run_input("t5", "r1", [{"id": "u1", "role": "user", "content": "hi"}]))
     assert resp.status_code == 200
     last = _events(resp.text)[-1]

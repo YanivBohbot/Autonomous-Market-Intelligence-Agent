@@ -1,12 +1,14 @@
 from unittest.mock import patch
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 from app.agent.multi_agent import supervisor as supervisor_mod
-from app.agent.multi_agent.supervisor import supervisor_node, RoutingDecision, MAX_AGENT_HOPS
+from app.agent.multi_agent.supervisor import supervisor_node, MAX_AGENT_HOPS
 from app.agent.prompts.specialist_agent_prompts import (
     INGESTED_DOCUMENTS_PLACEHOLDER,
     ingested_documents_list,
 )
+from tests.unit.fake_chat import FakeToolModel
+from tests.unit.router_fakes import routed
 
 
 def _state(agent_hops=0, messages=None, last_agent=None):
@@ -31,7 +33,7 @@ def test_finishes_deterministically_after_specialist_returns_a_plain_answer_with
     state = _state(agent_hops=1, messages=history)
     state["next_agent"] = "finance_agent"  # set by the specialist's own prior hop
 
-    with patch.object(supervisor_mod, "_router") as mock:
+    with patch.object(supervisor_mod, "router_agent") as mock:
         result = supervisor_node(state)
 
     mock.invoke.assert_not_called()
@@ -41,33 +43,12 @@ def test_finishes_deterministically_after_specialist_returns_a_plain_answer_with
 
 def test_still_asks_llm_on_the_very_first_hop():
     """next_agent is None before any specialist has run — must still route."""
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="stock question")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("finance_agent", "stock question")
         result = supervisor_node(_state())
 
     mock.invoke.assert_called_once()
     assert result.goto == "finance_agent"
-
-
-def test_routing_prompt_reflects_a_pdf_uploaded_after_process_start(tmp_path, monkeypatch):
-    """Regression: SUPERVISOR_ROUTING_PROMPT used to bake the ingested-document
-    list in at import time via an f-string, so a PDF uploaded through
-    /data/import/pdf while the server was already running stayed invisible
-    to the router until a restart. The prompt sent to the LLM must reflect
-    the manifest's CURRENT contents on every call."""
-    manifest = tmp_path / "kb_documents.json"
-    manifest.write_text('["brand-new-upload.pdf"]', encoding="utf-8")
-    monkeypatch.setattr(
-        "app.agent.prompts.specialist_agent_prompts._KB_MANIFEST_PATH", manifest
-    )
-
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="doc question")
-        supervisor_node(_state())
-
-    sent_messages = mock.invoke.call_args[0][0]
-    system_text = sent_messages[0].content
-    assert "brand-new-upload.pdf" in system_text
 
 
 def test_router_is_not_given_a_duplicate_question_message():
@@ -78,62 +59,24 @@ def test_router_is_not_given_a_duplicate_question_message():
     after a specialist gave a correct, complete answer, causing it to loop to
     MAX_AGENT_HOPS instead of picking FINISH."""
     history = [HumanMessage(content="q"), AIMessage(content="the answer")]
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="FINISH", reasoning="answered")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("FINISH", "answered")
         supervisor_node(_state(messages=history))
 
-    invoked_messages = mock.invoke.call_args[0][0]
-    expected_prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT.replace(
-        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
-    )
-    assert invoked_messages == [SystemMessage(content=expected_prompt), *history]
-
-
-def test_routing_prompt_includes_the_active_client_when_present():
-    """Regression: a vague client question ("qui est le client") could route
-    to memory_agent/filesystem_agent/browser_agent/email_agent, none of
-    which get client_context_prompt -- the supervisor's own routing prompt
-    had no idea a client was even active, so it couldn't steer away from
-    them. Telling the router too (same client_context field the 3 client-
-    aware specialists already read) fixes that at the source."""
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="portfolio_agent", reasoning="client question")
-        state = _state(messages=[HumanMessage(content="qui est le client")])
-        state["client_context"] = "Active client: Amanda Brooks, segment VIP, risk conservative, advisor Sarah Mitchell."
-        supervisor_node(state)
-    invoked_messages = mock.invoke.call_args[0][0]
-    system_text = invoked_messages[0].content
-    assert "Amanda Brooks" in system_text
-
-
-def test_routing_prompt_unchanged_when_no_active_client():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="general question")
-        supervisor_node(_state(messages=[HumanMessage(content="hi")]))
-    invoked_messages = mock.invoke.call_args[0][0]
-    expected_prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT.replace(
-        INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
-    )
-    assert invoked_messages[0].content == expected_prompt
+    # The system prompt is router_agent's own (see test_router_agent.py); the
+    # node passes exactly the conversation, with no re-injected question.
+    assert mock.invoke.call_args[0][0]["messages"] == history
 
 
 def test_routing_prompt_separates_open_ended_research_from_browser_navigation():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(
-            next="rag_agent", reasoning="open-ended research"
-        )
-        supervisor_node(
-            _state(messages=[HumanMessage(content="What is moving markets today?")])
-        )
-
-    routing_prompt = mock.invoke.call_args[0][0][0].content
+    routing_prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT
     assert "open-ended" in routing_prompt
     assert "concrete URL or named website" in routing_prompt
 
 
 def test_routes_to_finance_agent():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="stock question")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("finance_agent", "stock question")
         result = supervisor_node(_state())
     assert result.goto == "finance_agent"
     assert result.update["next_agent"] == "finance_agent"
@@ -141,8 +84,8 @@ def test_routes_to_finance_agent():
 
 
 def test_routes_to_portfolio_agent():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="portfolio_agent", reasoning="client portfolio question")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("portfolio_agent", "client portfolio question")
         result = supervisor_node(_state())
     assert result.goto == "portfolio_agent"
     assert result.update["last_agent"] == "portfolio_agent"
@@ -164,7 +107,7 @@ def test_sticky_routes_back_to_portfolio_agent_without_calling_llm_when_human_co
     ]
     state = _state(messages=history, last_agent="portfolio_agent")
 
-    with patch.object(supervisor_mod, "_router") as mock:
+    with patch.object(supervisor_mod, "router_agent") as mock:
         result = supervisor_node(state)
 
     mock.invoke.assert_not_called()
@@ -189,8 +132,8 @@ def test_sticky_rule_does_not_fire_when_the_prior_answer_never_mentioned_a_repor
     ]
     state = _state(messages=history, last_agent="portfolio_agent")
 
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="memory_agent", reasoning="remember a fact")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("memory_agent", "remember a fact")
         result = supervisor_node(state)
 
     mock.invoke.assert_called_once()
@@ -205,8 +148,8 @@ def test_sticky_rule_does_not_fire_when_last_agent_was_not_portfolio_agent():
     ]
     state = _state(messages=history, last_agent="filesystem_agent")
 
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="filesystem_agent", reasoning="file question")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("filesystem_agent", "file question")
         result = supervisor_node(state)
 
     mock.invoke.assert_called_once()
@@ -227,7 +170,7 @@ def test_sticky_rule_check_survives_list_typed_message_content():
     ]
     state = _state(messages=history, last_agent="portfolio_agent")
 
-    with patch.object(supervisor_mod, "_router") as mock:
+    with patch.object(supervisor_mod, "router_agent") as mock:
         result = supervisor_node(state)  # must not raise
 
     mock.invoke.assert_not_called()
@@ -244,8 +187,8 @@ def test_sticky_rule_does_not_fire_when_the_new_message_has_no_save_language():
     ]
     state = _state(messages=history, last_agent="portfolio_agent")
 
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="stock price question")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("finance_agent", "stock price question")
         result = supervisor_node(state)
 
     mock.invoke.assert_called_once()
@@ -265,7 +208,7 @@ def test_routing_prompt_lists_ingested_documents_so_rag_isnt_skipped_for_them():
     only worked once the user explicitly said "internal documents".
 
     SUPERVISOR_ROUTING_PROMPT itself only carries a placeholder now (see
-    test_routing_prompt_reflects_a_pdf_uploaded_after_process_start) — this
+    test_router_agent.py::test_prompt_lists_the_ingested_documents_live) — this
     checks the real manifest's current contents still substitute in."""
     prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT.replace(
         INGESTED_DOCUMENTS_PLACEHOLDER, ingested_documents_list()
@@ -304,44 +247,44 @@ def test_routing_prompt_has_a_worked_example_for_saving_a_portfolio_report():
 
 
 def test_routes_to_rag_agent():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="rag_agent", reasoning="general question")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("rag_agent", "general question")
         result = supervisor_node(_state())
     assert result.goto == "rag_agent"
 
 
 def test_routes_to_memory_agent():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="memory_agent", reasoning="remember a fact")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("memory_agent", "remember a fact")
         result = supervisor_node(_state())
     assert result.goto == "memory_agent"
 
 
 def test_routes_to_filesystem_agent():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="filesystem_agent", reasoning="file question")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("filesystem_agent", "file question")
         result = supervisor_node(_state())
     assert result.goto == "filesystem_agent"
 
 
 def test_routes_to_browser_agent():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="browser_agent", reasoning="check a website")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("browser_agent", "check a website")
         result = supervisor_node(_state())
     assert result.goto == "browser_agent"
 
 
 def test_routes_to_email_agent():
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="email_agent", reasoning="send an email")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("email_agent", "send an email")
         result = supervisor_node(_state())
     assert result.goto == "email_agent"
 
 
 def test_finish_routes_to_turn_finalizer():
     history = [HumanMessage(content="q"), AIMessage(content="the answer")]
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="FINISH", reasoning="already answered")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("FINISH", "already answered")
         result = supervisor_node(_state(messages=history))
     assert result.goto == "finalize_turn"
     assert result.update["next_agent"] is None
@@ -355,8 +298,8 @@ def test_finish_before_any_answer_falls_back_to_rag_agent():
     valid once an AIMessage answers the latest HumanMessage; otherwise fall
     back to rag_agent, the general-purpose specialist."""
     history = [HumanMessage(content="Compare Amazon's 2024 net sales with Tesla's Q2 2026 revenue.")]
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="FINISH", reasoning="need to route")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("FINISH", "need to route")
         result = supervisor_node(_state(messages=history))
     assert result.goto == "rag_agent"
     assert result.update["next_agent"] == "rag_agent"
@@ -367,14 +310,14 @@ def test_finish_on_new_question_after_earlier_answer_falls_back_to_rag_agent():
     """Multi-turn thread: an AIMessage from a previous turn doesn't answer the
     new HumanMessage — only an AIMessage after the latest question counts."""
     history = [HumanMessage(content="q1"), AIMessage(content="a1"), HumanMessage(content="q2")]
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="FINISH", reasoning="answered")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("FINISH", "answered")
         result = supervisor_node(_state(messages=history))
     assert result.goto == "rag_agent"
 
 
 def test_hop_cap_short_circuits_without_calling_llm():
-    with patch.object(supervisor_mod, "_router") as mock:
+    with patch.object(supervisor_mod, "router_agent") as mock:
         result = supervisor_node(_state(agent_hops=MAX_AGENT_HOPS))
     assert result.goto == "finalize_turn"
     mock.invoke.assert_not_called()
@@ -390,8 +333,8 @@ def test_a_new_turns_human_message_resets_hops_left_over_from_earlier_turns():
     HumanMessage means record_question just ran for a NEW question, so hops
     left over from a previous turn must not count against this one."""
     history = [HumanMessage(content="q1"), AIMessage(content="a1"), HumanMessage(content="q2")]
-    with patch.object(supervisor_mod, "_router") as mock:
-        mock.invoke.return_value = RoutingDecision(next="finance_agent", reasoning="new question")
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("finance_agent", "new question")
         result = supervisor_node(_state(agent_hops=MAX_AGENT_HOPS, messages=history))
 
     mock.invoke.assert_called_once()
@@ -404,7 +347,7 @@ def test_hops_still_cap_mid_turn_even_right_after_a_human_message_was_seen_earli
     (a turn just started); hops accumulated within the CURRENT turn (after
     that human message, via one or more specialist hops) must still cap."""
     history = [HumanMessage(content="q"), AIMessage(content="", tool_calls=[])]
-    with patch.object(supervisor_mod, "_router") as mock:
+    with patch.object(supervisor_mod, "router_agent") as mock:
         result = supervisor_node(_state(agent_hops=MAX_AGENT_HOPS, messages=history))
     assert result.goto == "finalize_turn"
     mock.invoke.assert_not_called()
@@ -414,9 +357,16 @@ def test_router_output_is_hidden_from_ag_ui_streams():
     # ag-ui-langgraph streams via astream_events and drops LLM chunks whose run
     # metadata says emit-messages/emit-tool-calls False. The routing JSON
     # ({"next": ...}) must never show up as chat text in Market Desk.
-    metadata = supervisor_mod._router.config["metadata"]
-    assert metadata["emit-messages"] is False
-    assert metadata["emit-tool-calls"] is False
+    built = {}
+
+    def fake_chat_openai(**kwargs):
+        built.update(kwargs)
+        return FakeToolModel([])
+
+    with patch.object(supervisor_mod, "ChatOpenAI", fake_chat_openai):
+        supervisor_mod.build_router_agent()
+    assert built["metadata"]["emit-messages"] is False
+    assert built["metadata"]["emit-tool-calls"] is False
 
 
 def test_supervisor_routes_users_own_preference_questions_to_memory_agent():
@@ -444,7 +394,7 @@ def test_goes_to_email_agent_after_portfolio_answer_for_an_email_request_without
     ]
     state = _state(agent_hops=1, messages=history)
     state["next_agent"] = "portfolio_agent"
-    with patch.object(supervisor_mod, "_router") as mock:
+    with patch.object(supervisor_mod, "router_agent") as mock:
         result = supervisor_node(state)
     mock.invoke.assert_not_called()
     assert result.goto == "email_agent"
@@ -464,3 +414,25 @@ def test_portfolio_answer_without_email_request_still_finishes():
     state["next_agent"] = "portfolio_agent"
     result = supervisor_node(state)
     assert result.goto == "finalize_turn"
+
+
+def test_node_reads_the_router_agents_structured_response():
+    with patch.object(supervisor_mod, "router_agent") as agent:
+        agent.invoke.return_value = routed("finance_agent")
+        result = supervisor_node(_state(messages=[HumanMessage("NVDA?")]))
+    assert result.goto == "finance_agent"
+    sent = agent.invoke.call_args.args[0]
+    assert sent["messages"][-1].content == "NVDA?"
+    assert "client_context" in sent
+
+
+def test_card_block_copies_the_masked_question_and_warning_then_finalizes():
+    from app.agent.guardrails.detection import SENSITIVE_DATA_WARNING
+    question = HumanMessage("card 4111 1111 1111 1111", id="h1")
+    masked = question.model_copy(update={"content": "card ****-****-****-1111"})
+    with patch.object(supervisor_mod, "router_agent") as agent:
+        agent.invoke.return_value = {"messages": [masked, AIMessage(SENSITIVE_DATA_WARNING)]}
+        result = supervisor_node(_state(messages=[question]))
+    assert result.goto == "finalize_turn"
+    assert [m.content for m in result.update["messages"]] == ["card ****-****-****-1111", SENSITIVE_DATA_WARNING]
+    assert result.update["messages"][0].id == "h1"
