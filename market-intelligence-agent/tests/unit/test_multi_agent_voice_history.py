@@ -77,5 +77,7 @@ def test_finalize_turn_leaves_text_turn_unchanged():
 def test_workflow_finalizes_before_end():
     workflow = _build_workflow()
     assert "finalize_turn" in workflow.nodes
-    assert ("finalize_turn", END) in workflow.edges
+    # finalize_turn -> suggest_followups (no-op off AG-UI) -> END
+    assert ("finalize_turn", "suggest_followups") in workflow.edges
+    assert ("suggest_followups", END) in workflow.edges
     assert _finish().goto == "finalize_turn"
