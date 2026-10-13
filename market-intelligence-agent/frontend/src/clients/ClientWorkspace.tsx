@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { DeskView } from "../desk/DeskView";
 import { CLIENT_STARTERS } from "../desk/starters";
+import { HoldingsStrip } from "./HoldingsStrip";
 import { getClientSummary, type ClientSummary } from "../lib/api";
 import { ErrorState, Skeleton } from "../ui/FeedbackStates";
 import { MetricCard } from "../ui/MetricCard";
@@ -95,6 +96,7 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
   const [summary, setSummary] = useState<ClientSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryVersion, setRetryVersion] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -132,6 +134,15 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
 
   if (!summary) return <ClientWorkspaceLoading />;
 
+  const selectedPosition = summary.positions.find((p) => p.ticker === selected);
+  const agentContext = [
+    {
+      description: "Client workspace on screen",
+      value: JSON.stringify({ client: summary.name, totals: summary.totals, priced_positions: summary.positions.length }),
+    },
+    ...(selectedPosition ? [{ description: "Selected position", value: JSON.stringify({ client: summary.name, ...selectedPosition }) }] : []),
+  ];
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="shrink-0 border-b border-terminal-border bg-terminal-bg/65">
@@ -153,9 +164,10 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
             </div>
           </PageHeader>
           <PortfolioMetrics summary={summary} />
+          <HoldingsStrip positions={summary.positions} selected={selected} onSelect={setSelected} />
         </div>
       </div>
-      <DeskView threadId={`clients_${clientId}`} voiceEnabled={false} starterSuggestions={CLIENT_STARTERS} />
+      <DeskView threadId={`clients_${clientId}`} voiceEnabled={false} starterSuggestions={CLIENT_STARTERS} agentContext={agentContext} />
     </div>
   );
 }

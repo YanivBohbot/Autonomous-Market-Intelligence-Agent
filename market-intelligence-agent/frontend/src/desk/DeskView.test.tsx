@@ -4,6 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 const chatProps: Record<string, unknown>[] = [];
 const providerProps: Record<string, unknown>[] = [];
 const suggestionConfigs: Record<string, unknown>[] = [];
+const agentContexts: Record<string, unknown>[] = [];
 const portalContents: React.ReactNode[] = [];
 const createdAgents: { setMessages: ReturnType<typeof vi.fn>; messages: Record<string, unknown>[] }[] = [];
 const activityRailProps: Record<string, unknown>[] = [];
@@ -47,7 +48,10 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   useConfigureSuggestions: (config: Record<string, unknown>) => {
     suggestionConfigs.push(config);
   },
-  useAgent: () => ({ agent: { subscribe: () => ({ unsubscribe: () => undefined }) } }),
+  useAgent: () => ({ agent: { messages: [], subscribe: () => ({ unsubscribe: () => undefined }) } }),
+  useAgentContext: (c: Record<string, unknown>) => {
+    agentContexts.push(c);
+  },
 }));
 vi.mock("../lib/api", async (orig) => ({
   ...(await orig<typeof import("../lib/api")>()),
@@ -84,6 +88,7 @@ describe("DeskView", () => {
     chatProps.length = 0;
     providerProps.length = 0;
     suggestionConfigs.length = 0;
+    agentContexts.length = 0;
     portalContents.length = 0;
     createdAgents.length = 0;
     activityRailProps.length = 0;
@@ -288,5 +293,11 @@ describe("DeskView", () => {
       const calls = agent.setMessages.mock.calls.map((c) => c[0] as { id: string }[]);
       expect(calls.some((list) => list.some((m) => m.id === "a1") && list.some((m) => m.id === "v1"))).toBe(true);
     });
+  });
+
+  it("shares page context entries with the agent", () => {
+    render(<DeskView threadId="clients_4" agentContext={[{ description: "Selected position", value: "{\"ticker\":\"NVDA\"}" }]} />);
+    expect(agentContexts).toContainEqual({ description: "Selected position", value: "{\"ticker\":\"NVDA\"}" });
+    expect(agentContexts).toContainEqual({ description: "Most recent card shown in the chat", value: "none" });
   });
 });

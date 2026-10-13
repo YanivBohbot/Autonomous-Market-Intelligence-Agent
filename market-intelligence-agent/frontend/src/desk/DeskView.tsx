@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { CopilotChat, CopilotChatInput, CopilotKitProvider, HttpAgent, useConfigureSuggestions } from "@copilotkit/react-core/v2";
+import { CopilotChat, CopilotChatInput, CopilotKitProvider, HttpAgent, useAgent, useAgentContext, useConfigureSuggestions } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
+import { lastCardContext } from "./lastCardContext";
 import { DeskActivityRail } from "./DeskActivityRail";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useDeskInterrupt } from "./useDeskInterrupt";
@@ -20,11 +21,20 @@ export type DeskViewProps = {
   threadId: string;
   voiceEnabled?: boolean;
   starterSuggestions?: StarterSuggestion[];
+  // What the page shows, shared with the agent via useAgentContext.
+  agentContext?: AgentContextEntry[];
 };
+
+export type AgentContextEntry = { description: string; value: string };
 
 // Market Desk: CopilotKit v2 talking AG-UI straight to FastAPI (no runtime).
 // Remounted per thread by App (key={threadId}), so New session starts clean.
-export function DeskView({ threadId, voiceEnabled = false, starterSuggestions = RESEARCH_STARTERS }: DeskViewProps) {
+export function DeskView({
+  threadId,
+  voiceEnabled = false,
+  starterSuggestions = RESEARCH_STARTERS,
+  agentContext = [],
+}: DeskViewProps) {
   const agent = useMemo(() => new HttpAgent({ url: MARKET_DESK_URL }), []);
 
   // CopilotChat never fetches a thread's prior messages on its own --
@@ -61,10 +71,10 @@ export function DeskView({ threadId, voiceEnabled = false, starterSuggestions = 
     >
       {voiceEnabled ? (
         <ResearchVoiceProvider threadId={threadId} enabled>
-          <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} />
+          <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} agentContext={agentContext} />
         </ResearchVoiceProvider>
       ) : (
-        <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} />
+        <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} agentContext={agentContext} />
       )}
     </CopilotKitProvider>
   );
@@ -74,10 +84,12 @@ function DeskBody({
   threadId,
   agent,
   starterSuggestions,
+  agentContext,
 }: {
   threadId: string;
   agent: HttpAgent;
   starterSuggestions: StarterSuggestion[];
+  agentContext: AgentContextEntry[];
 }) {
   const voice = useResearchVoiceContext();
   const setMessages = useCallback(
@@ -105,6 +117,8 @@ function DeskBody({
   return (
     <>
       {intelligencePortal}
+      <LastCardContext />
+      {agentContext.map((c) => <ContextEntry key={c.description} {...c} />)}
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-terminal-border bg-terminal-panel px-4 py-3 sm:px-5">
           <div className="min-w-0">
@@ -162,4 +176,18 @@ function DeskBody({
       </main>
     </>
   );
+}
+
+// One useAgentContext call per component, so the hook count stays stable
+// when the page's context list changes length.
+function ContextEntry({ description, value }: AgentContextEntry) {
+  useAgentContext({ description, value });
+  return null;
+}
+
+function LastCardContext() {
+  const { agent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
+  const value = lastCardContext((agent?.messages ?? []) as { role?: string; content?: unknown }[]);
+  useAgentContext({ description: "Most recent card shown in the chat", value: value ?? "none" });
+  return null;
 }
