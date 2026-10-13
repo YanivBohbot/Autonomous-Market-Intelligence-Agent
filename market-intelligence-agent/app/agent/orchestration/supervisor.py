@@ -22,6 +22,7 @@ from app.agent.middleware import (
     fresh_documents_prompt,
     model_fallback,
     model_retry,
+    ui_context_prompt,
 )
 from app.core.config import settings
 from app.agent.orchestration.state import ClientContextState, SupervisorState
@@ -37,7 +38,7 @@ SpecialistName = Literal[
     "browser_agent",
     "email_agent",
 ]
-# Where the supervisor can send control: a specialist or the finalizer.
+
 Route = Literal[SpecialistName, "finalize_turn"]
 
 
@@ -53,8 +54,6 @@ class RoutingDecision(BaseModel):
     reasoning: str = Field(description="One sentence: why this specialist (or FINISH).")
 
 
-# The routing decision is internal: Market Desk (ag-ui-langgraph streams via
-# astream_events) must not render its JSON as chat text.
 _ROUTER_MODEL_METADATA = {"emit-messages": False, "emit-tool-calls": False}
 
 
@@ -100,6 +99,7 @@ def build_router_agent(model: BaseChatModel | None = None):
         block_credit_cards,
         fresh_documents_prompt,
         client_context_routing_prompt,
+        ui_context_prompt,
         context_editing(),
         ModelCallLimitMiddleware(
             run_limit=ROUTER_MODEL_CALL_LIMIT, exit_behavior="error"

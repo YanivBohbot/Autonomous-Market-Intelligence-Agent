@@ -446,3 +446,7 @@ def test_node_raises_when_the_router_ends_without_a_decision_or_a_card_block():
         agent.invoke.return_value = {"messages": [HumanMessage("q", id="h1"), AIMessage("Model call failed after 3 attempts")]}
         with pytest.raises(RuntimeError):
             supervisor_node(_state(messages=[HumanMessage("q", id="h1")]))
+
+
+def test_routing_prompt_sends_selected_position_questions_to_portfolio():
+    assert '"Selected position" on a client page' in supervisor_mod.SUPERVISOR_ROUTING_PROMPT

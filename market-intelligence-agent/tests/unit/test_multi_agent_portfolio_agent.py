@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.agents_specialist import portfolio_agent as mod
-from app.agent.middleware import RedactEmailsForModel, base_middleware, client_context_prompt
+from app.agent.middleware import RedactEmailsForModel, base_middleware, client_context_prompt, ui_context_prompt
 from app.agent.display import market_desk_display
 from app.agent.orchestration.state import ClientContextState
 
@@ -31,11 +31,12 @@ def test_create_agent_call():
     base = base_middleware(mod._TOOLS)
     assert [type(m) for m in kw["middleware"][:len(base)]] == [type(m) for m in base]
     assert kw["middleware"][len(base)] is client_context_prompt
-    hitl = kw["middleware"][len(base) + 1]
+    assert kw["middleware"][len(base) + 1] is ui_context_prompt
+    hitl = kw["middleware"][len(base) + 2]
     assert isinstance(hitl, HumanInTheLoopMiddleware)
     assert set(hitl.interrupt_on) == {"save_portfolio_report"}
     assert kw["middleware"][-1] is market_desk_display
-    assert len(kw["middleware"]) == len(base) + 3
+    assert len(kw["middleware"]) == len(base) + 4
 
 
 def test_hitl_gate_has_no_content_argument_to_preview():

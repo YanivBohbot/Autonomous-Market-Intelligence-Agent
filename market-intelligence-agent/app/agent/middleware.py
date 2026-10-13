@@ -89,6 +89,33 @@ def client_context_prompt(request: ModelRequest) -> str:
     return f"{base}\n\n{client_context}"
 
 
+def ui_context_lines(state) -> list[str]:
+    """CopilotKit useAgentContext entries (state["ag-ui"]["context"]) as
+    prompt lines. Absent outside the Market Desk AG-UI transport."""
+    from app.agent.orchestration.state import AG_UI_KEY
+
+    entries = ((state or {}).get(AG_UI_KEY) or {}).get("context") or []
+    lines = []
+    for e in entries:
+        # ag-ui-langgraph passes ag_ui Context models; tests and other callers plain dicts.
+        description = e.get("description") if isinstance(e, dict) else getattr(e, "description", None)
+        value = e.get("value") if isinstance(e, dict) else getattr(e, "value", None)
+        if description and value:
+            lines.append(f"- {description}: {value}")
+    return lines
+
+
+@dynamic_prompt
+def ui_context_prompt(request: ModelRequest) -> str:
+    """Appends what the user is looking at in the app (useAgentContext) to
+    the system prompt; leaves it untouched when there is no UI context."""
+    base = request.system_prompt or ""
+    lines = ui_context_lines(request.state)
+    if not lines:
+        return base
+    return f"{base}\n\nWhat the user is looking at in the app right now:\n" + "\n".join(lines)
+
+
 @dynamic_prompt
 def fresh_documents_prompt(request: ModelRequest) -> str:
     """Substitute the RAG manifest's current contents into

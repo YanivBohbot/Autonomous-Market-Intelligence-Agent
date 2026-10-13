@@ -3,7 +3,7 @@ from unittest.mock import patch
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.agent.agents_specialist import rag_agent as mod
-from app.agent.middleware import RedactEmailsForModel, base_middleware, client_context_prompt, fresh_documents_prompt
+from app.agent.middleware import RedactEmailsForModel, base_middleware, client_context_prompt, fresh_documents_prompt, ui_context_prompt
 from app.agent.display import market_desk_display
 from app.agent.orchestration.state import ClientContextState
 
@@ -37,8 +37,9 @@ def test_create_agent_call():
     assert (mw[len(base) + 1].tool_name, mw[len(base) + 1].run_limit) == ("web_search", 3)
     assert mw[len(base) + 2] is fresh_documents_prompt
     assert mw[len(base) + 3] is client_context_prompt
-    assert mw[len(base) + 4] is market_desk_display
-    assert len(mw) == len(base) + 5
+    assert mw[len(base) + 4] is ui_context_prompt
+    assert mw[len(base) + 5] is market_desk_display
+    assert len(mw) == len(base) + 6
     assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 
