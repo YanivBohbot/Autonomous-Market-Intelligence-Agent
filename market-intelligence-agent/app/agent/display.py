@@ -329,3 +329,47 @@ DISPLAY_NORMALIZERS["list_directory"] = normalize_file_list
 DISPLAY_NORMALIZERS["search_knowledge_base"] = normalize_rag_sources
 DISPLAY_NORMALIZERS["browser_take_screenshot"] = normalize_screenshot
 DISPLAY_NORMALIZERS["save_portfolio_report"] = normalize_saved_report
+
+
+MAX_SQL_ROWS = 50
+
+
+def _passthrough(display_type: str, required: str) -> Normalizer:
+    """Tools that already return the card's exact shape: tag it, or show
+    nothing when the tool returned an error / has nothing to show."""
+
+    def normalize(text: str, args: dict) -> list[dict]:
+        data = json.loads(text)
+        if "error" in data or not data.get(required):
+            return []
+        return [{"type": display_type, **data}]
+
+    return normalize
+
+
+DISPLAY_NORMALIZERS["compare_companies"] = _passthrough("company_comparison", "companies")
+DISPLAY_NORMALIZERS["simulate_portfolio_change"] = _passthrough("what_if", "after")
+DISPLAY_NORMALIZERS["watchlist_alerts"] = _passthrough("watchlist_alerts", "rows")
+
+
+def normalize_sql_table(text: str, args: dict) -> list[dict]:
+    from app.agent.tools.concentration import parse_tool_payload
+
+    try:
+        rows = parse_tool_payload(text)
+    except ValueError:
+        return []  # error strings ("Error: ...") are not a result set
+    if not isinstance(rows, list) or not rows or not all(isinstance(r, dict) for r in rows):
+        return []
+    columns = list(rows[0].keys())
+    if len(rows) == 1 and len(columns) == 1:
+        return []  # a single looked-up value (e.g. an email address), not a table
+    return [{
+        "type": "sql_table",
+        "columns": columns,
+        "rows": [[r.get(c) for c in columns] for r in rows[:MAX_SQL_ROWS]],
+        "truncated": len(rows) > MAX_SQL_ROWS,
+    }]
+
+
+DISPLAY_NORMALIZERS["read_query"] = normalize_sql_table

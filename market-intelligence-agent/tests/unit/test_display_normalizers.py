@@ -317,3 +317,43 @@ def test_normalize_file_list_on_an_error_or_empty_folder_shows_nothing():
     assert normalize("ENOENT: no such file or directory, scandir 'x'", {"path": "x"}) == []
     assert normalize("", {"path": "."}) == []
     assert normalize("[FILE] .gitkeep", {"path": "."}) == []
+
+
+def test_normalize_company_comparison_and_error():
+    payload = {"period": "6mo", "missing": [], "companies": [{"symbol": "NVDA"}, {"symbol": "AMD"}]}
+    out = display.DISPLAY_NORMALIZERS["compare_companies"](json.dumps(payload), {})
+    assert out == [{"type": "company_comparison", **payload}]
+    assert display.DISPLAY_NORMALIZERS["compare_companies"](json.dumps({"error": "x"}), {}) == []
+
+
+def test_normalize_what_if_and_error():
+    payload = {"client_name": "M", "before": {"positions": []}, "after": {"positions": []}, "cash_delta": 1.0,
+               "breaches_before": [], "breaches_after": [], "trades": []}
+    assert display.DISPLAY_NORMALIZERS["simulate_portfolio_change"](json.dumps(payload), {}) == [{"type": "what_if", **payload}]
+    assert display.DISPLAY_NORMALIZERS["simulate_portfolio_change"](json.dumps({"error": "x"}), {}) == []
+
+
+def test_normalize_watchlist_alerts_empty_rows_show_nothing():
+    norm = display.DISPLAY_NORMALIZERS["watchlist_alerts"]
+    assert norm(json.dumps({"near_pct": 5.0, "rows": [], "unpriced": []}), {}) == []
+    row = {"client": "Ann", "ticker": "TSLA", "status": "triggered"}
+    assert norm(json.dumps({"near_pct": 5.0, "rows": [row], "unpriced": []}), {}) == [
+        {"type": "watchlist_alerts", "near_pct": 5.0, "rows": [row], "unpriced": []}]
+
+
+def test_normalize_read_query_table():
+    text = str([{"name": "Ann", "ticker": "TSLA"}, {"name": "Bob", "ticker": "TSLA"}])  # mcp-server-sqlite repr
+    assert display.DISPLAY_NORMALIZERS["read_query"](text, {}) == [
+        {"type": "sql_table", "columns": ["name", "ticker"], "rows": [["Ann", "TSLA"], ["Bob", "TSLA"]], "truncated": False}]
+
+
+def test_normalize_read_query_hides_single_values_errors_and_empty():
+    norm = display.DISPLAY_NORMALIZERS["read_query"]
+    assert norm(str([{"email": "a@b.com"}]), {}) == []
+    assert norm("[]", {}) == []
+    assert norm("Error: only SELECT queries are allowed", {}) == []
+
+
+def test_normalize_read_query_caps_at_50_rows():
+    out = display.DISPLAY_NORMALIZERS["read_query"](str([{"n": i, "m": i} for i in range(60)]), {})
+    assert len(out[0]["rows"]) == 50 and out[0]["truncated"] is True
