@@ -450,3 +450,13 @@ def test_node_raises_when_the_router_ends_without_a_decision_or_a_card_block():
 
 def test_routing_prompt_sends_selected_position_questions_to_portfolio():
     assert '"Selected position" on a client page' in supervisor_mod.SUPERVISOR_ROUTING_PROMPT
+
+
+def test_router_receives_the_ui_context():
+    # Review Important 2: router_agent.invoke is its own graph run; without
+    # the key in its input, ui_context_prompt never sees the app context.
+    state = {**_state(), "ag-ui": {"context": [{"description": "Selected position", "value": "NVDA"}]}}
+    with patch.object(supervisor_mod, "router_agent") as mock:
+        mock.invoke.return_value = routed("portfolio_agent", "selected position")
+        supervisor_node(state)
+    assert mock.invoke.call_args[0][0]["ag-ui"] == state["ag-ui"]

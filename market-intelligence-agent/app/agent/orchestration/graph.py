@@ -14,7 +14,7 @@ from app.agent.agents_specialist.memory_agent import build_memory_agent
 from app.agent.agents_specialist.portfolio_agent import build_portfolio_agent
 from app.agent.agents_specialist.rag_agent import build_rag_agent
 from app.agent.orchestration.followups import suggest_followups, suggest_followups_sync
-from app.agent.orchestration.state import SupervisorState
+from app.agent.orchestration.state import AG_UI_KEY, SupervisorState, is_ag_ui_run
 from app.agent.orchestration.supervisor import supervisor_node
 from app.data_import.db import DB_PATH, get_client_with_holdings
 
@@ -73,18 +73,22 @@ def load_client_context(state: SupervisorState, config: RunnableConfig) -> dict:
     first, so an edit via /data/import mid-conversation is reflected on
     the very next turn instead of staying stale from an earlier
     checkpoint."""
+    # Non-AG-UI runs (voice, /stream, AgentCore) on a thread a Market Desk
+    # turn has touched must not inherit its checkpointed "ag-ui" value.
+    reset = {} if is_ag_ui_run(config) else {AG_UI_KEY: None}
     thread_id = (config.get("configurable") or {}).get("thread_id", "")
     match = _CLIENT_THREAD_RE.match(thread_id)
     if not match:
-        return {"client_context": None}
+        return {"client_context": None, **reset}
     conn = sqlite3.connect(DB_PATH)
     try:
         client = get_client_with_holdings(conn, int(match.group(1)))
     finally:
         conn.close()
     if client is None:
-        return {"client_context": None}
+        return {"client_context": None, **reset}
     return {
+        **reset,
         "client_context": (
             f"Active client: {client['name']}, segment {client['segment']}, "
             f"risk {client['risk_profile']}, advisor {client['advisor']}."

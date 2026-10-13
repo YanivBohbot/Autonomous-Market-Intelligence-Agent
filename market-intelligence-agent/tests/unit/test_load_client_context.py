@@ -37,7 +37,8 @@ def test_matching_thread_id_with_an_existing_client_sets_client_context(tmp_path
 
     result = load_client_context({}, {"configurable": {"thread_id": "clients_1"}})
 
-    assert result == {"client_context": "Active client: Jane Doe, segment VIP, risk balanced, advisor Sam."}
+    # Not a Market Desk run, so a stale "ag-ui" value is cleared too.
+    assert result == {"client_context": "Active client: Jane Doe, segment VIP, risk balanced, advisor Sam.", "ag-ui": None}
 
 
 def test_matching_thread_id_with_no_such_client_gives_none(tmp_path, monkeypatch):
@@ -47,7 +48,7 @@ def test_matching_thread_id_with_no_such_client_gives_none(tmp_path, monkeypatch
 
     result = load_client_context({}, {"configurable": {"thread_id": "clients_999"}})
 
-    assert result == {"client_context": None}
+    assert result == {"client_context": None, "ag-ui": None}
 
 
 def test_non_client_thread_id_gives_none_without_touching_the_db(tmp_path, monkeypatch):
@@ -55,4 +56,4 @@ def test_non_client_thread_id_gives_none_without_touching_the_db(tmp_path, monke
 
     result = load_client_context({}, {"configurable": {"thread_id": "desk_abc123"}})
 
-    assert result == {"client_context": None}
+    assert result == {"client_context": None, "ag-ui": None}

@@ -25,7 +25,7 @@ from app.agent.middleware import (
     ui_context_prompt,
 )
 from app.core.config import settings
-from app.agent.orchestration.state import ClientContextState, SupervisorState
+from app.agent.orchestration.state import AG_UI_KEY, ClientContextState, SupervisorState
 from app.agent.prompts.orchestration_prompt import SUPERVISOR_ROUTING_PROMPT
 
 
@@ -224,6 +224,8 @@ def supervisor_node(state: SupervisorState) -> Command[Route]:
     router_input: Any = {
         "messages": list(messages),
         "client_context": state.get("client_context"),
+        # What the user is looking at (Market Desk only; None on other transports).
+        AG_UI_KEY: state.get(AG_UI_KEY),
     }
     result = router_agent.invoke(
         router_input,

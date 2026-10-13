@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
+from app.agent.orchestration.state import AG_UI_RUN_METADATA
 from app.agent.turn_coordinator import TurnLease
 from app.core.config import settings
 
@@ -85,7 +86,7 @@ def build_market_desk_agent(graph) -> LangGraphAgent:
         emit_subagent_events=True,
         emit_interrupt_outcome=True,
         enable_legacy_on_interrupt_event=False,
-        config={"recursion_limit": RECURSION_LIMIT},
+        config={"recursion_limit": RECURSION_LIMIT, "metadata": dict(AG_UI_RUN_METADATA)},
     )
 
 

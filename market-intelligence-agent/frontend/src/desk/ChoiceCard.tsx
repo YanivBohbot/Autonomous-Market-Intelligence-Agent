@@ -6,7 +6,7 @@ export interface ChoiceRequest {
   multi: boolean;
   allow_other: boolean;
 }
-export type ChoiceAnswer = { selected: string[]; other: string | null };
+export type ChoiceAnswer = { selected: string[]; other: string | null; cancelled?: true };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -67,16 +67,26 @@ export function ChoiceCard({ request, onSubmit }: { request: ChoiceRequest; onSu
           className="mt-2 w-full rounded-lg border border-terminal-border bg-terminal-bg px-2 py-1"
         />
       )}
+      <div className="mt-2 flex gap-2">
       {(request.multi || request.allow_other) && (
         <button
           type="button"
           disabled={ticked.length === 0 && !otherValue}
           onClick={() => onSubmit({ selected: ticked, other: otherValue })}
-          className="mt-2 rounded-lg bg-terminal-accent px-3 py-1 font-semibold text-terminal-bg disabled:opacity-40"
+          className="rounded-lg bg-terminal-accent px-3 py-1 font-semibold text-terminal-bg disabled:opacity-40"
         >
           Confirm
         </button>
       )}
+        {/* Always offered: a pending choice blocks the thread until it is answered. */}
+        <button
+          type="button"
+          onClick={() => onSubmit({ selected: [], other: null, cancelled: true })}
+          className="rounded-lg border border-terminal-border px-3 py-1 text-terminal-muted hover:text-terminal-text"
+        >
+          None of these
+        </button>
+      </div>
     </div>
   );
 }

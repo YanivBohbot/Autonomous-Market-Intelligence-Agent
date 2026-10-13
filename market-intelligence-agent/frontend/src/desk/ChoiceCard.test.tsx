@@ -29,4 +29,11 @@ describe("ChoiceCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     expect(onSubmit).toHaveBeenCalledWith({ selected: ["0"], other: "Bob" });
   });
+
+  it("can always be declined so the thread never stays blocked", () => {
+    const onSubmit = vi.fn();
+    render(<ChoiceCard request={readChoice(interrupt)!} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByRole("button", { name: "None of these" }));
+    expect(onSubmit).toHaveBeenCalledWith({ selected: [], other: null, cancelled: true });
+  });
 });

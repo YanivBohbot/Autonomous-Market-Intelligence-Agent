@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 
 from langchain_core.tools import tool
+from langgraph.config import get_config
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
@@ -42,10 +43,19 @@ def ask_user_choice_tool(question: str, options: list[str], multi: bool = False,
     when multi=True), and wait for the answer. Use it instead of asking in
     plain text when the choice is between known options: an ambiguous client
     name, a missing trade size, or which clients to include."""
+    from app.agent.orchestration.state import is_ag_ui_run
+
+    if not is_ag_ui_run(get_config()):
+        # Voice / /stream / AgentCore resume only HITL decisions: never pause there.
+        return "ask_user_choice is not available here: ask the user in plain text instead."
     payload = build_choice_payload(question, options, multi=multi, allow_other=allow_other)
-    answer = interrupt(payload) or {}
+    answer = interrupt(payload)
+    answer = answer if isinstance(answer, dict) else {}
     by_id = {o["id"]: o["label"] for o in payload["options"]}
-    return json.dumps({
-        "selected": [by_id[i] for i in answer.get("selected", []) if i in by_id],
+    result = {
+        "selected": [by_id[i] for i in answer.get("selected") or [] if i in by_id],
         "other": answer.get("other") or None,
-    })
+    }
+    if answer.get("cancelled"):
+        result["cancelled"] = True
+    return json.dumps(result)

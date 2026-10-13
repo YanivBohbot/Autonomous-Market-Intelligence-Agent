@@ -12,6 +12,17 @@ AG_UI_KEY = "ag-ui"
 # a hyphenated key needs the functional TypedDict form.
 # typing_extensions.TypedDict, like langchain's AgentState: mixing it with
 # typing.TypedDict in ClientContextState raises a metaclass conflict.
+# The Market Desk wrapper (app/api/routers/copilot.py) tags every run's
+# config with this metadata. The "ag-ui" STATE value is not a usable signal
+# on its own: ag-ui-langgraph's write persists in the checkpoint, and voice
+# shares the Research thread.
+AG_UI_RUN_METADATA = {"transport": "ag-ui"}
+
+
+def is_ag_ui_run(config) -> bool:
+    return ((config or {}).get("metadata") or {}).get("transport") == AG_UI_RUN_METADATA["transport"]
+
+
 AgUiState = ExtTypedDict("AgUiState", {AG_UI_KEY: Optional[dict]}, total=False)
 
 
