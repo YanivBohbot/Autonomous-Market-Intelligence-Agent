@@ -193,10 +193,24 @@ describe("DeskView", () => {
     expect(screen.getByRole("textbox", { name: "Research message" })).toBeInTheDocument();
   });
 
-  it("does not register persistent prompt suggestions", () => {
+  it("offers starter suggestions only before the first message", () => {
     render(<DeskView threadId="research_3" />);
+    const config = suggestionConfigs[suggestionConfigs.length - 1] as {
+      available: string; suggestions: { title: string; message: string }[];
+    };
+    expect(config.available).toBe("before-first-message");
+    expect(config.suggestions.map((s) => s.title)).toEqual([
+      "Compare NVDA vs AMD",
+      "Triggered watchlist alerts",
+      "What if Margaret sold half her NVDA?",
+      "Who holds Tesla?",
+    ]);
+  });
 
-    expect(suggestionConfigs).toHaveLength(0);
+  it("uses the starters passed by the page", () => {
+    render(<DeskView threadId="clients_4" starterSuggestions={[{ title: "T", message: "M" }]} />);
+    const config = suggestionConfigs[suggestionConfigs.length - 1] as { suggestions: unknown[] };
+    expect(config.suggestions).toEqual([{ title: "T", message: "M" }]);
   });
 
   it("keeps DeskActivityRail inside the Intelligence portal", () => {

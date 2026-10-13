@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { DeskView } from "../desk/DeskView";
+import { CLIENT_STARTERS } from "../desk/starters";
 import { getClientSummary, type ClientSummary } from "../lib/api";
 import { ErrorState, Skeleton } from "../ui/FeedbackStates";
 import { MetricCard } from "../ui/MetricCard";
@@ -154,7 +155,7 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
           <PortfolioMetrics summary={summary} />
         </div>
       </div>
-      <DeskView threadId={`clients_${clientId}`} voiceEnabled={false} />
+      <DeskView threadId={`clients_${clientId}`} voiceEnabled={false} starterSuggestions={CLIENT_STARTERS} />
     </div>
   );
 }

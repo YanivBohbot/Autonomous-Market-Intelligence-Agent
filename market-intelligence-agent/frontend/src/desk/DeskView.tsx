@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { CopilotChat, CopilotChatInput, CopilotKitProvider, HttpAgent } from "@copilotkit/react-core/v2";
+import { CopilotChat, CopilotChatInput, CopilotKitProvider, HttpAgent, useConfigureSuggestions } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { MARKET_DESK_AGENT_ID, MARKET_DESK_URL } from "./constants";
 import { DeskActivityRail } from "./DeskActivityRail";
@@ -14,15 +14,17 @@ import { LiveCaptionBubble } from "../voice/LiveCaptionBubble";
 import { useVoiceHistoryRefresh } from "../voice/useVoiceHistoryRefresh";
 import { mergeHistory } from "./mergeHistory";
 import { ResearchComposer } from "./ResearchComposer";
+import { RESEARCH_STARTERS, type StarterSuggestion } from "./starters";
 
 export type DeskViewProps = {
   threadId: string;
   voiceEnabled?: boolean;
+  starterSuggestions?: StarterSuggestion[];
 };
 
 // Market Desk: CopilotKit v2 talking AG-UI straight to FastAPI (no runtime).
 // Remounted per thread by App (key={threadId}), so New session starts clean.
-export function DeskView({ threadId, voiceEnabled = false }: DeskViewProps) {
+export function DeskView({ threadId, voiceEnabled = false, starterSuggestions = RESEARCH_STARTERS }: DeskViewProps) {
   const agent = useMemo(() => new HttpAgent({ url: MARKET_DESK_URL }), []);
 
   // CopilotChat never fetches a thread's prior messages on its own --
@@ -59,16 +61,24 @@ export function DeskView({ threadId, voiceEnabled = false }: DeskViewProps) {
     >
       {voiceEnabled ? (
         <ResearchVoiceProvider threadId={threadId} enabled>
-          <DeskBody threadId={threadId} agent={agent} />
+          <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} />
         </ResearchVoiceProvider>
       ) : (
-        <DeskBody threadId={threadId} agent={agent} />
+        <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} />
       )}
     </CopilotKitProvider>
   );
 }
 
-function DeskBody({ threadId, agent }: { threadId: string; agent: HttpAgent }) {
+function DeskBody({
+  threadId,
+  agent,
+  starterSuggestions,
+}: {
+  threadId: string;
+  agent: HttpAgent;
+  starterSuggestions: StarterSuggestion[];
+}) {
   const voice = useResearchVoiceContext();
   const setMessages = useCallback(
     (history: ThreadMessage[]) => {
@@ -80,6 +90,9 @@ function DeskBody({ threadId, agent }: { threadId: string; agent: HttpAgent }) {
   const { refreshError } = useVoiceHistoryRefresh(threadId, voice?.events, setMessages);
   useDeskInterrupt(voice?.setTypedApprovalPending);
   useToolDisplay();
+  // Before the first message only: commit 740ef53 removed suggestions that
+  // stayed on screen for the whole conversation ("always").
+  useConfigureSuggestions({ suggestions: starterSuggestions, available: "before-first-message" }, [starterSuggestions]);
   // Portaled into AppLayout's Intelligence column instead of rendered as a
   // direct sibling -- DeskActivityRail itself is unchanged, only where its
   // DOM lands changes. Must stay inside DeskBody's own CopilotKitProvider
