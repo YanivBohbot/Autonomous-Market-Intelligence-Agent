@@ -12,6 +12,8 @@ import logging
 from langchain_core.tools import BaseTool
 
 from app.agent.mcp_clients.registry import select_tool
+from app.agent.tools.ticker_news import ticker_news_tool
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,4 +23,11 @@ NEWS_TOOL_NAME = "yfinance_get_ticker_news"
 
 yf_quote_tool: BaseTool = select_tool(QUOTE_TOOL_NAME, "Yahoo Finance")
 yf_history_tool: BaseTool = select_tool(HISTORY_TOOL_NAME, "Yahoo Finance")
-yf_news_tool: BaseTool = select_tool(NEWS_TOOL_NAME, "Yahoo Finance")
+# yfmcp's news tool calls Yahoo's dead per-ticker endpoint (0 articles for
+# every ticker), so local dev uses the native yf.Search-based tool of the
+# same name. In gateway mode the yfinance Lambda serves it.
+yf_news_tool: BaseTool = (
+    select_tool(NEWS_TOOL_NAME, "Yahoo Finance")
+    if settings.MCP_TRANSPORT.lower() == "gateway"
+    else ticker_news_tool
+)

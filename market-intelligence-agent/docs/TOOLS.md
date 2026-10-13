@@ -14,7 +14,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 2 | `read_query` | read-only | MCP stdio → `mcp-server-sqlite` (prod: Lambda `sqlite-crm`) | query (SELECT — WITH in prod only) | Runs a read-only SQL query against the wealth-management DB `customers.db` (companies, clients, transactions, holdings, watchlists). | Gives the agent the advisor's private client/portfolio data to combine with market prices and company reports. |
 | 3 | `yfinance_get_ticker_info` | read-only | MCP stdio → `yfmcp` | ticker | Returns the latest quote (price, change, volume, day stats) for a given ticker. | Live market price is the most-asked datapoint for a market-intelligence agent; cheap real-time signal. |
 | 4 | `yfinance_get_price_history` | read-only | MCP stdio → `yfmcp` | ticker, period (default `"1mo"`) | Returns historical OHLCV bars for a ticker over the requested period. | Enables trend / momentum reasoning that a single quote can't support. |
-| 5 | `yfinance_get_ticker_news` | read-only | MCP stdio → `yfmcp` | ticker, limit (default `5`) | Returns the most recent headlines associated with a ticker. | Pairs price action with narrative; lets the agent explain *why* a ticker moved. |
+| 5 | `yfinance_get_ticker_news` | read-only | native (`yf.Search`); gateway → yfinance Lambda | symbol, limit (default `5`) | Returns the most recent headlines whose title names the ticker or company. | Pairs price action with narrative; lets the agent explain *why* a ticker moved. |
 | 6 | `read_text_file` | read-only | MCP stdio → `@modelcontextprotocol/server-filesystem` | path | Reads a UTF-8 text file from the sandboxed workspace at `data/workspace/`. | Lets the user drop a file (CSV of tickers, briefing notes) into the workspace and have the agent consume it without re-running the Pinecone ingest pipeline. |
 | 7 | `list_directory` | read-only | same | path (default `"."`) | Lists files and folders inside a workspace path. | Discovery: the agent uses this to find out what the user has dropped before reading. |
 | 8 | `write_file` | side-effect | same | path, content | Writes a UTF-8 text file into the sandboxed workspace. Gated by HITL approval. | Lets the agent persist briefs, CSV snapshots, or JSON dossiers as durable artifacts that survive the session. |
@@ -59,8 +59,8 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **Why:** Single-point quotes don't support trend reasoning. With history the agent can answer "is NVDA breaking out?" or "how did TSM perform last quarter?".
 
 ### 5. `yfinance_get_ticker_news`
-- **File:** same as `yfinance_get_ticker_info`
-- **What:** Calls `get_ticker_news(ticker, limit)`; default limit `5`. Returns recent headlines.
+- **File:** `app/agent/tools/ticker_news.py` (local); `prod/lambdas/yfinance/handler.py` in gateway mode
+- **What:** Searches Yahoo with `yf.Search(symbol, news_count=20)` and keeps up to `limit` (default `5`) headlines whose title names the ticker or the company, in yfmcp's JSON shape. It replaces yfmcp's own tool, because Yahoo's per-ticker news endpoint (`Ticker.news`/`get_news`) returns 0 articles for every ticker. Read-only (in `READ_ONLY_TOOLS`).
 - **Why:** Price moves without context are noise. News headlines provide the narrative thread the synthesis step needs.
 
 ### 6. `read_text_file`

@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+from datetime import datetime, timezone
 from typing import Any
 
 import yfinance as yf
@@ -51,16 +53,34 @@ def _history(ticker: str, period: str = "1mo") -> list[dict[str, Any]]:
 
 
 def _news(ticker: str, limit: int = 5) -> list[dict[str, Any]]:
-    items = yf.Ticker(ticker).news or []
+    # yf.Ticker(t).news returns 0 articles for every ticker (dead Yahoo
+    # endpoint); yf.Search still works. Same filter and output shape as the
+    # agent's app/agent/tools/ticker_news.py, so the news card renders.
+    symbol = ticker.strip().upper()
+    result = yf.Search(symbol, news_count=20)
+    quote = next((q for q in result.quotes or [] if q.get("symbol") == symbol), {})
+    company = quote.get("shortname") or quote.get("longname") or ""
+    names = [re.escape(symbol)]
+    if company:
+        names.append(re.escape(company.split()[0].strip(",.")))
+    about = re.compile(r"\b(" + "|".join(names) + ")", re.IGNORECASE)
     out = []
-    for n in items[:limit]:
+    for n in result.news or []:
+        if not (n.get("title") and n.get("link") and about.search(n["title"])):
+            continue
+        published = n.get("providerPublishTime")
         out.append({
-            "title": n.get("title"),
-            "publisher": n.get("publisher"),
-            "link": n.get("link"),
-            "providerPublishTime": n.get("providerPublishTime"),
+            "id": n.get("uuid", ""),
+            "content": {
+                "title": n["title"],
+                "summary": "",
+                "pubDate": datetime.fromtimestamp(published, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                if isinstance(published, (int, float)) else "",
+                "provider": {"displayName": n.get("publisher", "")},
+                "canonicalUrl": {"url": n["link"]},
+            },
         })
-    return out
+    return out[:limit]
 
 
 _DISPATCH = {
