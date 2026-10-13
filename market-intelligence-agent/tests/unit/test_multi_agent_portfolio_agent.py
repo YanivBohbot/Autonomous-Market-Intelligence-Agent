@@ -18,7 +18,7 @@ def test_tools():
     names = {t.name.rsplit("___", 1)[-1] for t in mod._TOOLS}
     assert names == {"read_query", "list_tables", "describe_table", "yfinance_get_ticker_info",
                      "portfolio_metrics", "pct_change", "concentration_screen", "client_portfolio",
-                     "save_portfolio_report"}
+                     "save_portfolio_report", "simulate_portfolio_change", "watchlist_alerts"}
 
 
 def test_create_agent_call():

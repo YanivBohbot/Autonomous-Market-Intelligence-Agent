@@ -14,6 +14,8 @@ from app.agent.tools import (
     pct_change_tool,
     portfolio_metrics_tool,
     save_portfolio_report_tool,
+    simulate_portfolio_change_tool,
+    watchlist_alerts_tool,
     yf_quote_tool,
 )
 
@@ -33,6 +35,8 @@ _TOOLS = [
     concentration_screen_tool,
     client_portfolio_tool,
     save_portfolio_report_tool,
+    simulate_portfolio_change_tool,
+    watchlist_alerts_tool,
 ]
 
 

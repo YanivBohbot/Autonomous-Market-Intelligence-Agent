@@ -36,7 +36,7 @@ async def _ahandler_returning(content):
 
 
 def test_unregistered_tool_passes_through_untouched():
-    result = display.market_desk_display.wrap_tool_call(_request("read_query", {}), _handler_returning("raw text"))
+    result = display.market_desk_display.wrap_tool_call(_request("send_email", {}), _handler_returning("raw text"))
     assert result.content == "raw text"
 
 

@@ -9,9 +9,9 @@ from app.agent.middleware import (
 from app.agent.display import market_desk_display
 from app.agent.orchestration.state import ClientContextState
 from app.agent.prompts.agents_specialist_prompts import FINANCE_SYSTEM_PROMPT
-from app.agent.tools import yf_history_tool, yf_news_tool, yf_quote_tool
+from app.agent.tools import compare_companies_tool, yf_history_tool, yf_news_tool, yf_quote_tool
 
-_TOOLS = [yf_quote_tool, yf_history_tool, yf_news_tool]
+_TOOLS = [yf_quote_tool, yf_history_tool, yf_news_tool, compare_companies_tool]
 
 
 def build_finance_agent():

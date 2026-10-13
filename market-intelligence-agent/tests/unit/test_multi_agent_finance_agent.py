@@ -16,7 +16,7 @@ def _kwargs():
 
 def test_tools():
     assert {t.name for t in mod._TOOLS} == {
-        "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news"}
+        "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "compare_companies"}
 
 
 def test_create_agent_call():
