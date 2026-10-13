@@ -1,3 +1,4 @@
+from app.agent.middleware import OnlyOnAgUi
 from unittest.mock import patch
 
 from langchain.agents.middleware import HumanInTheLoopMiddleware
@@ -18,7 +19,7 @@ def test_tools():
     names = {t.name.rsplit("___", 1)[-1] for t in mod._TOOLS}
     assert names == {"read_query", "list_tables", "describe_table", "yfinance_get_ticker_info",
                      "portfolio_metrics", "pct_change", "concentration_screen", "client_portfolio",
-                     "save_portfolio_report", "simulate_portfolio_change", "watchlist_alerts"}
+                     "save_portfolio_report", "simulate_portfolio_change", "watchlist_alerts", "ask_user_choice"}
 
 
 def test_create_agent_call():
@@ -30,13 +31,14 @@ def test_create_agent_call():
     assert kw["state_schema"] is ClientContextState
     base = base_middleware(mod._TOOLS)
     assert [type(m) for m in kw["middleware"][:len(base)]] == [type(m) for m in base]
-    assert kw["middleware"][len(base)] is client_context_prompt
-    assert kw["middleware"][len(base) + 1] is ui_context_prompt
-    hitl = kw["middleware"][len(base) + 2]
+    assert isinstance(kw["middleware"][len(base)], OnlyOnAgUi)
+    assert kw["middleware"][len(base) + 1] is client_context_prompt
+    assert kw["middleware"][len(base) + 2] is ui_context_prompt
+    hitl = kw["middleware"][len(base) + 3]
     assert isinstance(hitl, HumanInTheLoopMiddleware)
     assert set(hitl.interrupt_on) == {"save_portfolio_report"}
     assert kw["middleware"][-1] is market_desk_display
-    assert len(kw["middleware"]) == len(base) + 4
+    assert len(kw["middleware"]) == len(base) + 5
 
 
 def test_hitl_gate_has_no_content_argument_to_preview():

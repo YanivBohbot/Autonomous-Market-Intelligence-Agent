@@ -12,6 +12,7 @@ from app.agent.tools.portfolio_report import save_portfolio_report_tool
 from app.agent.tools.compare_companies import compare_companies_tool
 from app.agent.tools.what_if import simulate_portfolio_change_tool
 from app.agent.tools.watchlist_alerts import watchlist_alerts_tool
+from app.agent.tools.user_choice import ask_user_choice_tool
 from app.agent.mcp_clients.yfinance_client import (
     yf_quote_tool,
     yf_history_tool,
@@ -52,6 +53,7 @@ TOOLS = [
     compare_companies_tool,
     simulate_portfolio_change_tool,
     watchlist_alerts_tool,
+    ask_user_choice_tool,
     yf_quote_tool,
     yf_history_tool,
     yf_news_tool,
@@ -136,6 +138,7 @@ __all__ = [
     "compare_companies_tool",
     "simulate_portfolio_change_tool",
     "watchlist_alerts_tool",
+    "ask_user_choice_tool",
     "yf_quote_tool",
     "yf_history_tool",
     "yf_news_tool",

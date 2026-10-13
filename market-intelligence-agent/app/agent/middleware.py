@@ -355,6 +355,34 @@ class StripToolImages(AgentMiddleware):
 strip_tool_images = StripToolImages()
 
 
+class OnlyOnAgUi(AgentMiddleware):
+    """Hide the named tools from the model unless the run came through
+    Market Desk's AG-UI transport (state["ag-ui"] present). /stream, voice
+    and AgentCore resume only HITL decisions, so they must never see a
+    choice interrupt."""
+
+    def __init__(self, tool_names: set[str]):
+        super().__init__()
+        self.tool_names = tool_names
+
+    def _filter(self, request: ModelRequest) -> ModelRequest:
+        from app.agent.orchestration.state import AG_UI_KEY
+
+        if (request.state or {}).get(AG_UI_KEY) is not None:
+            return request
+        return request.override(tools=[t for t in request.tools if getattr(t, "name", None) not in self.tool_names])
+
+    def wrap_model_call(self, request, handler):
+        return handler(self._filter(request))
+
+    async def awrap_model_call(self, request, handler):
+        return await handler(self._filter(request))
+
+
+def only_on_ag_ui() -> OnlyOnAgUi:
+    return OnlyOnAgUi({"ask_user_choice"})
+
+
 def base_middleware(tools: Sequence[BaseTool]) -> list[AgentMiddleware[Any, Any, Any]]:
     """Middleware every specialist gets. `tools` is the specialist's own tool
     list, used to scope tool_retry() to its read-only tools."""

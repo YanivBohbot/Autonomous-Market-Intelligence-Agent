@@ -1,3 +1,4 @@
+from app.agent.middleware import OnlyOnAgUi
 from unittest.mock import patch
 
 from langchain.agents.middleware import HumanInTheLoopMiddleware
@@ -13,7 +14,7 @@ def _kwargs():
 
 
 def test_tools():
-    assert {t.name for t in mod._TOOLS} == {"read_query", "send_email"}
+    assert {t.name for t in mod._TOOLS} == {"read_query", "send_email", "ask_user_choice"}
 
 
 def test_prompt_looks_up_client_email_via_read_query_before_sending():
@@ -40,14 +41,15 @@ def test_create_agent_call_with_hitl_on_send_email():
     mw = kw["middleware"]
     base = base_middleware(mod._TOOLS)
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
-    assert isinstance(mw[len(base)], HumanInTheLoopMiddleware)
-    assert set(mw[len(base)].interrupt_on) == {"send_email"}
+    assert isinstance(mw[len(base)], OnlyOnAgUi)
+    assert isinstance(mw[len(base) + 1], HumanInTheLoopMiddleware)
+    assert set(mw[len(base) + 1].interrupt_on) == {"send_email"}
     # Listed after HITL so its after_model runs before HITL's: a retry of a
     # failed send is dropped before any approval card is shown.
-    assert isinstance(mw[len(base) + 1], mod.NoResendAfterFailure)
+    assert isinstance(mw[len(base) + 2], mod.NoResendAfterFailure)
     # Guard runs at execution time (after approval): only clients' addresses.
-    assert isinstance(mw[len(base) + 2], mod.EmailRecipientGuard)
-    assert len(mw) == len(base) + 3
+    assert isinstance(mw[len(base) + 3], mod.EmailRecipientGuard)
+    assert len(mw) == len(base) + 4
 
 
 def test_builds_a_real_agent_with_hitl_node():

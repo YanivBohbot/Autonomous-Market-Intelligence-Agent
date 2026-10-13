@@ -3,6 +3,7 @@ from langchain.agents import create_agent
 from app.agent.middleware import (
     base_middleware,
     client_context_prompt,
+    only_on_ag_ui,
     ui_context_prompt,
     redact_emails,
     specialist_model,
@@ -10,9 +11,9 @@ from app.agent.middleware import (
 from app.agent.display import market_desk_display
 from app.agent.orchestration.state import ClientContextState
 from app.agent.prompts.agents_specialist_prompts import FINANCE_SYSTEM_PROMPT
-from app.agent.tools import compare_companies_tool, yf_history_tool, yf_news_tool, yf_quote_tool
+from app.agent.tools import ask_user_choice_tool, compare_companies_tool, yf_history_tool, yf_news_tool, yf_quote_tool
 
-_TOOLS = [yf_quote_tool, yf_history_tool, yf_news_tool, compare_companies_tool]
+_TOOLS = [yf_quote_tool, yf_history_tool, yf_news_tool, compare_companies_tool, ask_user_choice_tool]
 
 
 def build_finance_agent():
@@ -21,6 +22,6 @@ def build_finance_agent():
         tools=_TOOLS,
         system_prompt=FINANCE_SYSTEM_PROMPT,
         state_schema=ClientContextState,
-        middleware=[*base_middleware(_TOOLS), redact_emails(), client_context_prompt, ui_context_prompt, market_desk_display],
+        middleware=[*base_middleware(_TOOLS), only_on_ag_ui(), redact_emails(), client_context_prompt, ui_context_prompt, market_desk_display],
         name="finance_agent",
     )

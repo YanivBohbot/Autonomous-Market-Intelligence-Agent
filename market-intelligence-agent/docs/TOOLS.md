@@ -36,6 +36,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 | 24 | `compare_companies` | read-only | Native (`compare_companies.py`) — loads quotes + history via the yfinance tools | symbols (2-4), period (default `6mo`) | Side-by-side price, market cap, P/E, 52-week range position and period return, plus a rebased (=100) price series per ticker. | "NVDA vs AMD" answered by code, rendered as a comparison card, with no number copied by the LLM. |
 | 25 | `simulate_portfolio_change` | read-only | Native (`what_if.py`) — loads holdings via `read_query`, prices via yfinance | client_name, trades `[{ticker, action, pct\|shares}]` | Before/after weights, value, cash raised or needed and single-stock concentration for hypothetical trades. Never writes to the DB. | What-if questions get exact, deterministic numbers and a before/after card. |
 | 26 | `watchlist_alerts` | read-only | Native (`watchlist_alerts.py`) — loads watchlists via `read_query`, prices via yfinance | client_names (optional), near_pct (default `5`) | Each watchlist alert as triggered / near / watching against the live price, with the distance in %. | Turns the `watchlists` table into an actionable alert list for the advisor. |
+| 27 | `ask_user_choice` | interactive (not read-only) | Native (`user_choice.py`) — LangGraph `interrupt()` | question, options (2-12), multi, allow_other | Pauses the run and shows a choice card (buttons / checkboxes) in Market Desk; resumes with the selected labels. Offered only on the AG-UI transport (`OnlyOnAgUi`). | Lets portfolio/finance/email ask "which client?" or "how much?" with buttons instead of a plain-text round trip. |
 
 `READ_ONLY_TOOLS = {"read_query", "list_tables", "describe_table", "portfolio_metrics", "pct_change", "concentration_screen", "client_portfolio", "compare_companies", "simulate_portfolio_change", "watchlist_alerts", "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "read_text_file", "list_directory", "browser_navigate", "browser_snapshot", "browser_take_screenshot", "recall_memory", "list_memories", "search_knowledge_base", "web_search"}` — the documented read-only classification of every tool (HITL is enforced per specialist by `HumanInTheLoopMiddleware`).
 
@@ -177,6 +178,12 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **File:** `app/agent/tools/watchlist_alerts.py`
 - **What:** Joins `watchlists` with `clients`/`companies`, prices each ticker live and classifies every alert as triggered, near (within `near_pct`) or watching, sorted most urgent first; unpriced tickers are listed separately. Read-only (in `READ_ONLY_TOOLS`).
 - **Why:** The `watchlists` table had no tool of its own; this makes "which alerts fired?" a one-call, deterministic answer with an alert card.
+
+### 27. `ask_user_choice`
+- **File:** `app/agent/tools/user_choice.py`; gate: `OnlyOnAgUi` in `app/agent/middleware.py`
+- **What:** Calls LangGraph `interrupt()` with `{type: "user_choice", question, options, multi, allow_other}`; Market Desk's `useDeskInterrupt` renders `ChoiceCard` and resumes with `{selected, other}`. The tool returns the selected labels. Hidden from the model unless `state["ag-ui"]` is present, so `/stream`, voice and AgentCore never see it.
+- **Why:** Ambiguous client names, a what-if without a size, or a multi-client email need a choice between known options; a card is faster and less error-prone than a typed answer.
+- **Not read-only on purpose:** `ToolRetryMiddleware` retries read-only tools and would catch the `GraphInterrupt`, so it is excluded from `READ_ONLY_TOOLS`.
 
 ## How to add a new tool
 

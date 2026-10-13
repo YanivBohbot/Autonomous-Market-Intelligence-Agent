@@ -1,3 +1,4 @@
+from app.agent.middleware import OnlyOnAgUi
 from unittest.mock import patch
 
 from langchain.agents.middleware import HumanInTheLoopMiddleware
@@ -16,7 +17,7 @@ def _kwargs():
 
 def test_tools():
     assert {t.name for t in mod._TOOLS} == {
-        "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "compare_companies"}
+        "yfinance_get_ticker_info", "yfinance_get_price_history", "yfinance_get_ticker_news", "compare_companies", "ask_user_choice"}
 
 
 def test_create_agent_call():
@@ -29,12 +30,13 @@ def test_create_agent_call():
     mw = kw["middleware"]
     base = base_middleware(mod._TOOLS)
     assert [type(m) for m in mw[:len(base)]] == [type(m) for m in base]
+    assert isinstance(mw[len(base)], OnlyOnAgUi)
     # Queries go to third parties (Tavily / Yahoo): emails are redacted first.
-    assert isinstance(mw[len(base)], RedactEmailsForModel)
-    assert mw[len(base) + 1] is client_context_prompt
-    assert mw[len(base) + 2] is ui_context_prompt
-    assert mw[len(base) + 3] is market_desk_display
-    assert len(mw) == len(base) + 4
+    assert isinstance(mw[len(base) + 1], RedactEmailsForModel)
+    assert mw[len(base) + 2] is client_context_prompt
+    assert mw[len(base) + 3] is ui_context_prompt
+    assert mw[len(base) + 4] is market_desk_display
+    assert len(mw) == len(base) + 5
     assert not any(isinstance(m, HumanInTheLoopMiddleware) for m in kw["middleware"])
 
 

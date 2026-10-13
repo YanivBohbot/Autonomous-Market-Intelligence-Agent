@@ -5,12 +5,12 @@ from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddlewar
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 
-from app.agent.middleware import ToolResult, base_middleware, specialist_model
+from app.agent.middleware import ToolResult, base_middleware, only_on_ag_ui, specialist_model
 from app.agent.prompts.agents_specialist_prompts import EMAIL_SYSTEM_PROMPT
-from app.agent.tools import crm_tool, send_email_tool
+from app.agent.tools import ask_user_choice_tool, crm_tool, send_email_tool
 from app.agent.tools.concentration import parse_tool_payload
 
-_TOOLS = [crm_tool, send_email_tool]
+_TOOLS = [crm_tool, send_email_tool, ask_user_choice_tool]
 
 
 async def _is_client_email(address: str) -> bool:
@@ -123,6 +123,7 @@ def build_email_agent():
         system_prompt=EMAIL_SYSTEM_PROMPT,
         middleware=[
             *base_middleware(_TOOLS),
+            only_on_ag_ui(),
             HumanInTheLoopMiddleware(interrupt_on={"send_email": True}),
             NoResendAfterFailure(),
             EmailRecipientGuard(is_known_recipient=_is_client_email),
