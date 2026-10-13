@@ -1,4 +1,4 @@
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Interrupt, PregelTask, StateSnapshot
 
 from app.api.routers._helpers import (
@@ -101,3 +101,22 @@ def test_action_description_falls_back_to_raw_action_request():
 
     assert "send_email" in action
     assert "vip@example.com" in action
+
+
+def test_action_description_shows_pending_tool_not_user_question():
+    # During a specialist's HITL pause its last message can still be the
+    # user's question; the card must describe the pending tool call instead.
+    action = get_action_description(
+        HumanMessage(content="Email Margaret her portfolio summary"),
+        {"name": "send_email", "args": {"to": "margaret@example.com"}},
+    )
+
+    assert "send_email" in action
+    assert "margaret@example.com" in action
+    assert "Email Margaret" not in action
+
+
+def test_action_description_never_echoes_a_human_message():
+    action = get_action_description(HumanMessage(content="hello"), None)
+
+    assert action == "Action nécessitant une approbation"

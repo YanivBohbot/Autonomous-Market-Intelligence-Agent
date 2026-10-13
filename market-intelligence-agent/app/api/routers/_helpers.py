@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from langchain_core.messages import AIMessage
 from langgraph.types import StateSnapshot
 
 
@@ -55,14 +56,15 @@ def boolean_decisions(
 
 
 def get_action_description(last_msg, action_request: dict[str, Any] | None = None) -> str:
-    if last_msg is not None:
-        action_desc = last_msg.content
-        if not action_desc and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-            tool_call = last_msg.tool_calls[0]
-            return f"Exécuter : {tool_call['name']} ({tool_call['args']})"
-        if action_desc:
-            return action_desc
-
+    # The interrupt's own action request is authoritative: during a HITL pause
+    # the specialist's last message can still be the user's question.
     if action_request:
         return f"Exécuter : {action_request.get('name', 'action')} ({action_request.get('args', {})})"
+
+    if isinstance(last_msg, AIMessage):
+        if last_msg.tool_calls:
+            tool_call = last_msg.tool_calls[0]
+            return f"Exécuter : {tool_call['name']} ({tool_call['args']})"
+        if last_msg.content:
+            return last_msg.content
     return "Action nécessitant une approbation"
