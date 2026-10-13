@@ -30,7 +30,9 @@
    on generated component classes. */
 .finance-desk-chat[data-copilotkit],
 .finance-desk-chat [data-copilotkit] {
-  --background: rgb(var(--terminal-bg));
+  /* Panel white, not the page's slate-50: CopilotKit paints the message
+     list with --background, which showed as a grey block behind the chat. */
+  --background: rgb(var(--terminal-panel));
   --foreground: rgb(var(--terminal-text));
   --card: rgb(var(--terminal-panel));
   --card-foreground: rgb(var(--terminal-text));
@@ -74,6 +76,34 @@
   border-color: rgb(var(--brand-blue) / 0.7) !important;
   box-shadow: 0 0 0 3px rgb(var(--brand-blue) / 0.14);
   outline: none;
+}
+
+/* Suggestion pills (starters and follow-ups). CopilotKit's container is
+   pointer-events:none and relies on each pill re-enabling it; make that
+   explicit, and give the pills a real chip look with spacing. */
+.finance-desk-chat [data-testid="copilot-suggestions"] {
+  gap: 0.5rem !important;
+  padding: 0 0.25rem;
+}
+.finance-desk-chat [data-slot="suggestion-pill"] {
+  pointer-events: auto !important;
+  cursor: pointer;
+  height: auto !important;
+  padding: 0.45rem 0.9rem !important;
+  border: 1px solid rgb(var(--terminal-border)) !important;
+  border-radius: 9999px !important;
+  background: rgb(var(--terminal-panel)) !important;
+  color: rgb(var(--terminal-text)) !important;
+  font-size: 0.78rem !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  box-shadow: var(--card-shadow);
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.finance-desk-chat [data-slot="suggestion-pill"]:hover {
+  border-color: rgb(var(--brand-blue) / 0.6) !important;
+  background: rgb(var(--brand-blue) / 0.06) !important;
+  color: rgb(var(--brand-blue)) !important;
 }
 
 [data-theme="dark"] {

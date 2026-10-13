@@ -144,7 +144,9 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
   ];
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    // The page scrolls and the chat keeps a usable height: on a laptop screen
+    // the client header + metrics + holdings left the chat ~100px tall.
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       <div className="shrink-0 border-b border-terminal-border bg-terminal-bg/65">
         <div className="mx-auto w-full max-w-[1500px] space-y-4 p-4 sm:p-6 lg:px-8 lg:py-6">
           <PageHeader
@@ -167,7 +169,9 @@ function ClientWorkspaceBody({ clientId }: { clientId: number }) {
           <HoldingsStrip positions={summary.positions} selected={selected} onSelect={setSelected} />
         </div>
       </div>
-      <DeskView threadId={`clients_${clientId}`} voiceEnabled={false} starterSuggestions={CLIENT_STARTERS} agentContext={agentContext} />
+      <div className="flex min-h-[560px] flex-1">
+        <DeskView threadId={`clients_${clientId}`} voiceEnabled={false} starterSuggestions={CLIENT_STARTERS} agentContext={agentContext} />
+      </div>
     </div>
   );
 }
