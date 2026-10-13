@@ -5,6 +5,7 @@ const chatProps: Record<string, unknown>[] = [];
 const providerProps: Record<string, unknown>[] = [];
 const suggestionConfigs: Record<string, unknown>[] = [];
 const agentContexts: Record<string, unknown>[] = [];
+let agentState: Record<string, unknown> = {};
 const portalContents: React.ReactNode[] = [];
 const createdAgents: { setMessages: ReturnType<typeof vi.fn>; messages: Record<string, unknown>[] }[] = [];
 const activityRailProps: Record<string, unknown>[] = [];
@@ -48,7 +49,7 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   useConfigureSuggestions: (config: Record<string, unknown>) => {
     suggestionConfigs.push(config);
   },
-  useAgent: () => ({ agent: { messages: [], subscribe: () => ({ unsubscribe: () => undefined }) } }),
+  useAgent: () => ({ agent: { messages: [], state: agentState, subscribe: () => ({ unsubscribe: () => undefined }) } }),
   useAgentContext: (c: Record<string, unknown>) => {
     agentContexts.push(c);
   },
@@ -89,6 +90,7 @@ describe("DeskView", () => {
     providerProps.length = 0;
     suggestionConfigs.length = 0;
     agentContexts.length = 0;
+    agentState = {};
     portalContents.length = 0;
     createdAgents.length = 0;
     activityRailProps.length = 0;
@@ -200,7 +202,7 @@ describe("DeskView", () => {
 
   it("offers starter suggestions only before the first message", () => {
     render(<DeskView threadId="research_3" />);
-    const config = suggestionConfigs[suggestionConfigs.length - 1] as {
+    const config = suggestionConfigs.find((c) => (c as { available?: string } | null)?.available === "before-first-message") as {
       available: string; suggestions: { title: string; message: string }[];
     };
     expect(config.available).toBe("before-first-message");
@@ -214,7 +216,7 @@ describe("DeskView", () => {
 
   it("uses the starters passed by the page", () => {
     render(<DeskView threadId="clients_4" starterSuggestions={[{ title: "T", message: "M" }]} />);
-    const config = suggestionConfigs[suggestionConfigs.length - 1] as { suggestions: unknown[] };
+    const config = suggestionConfigs.find((c) => (c as { available?: string } | null)?.available === "before-first-message") as { suggestions: unknown[] };
     expect(config.suggestions).toEqual([{ title: "T", message: "M" }]);
   });
 
@@ -299,5 +301,19 @@ describe("DeskView", () => {
     render(<DeskView threadId="clients_4" agentContext={[{ description: "Selected position", value: "{\"ticker\":\"NVDA\"}" }]} />);
     expect(agentContexts).toContainEqual({ description: "Selected position", value: "{\"ticker\":\"NVDA\"}" });
     expect(agentContexts).toContainEqual({ description: "Most recent card shown in the chat", value: "none" });
+  });
+
+  it("shows the agent's follow-up suggestions after an answer", () => {
+    agentState = { suggestions: [{ title: "Add AMD", message: "Add AMD to the comparison" }] };
+    render(<DeskView threadId="research_9" />);
+    expect(suggestionConfigs).toContainEqual({
+      suggestions: [{ title: "Add AMD", message: "Add AMD to the comparison" }],
+      available: "after-first-message",
+    });
+  });
+
+  it("registers no follow-up config while the agent has none", () => {
+    render(<DeskView threadId="research_10" />);
+    expect(suggestionConfigs.filter((c) => c && (c as { available?: string }).available === "after-first-message")).toHaveLength(0);
   });
 });

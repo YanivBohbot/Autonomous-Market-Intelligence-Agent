@@ -24,6 +24,8 @@ class SupervisorState(AgUiState):
     last_agent: Optional[str]
     client_context: Optional[str]
     turn_source: Literal["text", "voice"]
+    # Follow-up pills for Market Desk, written by suggest_followups.
+    suggestions: List[dict]
 
 
 class ClientContextState(AgentState, AgUiState):

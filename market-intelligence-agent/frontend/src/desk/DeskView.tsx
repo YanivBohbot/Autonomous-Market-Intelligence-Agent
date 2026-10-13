@@ -118,6 +118,7 @@ function DeskBody({
     <>
       {intelligencePortal}
       <LastCardContext />
+      <FollowUpSuggestions />
       {agentContext.map((c) => <ContextEntry key={c.description} {...c} />)}
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-terminal-border bg-terminal-panel px-4 py-3 sm:px-5">
@@ -189,5 +190,17 @@ function LastCardContext() {
   const { agent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
   const value = lastCardContext((agent?.messages ?? []) as { role?: string; content?: unknown }[]);
   useAgentContext({ description: "Most recent card shown in the chat", value: value ?? "none" });
+  return null;
+}
+
+// Follow-ups written by the graph's suggest_followups node (agent state, via
+// the AG-UI STATE_SNAPSHOT); replace the starters once the chat has begun.
+function FollowUpSuggestions() {
+  const { agent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
+  const suggestions = (agent?.state as { suggestions?: StarterSuggestion[] } | undefined)?.suggestions ?? [];
+  useConfigureSuggestions(
+    suggestions.length ? { suggestions, available: "after-first-message" } : null,
+    [JSON.stringify(suggestions)],
+  );
   return null;
 }
