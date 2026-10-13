@@ -71,7 +71,10 @@ def test_router_is_not_given_a_duplicate_question_message():
 def test_routing_prompt_separates_open_ended_research_from_browser_navigation():
     routing_prompt = supervisor_mod.SUPERVISOR_ROUTING_PROMPT
     assert "open-ended" in routing_prompt
-    assert "concrete URL or named website" in routing_prompt
+    assert "concrete URL or domain" in routing_prompt
+    # QA 2026-10-12: "Search the web for ..." went to browser_agent 4/4.
+    assert "searching the web is rag_agent's job" in routing_prompt
+    assert '"web", "online" or "internet" alone do NOT mean browser_agent' in routing_prompt
 
 
 def test_routes_to_finance_agent():
