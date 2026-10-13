@@ -3,7 +3,7 @@ import json
 import pytest
 
 from app.agent import display
-from app.agent.tools.ticker_news import fetch_ticker_news, ticker_news_tool
+from app.agent.mcp_clients.yfinance_news import fetch_ticker_news, ticker_news_tool
 
 
 def _item(n, title=None):

@@ -59,7 +59,7 @@ All MCP-backed tools are loaded through a single `MultiServerMCPClient` register
 - **Why:** Single-point quotes don't support trend reasoning. With history the agent can answer "is NVDA breaking out?" or "how did TSM perform last quarter?".
 
 ### 5. `yfinance_get_ticker_news`
-- **File:** `app/agent/tools/ticker_news.py` (local); `prod/lambdas/yfinance/handler.py` in gateway mode
+- **File:** `app/agent/mcp_clients/yfinance_news.py` (local); `prod/lambdas/yfinance/handler.py` in gateway mode
 - **What:** Searches Yahoo with `yf.Search(symbol, news_count=20)` and keeps up to `limit` (default `5`) headlines whose title names the ticker or the company, in yfmcp's JSON shape. It replaces yfmcp's own tool, because Yahoo's per-ticker news endpoint (`Ticker.news`/`get_news`) returns 0 articles for every ticker. Read-only (in `READ_ONLY_TOOLS`).
 - **Why:** Price moves without context are noise. News headlines provide the narrative thread the synthesis step needs.
 

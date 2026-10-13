@@ -55,7 +55,7 @@ def _history(ticker: str, period: str = "1mo") -> list[dict[str, Any]]:
 def _news(ticker: str, limit: int = 5) -> list[dict[str, Any]]:
     # yf.Ticker(t).news returns 0 articles for every ticker (dead Yahoo
     # endpoint); yf.Search still works. Same filter and output shape as the
-    # agent's app/agent/tools/ticker_news.py, so the news card renders.
+    # agent's app/agent/mcp_clients/yfinance_news.py, so the news card renders.
     symbol = ticker.strip().upper()
     result = yf.Search(symbol, news_count=20)
     quote = next((q for q in result.quotes or [] if q.get("symbol") == symbol), {})

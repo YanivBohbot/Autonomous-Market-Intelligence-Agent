@@ -12,7 +12,7 @@ import logging
 from langchain_core.tools import BaseTool
 
 from app.agent.mcp_clients.registry import select_tool
-from app.agent.tools.ticker_news import ticker_news_tool
+from app.agent.mcp_clients.yfinance_news import ticker_news_tool
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
