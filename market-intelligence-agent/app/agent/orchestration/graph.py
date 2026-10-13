@@ -2,7 +2,7 @@ import re
 import sqlite3
 
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.store.base import BaseStore
@@ -13,7 +13,7 @@ from app.agent.agents_specialist.finance_agent import build_finance_agent
 from app.agent.agents_specialist.memory_agent import build_memory_agent
 from app.agent.agents_specialist.portfolio_agent import build_portfolio_agent
 from app.agent.agents_specialist.rag_agent import build_rag_agent
-from app.agent.orchestration.followups import suggest_followups
+from app.agent.orchestration.followups import suggest_followups, suggest_followups_sync
 from app.agent.orchestration.state import SupervisorState
 from app.agent.orchestration.supervisor import supervisor_node
 from app.data_import.db import DB_PATH, get_client_with_holdings
@@ -115,7 +115,7 @@ def _build_workflow() -> StateGraph:
     workflow.add_edge(START, "load_client_context")
     workflow.add_edge("load_client_context", "record_question")
     workflow.add_edge("record_question", "supervisor")
-    workflow.add_node("suggest_followups", suggest_followups)
+    workflow.add_node("suggest_followups", RunnableLambda(suggest_followups_sync, afunc=suggest_followups))
     workflow.add_edge("finalize_turn", "suggest_followups")
     workflow.add_edge("suggest_followups", END)
     return workflow

@@ -52,3 +52,11 @@ async def suggest_followups(state) -> dict:
     except Exception:
         logger.exception("follow-up suggestions failed")
         return {"suggestions": []}
+
+
+def suggest_followups_sync(state) -> dict:
+    """Sync twin for graph.invoke() callers (tests, sync paths): those never
+    come through AG-UI, so there is nothing to suggest."""
+    if state.get(AG_UI_KEY) is None:
+        return {}
+    return {"suggestions": []}
