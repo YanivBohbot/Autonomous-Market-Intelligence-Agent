@@ -38,7 +38,7 @@ SpecialistName = Literal[
     "browser_agent",
     "email_agent",
 ]
-
+# Where the supervisor can send control: a specialist or the finalizer.
 Route = Literal[SpecialistName, "finalize_turn"]
 
 
@@ -54,6 +54,8 @@ class RoutingDecision(BaseModel):
     reasoning: str = Field(description="One sentence: why this specialist (or FINISH).")
 
 
+# The routing decision is internal: Market Desk (ag-ui-langgraph streams via
+# astream_events) must not render its JSON as chat text.
 _ROUTER_MODEL_METADATA = {"emit-messages": False, "emit-tool-calls": False}
 
 
