@@ -2,10 +2,11 @@ import { useInterrupt } from "@copilotkit/react-core/v2";
 import { useEffect, type ReactNode } from "react";
 import { MARKET_DESK_AGENT_ID } from "./constants";
 import { ApprovalPanel } from "./ApprovalPanel";
+import { ChoiceCard, readChoice } from "./ChoiceCard";
 import { readApproval } from "./approvals";
 
-// Renders HITL approval cards inside CopilotChat and resumes the graph with
-// HumanInTheLoopMiddleware's {decisions: [...]} payload.
+// Renders HITL approval cards (resume: {decisions: [...]}) and ask_user_choice
+// choice cards (resume: {selected, other}) inside CopilotChat.
 function PendingInterruptMarker({
   children,
   onPendingChange,
@@ -26,14 +27,23 @@ export function useDeskInterrupt(
 ): void {
   useInterrupt({
     agentId: MARKET_DESK_AGENT_ID,
-    render: ({ interrupt, resolve, cancel }) => (
-      <PendingInterruptMarker onPendingChange={onPendingChange}>
-        <ApprovalPanel
-          approval={readApproval(interrupt)}
-          onSubmit={(decisions) => void resolve({ decisions })}
-          onCancel={() => void cancel()}
-        />
-      </PendingInterruptMarker>
-    ),
+    render: ({ interrupt, resolve, cancel }) => {
+      // ask_user_choice interrupts get a choice card; everything else is a
+      // HumanInTheLoopMiddleware approval.
+      const choice = readChoice(interrupt);
+      return (
+        <PendingInterruptMarker onPendingChange={onPendingChange}>
+          {choice ? (
+            <ChoiceCard request={choice} onSubmit={(answer) => void resolve(answer)} />
+          ) : (
+            <ApprovalPanel
+              approval={readApproval(interrupt)}
+              onSubmit={(decisions) => void resolve({ decisions })}
+              onCancel={() => void cancel()}
+            />
+          )}
+        </PendingInterruptMarker>
+      );
+    },
   });
 }
