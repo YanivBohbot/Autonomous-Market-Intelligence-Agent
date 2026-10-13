@@ -11,6 +11,10 @@ import { ScreenshotCard } from "./ScreenshotCard";
 import { RagSourceCards } from "./RagSourceCards";
 import { ReportFileCard } from "./ReportFileCard";
 import { FileListCard } from "./FileListCard";
+import { CompanyComparisonCard } from "./CompanyComparisonCard";
+import { WhatIfCard } from "./WhatIfCard";
+import { WatchlistAlertsCard } from "./WatchlistAlertsCard";
+import { SqlResultTable } from "./SqlResultTable";
 import type { DisplayPayload } from "./types";
 
 function Rendered({ displays, toolCallId }: { displays: DisplayPayload[]; toolCallId?: string }) {
@@ -28,6 +32,10 @@ function Rendered({ displays, toolCallId }: { displays: DisplayPayload[]; toolCa
           case "rag_sources": return <RagSourceCards key={i} display={d} toolCallId={toolCallId} />;
           case "report_file": return <ReportFileCard key={i} display={d} />;
           case "file_list": return <FileListCard key={i} display={d} />;
+          case "company_comparison": return <CompanyComparisonCard key={i} display={d} />;
+          case "what_if": return <WhatIfCard key={i} display={d} />;
+          case "watchlist_alerts": return <WatchlistAlertsCard key={i} display={d} />;
+          case "sql_table": return <SqlResultTable key={i} display={d} />;
         }
       })}
     </div>
@@ -55,10 +63,13 @@ const DISPLAYABLE_TOOLS = [
   "browser_take_screenshot",
   "save_portfolio_report",
   "list_directory",
+  "compare_companies",
+  "simulate_portfolio_change",
+  "watchlist_alerts",
+  "read_query",
 ] as const;
 
-// One named registration per tool — leaves every other tool call (read_query,
-// save_memory, browser_navigate, browser_snapshot, send_email, write_file,
+// One named registration per tool — leaves every other tool call (save_memory, browser_navigate, browser_snapshot, send_email, write_file,
 // ...) to CopilotKit's own default card, completely untouched.
 // save_portfolio_report is the only write-shaped tool registered here: it
 // builds and saves the report in one atomic call, so there is exactly one

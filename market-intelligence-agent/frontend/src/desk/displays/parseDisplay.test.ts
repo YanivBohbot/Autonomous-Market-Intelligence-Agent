@@ -68,4 +68,14 @@ describe("parseDisplay", () => {
     }));
     expect(envelope?.displays).toEqual([portfolioTable]);
   });
+
+  it("accepts the four new display types", () => {
+    const raw = JSON.stringify({ summary: "s", displays: [
+      { type: "company_comparison", period: "6mo", missing: [], companies: [] },
+      { type: "what_if", client_name: "M", before: {}, after: {}, cash_delta: 0, breaches_before: [], breaches_after: [], trades: [] },
+      { type: "watchlist_alerts", near_pct: 5, rows: [], unpriced: [] },
+      { type: "sql_table", columns: ["a"], rows: [], truncated: false },
+    ] });
+    expect(parseDisplay(raw)?.displays.map((d) => d.type)).toEqual(["company_comparison", "what_if", "watchlist_alerts", "sql_table"]);
+  });
 });
