@@ -84,3 +84,40 @@ async def test_turn_ending_on_ai_message_is_not_indexed():
     store = _store()
     await _app(store).ainvoke({"messages": [HumanMessage("Q"), AIMessage("A")]}, {"configurable": {"thread_id": "desk_t5"}})
     assert await store.aget(conv.NAMESPACE, "desk_t5") is None
+
+
+def _finalize_app(store):
+    g = StateGraph(SupervisorState)
+    g.add_node("finalize_turn", RunnableLambda(graph_mod.finalize_turn, afunc=graph_mod.afinalize_turn))
+    g.add_edge(START, "finalize_turn")
+    g.add_edge("finalize_turn", END)
+    return g.compile(checkpointer=InMemorySaver(), store=store)
+
+
+@pytest.mark.anyio
+async def test_finalize_turn_indexes_the_answer():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    store = _store()
+    await conv.record_conversation_turn(store, "desk_t6", "Compare NVDA vs AMD")
+    msgs = [HumanMessage("Compare NVDA vs AMD"), AIMessage("Both are semiconductor makers.")]
+    await _finalize_app(store).ainvoke({"messages": msgs}, {"configurable": {"thread_id": "desk_t6"}})
+    assert "semiconductor makers" in (await store.aget(conv.NAMESPACE, "desk_t6")).value["text"]
+
+
+@pytest.mark.anyio
+async def test_finalize_answer_index_failure_never_fails_the_turn(monkeypatch):
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    async def boom(*a, **k):
+        raise RuntimeError("store down")
+
+    monkeypatch.setattr(graph_mod, "record_conversation_answer", boom)
+    msgs = [HumanMessage("Q"), AIMessage("A")]
+    out = await _finalize_app(_store()).ainvoke({"messages": msgs}, {"configurable": {"thread_id": "desk_t7"}})
+    assert out["messages"][-1].content == "A"
+
+
+def test_graph_registers_async_finalize_turn():
+    node = graph_mod._build_workflow().nodes["finalize_turn"].runnable
+    assert getattr(node, "afunc", None) is getattr(graph_mod, "afinalize_turn", object())

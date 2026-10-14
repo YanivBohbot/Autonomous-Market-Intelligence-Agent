@@ -17,6 +17,10 @@ RESEARCH_PREFIX = "desk_"
 TITLE_MAX = 60
 QUESTION_MAX = 300
 MAX_QUESTIONS = 10
+# Answer excerpts make the history searchable by topic: a short question
+# like "Compare NVDA vs AMD" never says "semiconductors"; its answer does.
+ANSWER_MAX = 400
+MAX_ANSWERS = 3
 # Calibrated on text-embedding-3-small (2026-10-14): good matches score
 # 0.23-0.52, unrelated queries up to ~0.22, so no fixed cut separates them.
 # Keep hits above a floor AND close to the best one.
@@ -34,8 +38,8 @@ def _clean(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit].rstrip() + "…"
 
 
-def _text(title: str, questions: list[str]) -> str:
-    return "\n".join([title, *questions])
+def _text(value: dict) -> str:
+    return "\n".join([value["title"], *value.get("questions", []), *value.get("answers", [])])
 
 
 def _row(key: str, value: dict) -> dict:
@@ -58,7 +62,21 @@ async def record_conversation_turn(
         value = dict(existing.value)
     value["questions"] = [*value.get("questions", []), q][-MAX_QUESTIONS:]
     value["updated_at"] = stamp
-    value["text"] = _text(value["title"], value["questions"])
+    value["text"] = _text(value)
+    await store.aput(NAMESPACE, thread_id, value)
+
+
+async def record_conversation_answer(store: BaseStore, thread_id: str, answer: str) -> None:
+    """Add the turn's answer excerpt to an already-indexed conversation."""
+    if not is_research_thread(thread_id):
+        return
+    a = _clean(answer, ANSWER_MAX)
+    existing = await store.aget(NAMESPACE, thread_id)
+    if not a or existing is None:
+        return
+    value = dict(existing.value)
+    value["answers"] = [*value.get("answers", []), a][-MAX_ANSWERS:]
+    value["text"] = _text(value)
     await store.aput(NAMESPACE, thread_id, value)
 
 
@@ -85,7 +103,7 @@ async def rename_conversation(store: BaseStore, thread_id: str, title: str) -> d
         return None
     value = dict(existing.value)
     value["title"] = _clean(title, 80)
-    value["text"] = _text(value["title"], value.get("questions", []))
+    value["text"] = _text(value)
     await store.aput(NAMESPACE, thread_id, value)
     return _row(thread_id, value)
 

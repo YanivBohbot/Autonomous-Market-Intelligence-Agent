@@ -136,3 +136,33 @@ def test_filter_hits_floor_and_relative_cut():
     assert [h.key for h in conv._filter_hits(hits)] == ["a", "b"]  # 0.30 < 0.8 * 0.40
     assert conv._filter_hits([H(key="x", score=0.19)]) == []  # below the floor
     assert conv._filter_hits([]) == []
+
+
+@pytest.mark.anyio
+async def test_answer_excerpts_join_the_searchable_text():
+    s = _store()
+    await conv.record_conversation_turn(s, "desk_a", "Compare NVDA vs AMD", now=T0)
+    for i in range(4):
+        await conv.record_conversation_answer(s, "desk_a", f"Answer {i}: both are semiconductor makers. " + "x" * 600)
+    item = (await s.aget(conv.NAMESPACE, "desk_a")).value
+    assert [a[:8] for a in item["answers"]] == ["Answer 1", "Answer 2", "Answer 3"]
+    assert all(len(a) <= conv.ANSWER_MAX + 1 for a in item["answers"])
+    assert "semiconductor makers" in item["text"]
+    assert item["title"] == "Compare NVDA vs AMD"
+
+
+@pytest.mark.anyio
+async def test_answer_without_indexed_conversation_is_ignored():
+    s = _store()
+    await conv.record_conversation_answer(s, "desk_none", "An answer")
+    await conv.record_conversation_answer(s, "clients_3", "An answer")
+    assert await s.asearch(conv.NAMESPACE) == []
+
+
+@pytest.mark.anyio
+async def test_rename_keeps_answers_in_text():
+    s = _store()
+    await conv.record_conversation_turn(s, "desk_a", "Q", now=T0)
+    await conv.record_conversation_answer(s, "desk_a", "semiconductor answer")
+    await conv.rename_conversation(s, "desk_a", "Chips")
+    assert "semiconductor answer" in (await s.aget(conv.NAMESPACE, "desk_a")).value["text"]

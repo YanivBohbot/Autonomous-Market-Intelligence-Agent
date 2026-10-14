@@ -9,7 +9,7 @@ from langgraph.config import get_store
 from langgraph.graph import END, START, StateGraph
 from langgraph.store.base import BaseStore
 from app.agent.agents_specialist.browser_agent import build_browser_agent
-from app.agent.memory.conversations import record_conversation_turn
+from app.agent.memory.conversations import record_conversation_answer, record_conversation_turn
 from app.agent.agents_specialist.email_agent import build_email_agent
 from app.agent.agents_specialist.filesystem_agent import build_filesystem_agent
 from app.agent.agents_specialist.finance_agent import build_finance_agent
@@ -65,6 +65,7 @@ async def arecord_multi_agent_question(state: SupervisorState, config: RunnableC
             logger.exception("conversation index update failed (thread=%s)", thread_id)
     return update
 
+
 def finalize_turn(state: SupervisorState) -> dict:
     """Tag voice-generated AI messages while preserving their message ids."""
     if state.get("turn_source") != "voice":
@@ -92,6 +93,22 @@ def finalize_turn(state: SupervisorState) -> dict:
             message.model_copy(update={"additional_kwargs": additional_kwargs})
         )
     return {"messages": replacements} if replacements else {}
+
+
+async def afinalize_turn(state: SupervisorState, config: RunnableConfig) -> dict:
+    """Async twin: same update, plus the answer excerpt in the Research
+    history index (desk_* only). Never fails the turn."""
+    update = finalize_turn(state)
+    messages = state.get("messages") or []
+    thread_id = (config.get("configurable") or {}).get("thread_id")
+    if thread_id and messages and isinstance(messages[-1], AIMessage) and messages[-1].text:
+        try:
+            store = get_store()
+            if store is not None:
+                await record_conversation_answer(store, thread_id, messages[-1].text)
+        except Exception:
+            logger.exception("conversation answer index failed (thread=%s)", thread_id)
+    return update
 
 
 def load_client_context(state: SupervisorState, config: RunnableConfig) -> dict:
@@ -144,7 +161,7 @@ def _build_workflow() -> StateGraph:
         RunnableLambda(record_multi_agent_question, afunc=arecord_multi_agent_question),
     )
     workflow.add_node("supervisor", supervisor_node)
-    workflow.add_node("finalize_turn", finalize_turn)
+    workflow.add_node("finalize_turn", RunnableLambda(finalize_turn, afunc=afinalize_turn))
     for name, agent_specialist in SPECIALISTS.items():
         workflow.add_node(name, agent_specialist())
         workflow.add_edge(name, "supervisor")
