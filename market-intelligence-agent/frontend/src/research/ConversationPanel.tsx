@@ -2,6 +2,25 @@ import { useCallback, useEffect, useState } from "react";
 import { deleteConversation, listConversations, renameConversation, type Conversation } from "./conversationsApi";
 import { relativeTime } from "./relativeTime";
 
+const COLLAPSED_KEY = "research.conversations.collapsed";
+
+// Per-viewer convenience only: storage can be unavailable (private mode).
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(value: boolean) {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, value ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
 type Props = {
   activeId: string;
   refreshKey: number;
@@ -9,6 +28,9 @@ type Props = {
   onNew: () => void;
   onDeleted: (id: string) => void;
 };
+
+const railButton =
+  "grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-terminal-border text-sm text-terminal-muted hover:border-brand-blue/50 hover:text-brand-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue";
 
 export function ConversationPanel({ activeId, refreshKey, onSelect, onNew, onDeleted }: Props) {
   const [query, setQuery] = useState("");
@@ -18,6 +40,12 @@ export function ConversationPanel({ activeId, refreshKey, onSelect, onNew, onDel
   const [draft, setDraft] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  function toggle(next: boolean) {
+    setCollapsed(next);
+    writeCollapsed(next);
+  }
 
   const load = useCallback(async (q: string) => {
     try {
@@ -48,12 +76,30 @@ export function ConversationPanel({ activeId, refreshKey, onSelect, onNew, onDel
     onDeleted(id);
   }
 
+  if (collapsed) {
+    return (
+      <aside aria-label="Conversations" className="flex w-11 shrink-0 flex-col items-center gap-2 border-r border-terminal-border bg-terminal-panel py-3">
+        <button type="button" aria-label="Show conversations" title="Show conversations" onClick={() => toggle(false)} className={railButton}>
+          <span aria-hidden="true">»</span>
+        </button>
+        <button type="button" aria-label="New conversation" title="New conversation" onClick={onNew} className={railButton}>
+          <span aria-hidden="true">+</span>
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside aria-label="Conversations" className="flex w-64 shrink-0 flex-col border-r border-terminal-border bg-terminal-panel">
       <div className="space-y-2 border-b border-terminal-border p-3">
-        <button type="button" onClick={onNew} className="w-full rounded-xl border border-terminal-border px-3 py-2 text-xs font-semibold text-terminal-muted hover:border-brand-blue/50 hover:text-brand-blue">
-          + New conversation
-        </button>
+        <div className="flex gap-2">
+          <button type="button" onClick={onNew} className="flex-1 rounded-xl border border-terminal-border px-3 py-2 text-xs font-semibold text-terminal-muted hover:border-brand-blue/50 hover:text-brand-blue">
+            + New conversation
+          </button>
+          <button type="button" aria-label="Hide conversations" title="Hide conversations" onClick={() => toggle(true)} className={railButton}>
+            <span aria-hidden="true">«</span>
+          </button>
+        </div>
         <input
           type="search"
           aria-label="Search conversations"

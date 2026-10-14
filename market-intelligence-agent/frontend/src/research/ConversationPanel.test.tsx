@@ -18,6 +18,7 @@ function setup(activeId = "desk_a") {
 
 describe("ConversationPanel", () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.mocked(api.listConversations).mockResolvedValue(rows);
     vi.mocked(api.renameConversation).mockImplementation(async (id, title) => ({ ...rows[0], id, title }));
     vi.mocked(api.deleteConversation).mockResolvedValue();
@@ -75,5 +76,26 @@ describe("ConversationPanel", () => {
     vi.mocked(api.listConversations).mockResolvedValue([]);
     setup();
     expect(await screen.findByText("No conversations yet")).toBeInTheDocument();
+  });
+
+  it("collapses to a thin rail and expands again, remembering the choice", async () => {
+    setup();
+    await screen.findByText("NVDA vs AMD");
+    await userEvent.click(screen.getByRole("button", { name: "Hide conversations" }));
+    expect(screen.queryByText("NVDA vs AMD")).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "Search conversations" })).not.toBeInTheDocument();
+    expect(localStorage.getItem("research.conversations.collapsed")).toBe("1");
+    await userEvent.click(screen.getByRole("button", { name: "Show conversations" }));
+    expect(await screen.findByText("NVDA vs AMD")).toBeInTheDocument();
+    expect(localStorage.getItem("research.conversations.collapsed")).toBe("0");
+  });
+
+  it("starts collapsed when that was the last choice, and can still start a new conversation", async () => {
+    localStorage.setItem("research.conversations.collapsed", "1");
+    const p = setup();
+    expect(screen.getByRole("button", { name: "Show conversations" })).toBeInTheDocument();
+    expect(screen.queryByText("NVDA vs AMD")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    expect(p.onNew).toHaveBeenCalled();
   });
 });
