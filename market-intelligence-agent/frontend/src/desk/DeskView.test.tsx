@@ -11,6 +11,7 @@ const createdAgents: { setMessages: ReturnType<typeof vi.fn>; messages: Record<s
 const activityRailProps: Record<string, unknown>[] = [];
 let voiceHookState: Record<string, unknown>;
 const getThreadHistoryMock = vi.fn();
+const agentSubscribers: { onRunFinalized?: (p: unknown) => void }[] = [];
 
 vi.mock("@copilotkit/react-core/v2", () => ({
   CopilotKitProvider: (props: Record<string, unknown> & { children: React.ReactNode }) => {
@@ -49,7 +50,16 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   useConfigureSuggestions: (config: Record<string, unknown>) => {
     suggestionConfigs.push(config);
   },
-  useAgent: () => ({ agent: { messages: [], state: agentState, subscribe: () => ({ unsubscribe: () => undefined }) } }),
+  useAgent: () => ({
+    agent: {
+      messages: [],
+      state: agentState,
+      subscribe: (sub: { onRunFinalized?: (p: unknown) => void }) => {
+        agentSubscribers.push(sub);
+        return { unsubscribe: () => undefined };
+      },
+    },
+  }),
   useAgentContext: (c: Record<string, unknown>) => {
     agentContexts.push(c);
   },
@@ -94,6 +104,7 @@ describe("DeskView", () => {
     portalContents.length = 0;
     createdAgents.length = 0;
     activityRailProps.length = 0;
+    agentSubscribers.length = 0;
     voiceHookState = {
       phase: "disconnected",
       active: false,
@@ -108,6 +119,13 @@ describe("DeskView", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
     getThreadHistoryMock.mockReset();
     getThreadHistoryMock.mockResolvedValue([]);
+  });
+
+  it("calls onTurnFinished when a chat run finishes", () => {
+    const onTurnFinished = vi.fn();
+    render(<DeskView threadId="desk_x" onTurnFinished={onTurnFinished} />);
+    agentSubscribers.forEach((sub) => sub.onRunFinalized?.({}));
+    expect(onTurnFinished).toHaveBeenCalledTimes(1);
   });
 
   it("shows a compact Research workspace identity", () => {

@@ -15,7 +15,7 @@ function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route element={<AppLayout threadId="t1" onNewSession={() => undefined} />}>
+        <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/research" replace />} />
           <Route path="/briefing" element={<div>briefing page</div>} />
           <Route path="/clients" element={<div>clients page</div>} />
@@ -114,21 +114,9 @@ describe("AppLayout", () => {
     expect(screen.getByText(/activity will appear after/i)).toBeInTheDocument();
   });
 
-  it("shows the session id and calls onNewSession when + New session is clicked, even on a non-chat route", async () => {
-    const onNewSession = vi.fn();
-    const { default: userEvent } = await import("@testing-library/user-event");
-    const user = userEvent.setup();
-    render(
-      <MemoryRouter initialEntries={["/data"]}>
-        <Routes>
-          <Route element={<AppLayout threadId="t1" onNewSession={onNewSession} />}>
-            <Route path="/data" element={<div>data page</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>,
-    );
-    expect(screen.getByText("t1")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /new session/i }));
-    expect(onNewSession).toHaveBeenCalledOnce();
+  it("no longer shows a session box or a New session button", () => {
+    renderAt("/data");
+    expect(screen.queryByRole("button", { name: /new session/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Session")).not.toBeInTheDocument();
   });
 });

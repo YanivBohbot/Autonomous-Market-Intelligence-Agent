@@ -23,17 +23,20 @@ export type DeskViewProps = {
   starterSuggestions?: StarterSuggestion[];
   // What the page shows, shared with the agent via useAgentContext.
   agentContext?: AgentContextEntry[];
+  // Called after each finished turn (typed or voice), e.g. to refresh history.
+  onTurnFinished?: () => void;
 };
 
 export type AgentContextEntry = { description: string; value: string };
 
 // Market Desk: CopilotKit v2 talking AG-UI straight to FastAPI (no runtime).
-// Remounted per thread by App (key={threadId}), so New session starts clean.
+// Remounted per thread by ResearchPage (key={threadId}), so each conversation starts clean.
 export function DeskView({
   threadId,
   voiceEnabled = false,
   starterSuggestions = RESEARCH_STARTERS,
   agentContext = [],
+  onTurnFinished,
 }: DeskViewProps) {
   const agent = useMemo(() => new HttpAgent({ url: MARKET_DESK_URL }), []);
 
@@ -71,10 +74,10 @@ export function DeskView({
     >
       {voiceEnabled ? (
         <ResearchVoiceProvider threadId={threadId} enabled>
-          <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} agentContext={agentContext} />
+          <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} agentContext={agentContext} onTurnFinished={onTurnFinished} />
         </ResearchVoiceProvider>
       ) : (
-        <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} agentContext={agentContext} />
+        <DeskBody threadId={threadId} agent={agent} starterSuggestions={starterSuggestions} agentContext={agentContext} onTurnFinished={onTurnFinished} />
       )}
     </CopilotKitProvider>
   );
@@ -85,20 +88,29 @@ function DeskBody({
   agent,
   starterSuggestions,
   agentContext,
+  onTurnFinished,
 }: {
   threadId: string;
   agent: HttpAgent;
   starterSuggestions: StarterSuggestion[];
   agentContext: AgentContextEntry[];
+  onTurnFinished?: () => void;
 }) {
   const voice = useResearchVoiceContext();
   const setMessages = useCallback(
     (history: ThreadMessage[]) => {
       if (history.length === 0) return;
       agent.setMessages(mergeHistory(agent.messages, history));
+      onTurnFinished?.();
     },
-    [agent],
+    [agent, onTurnFinished],
   );
+  const { agent: chatAgent } = useAgent({ agentId: MARKET_DESK_AGENT_ID });
+  useEffect(() => {
+    if (!onTurnFinished || !chatAgent?.subscribe) return;
+    const sub = chatAgent.subscribe({ onRunFinalized: () => { onTurnFinished(); } });
+    return () => sub.unsubscribe();
+  }, [chatAgent, onTurnFinished]);
   const { refreshError } = useVoiceHistoryRefresh(threadId, voice?.events, setMessages);
   useDeskInterrupt(voice?.setTypedApprovalPending);
   useToolDisplay();

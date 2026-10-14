@@ -8,11 +8,6 @@ import { IntelligenceSlotProvider } from "./IntelligenceSlot";
 import { ProfilePreview } from "./ProfilePreview";
 import { ResponsiveRail } from "./ResponsiveRail";
 
-interface AppLayoutProps {
-  threadId: string;
-  onNewSession: () => void;
-}
-
 const NAV_ITEMS = [
   { to: "/briefing", label: "Briefing", icon: "briefing" },
   { to: "/clients", label: "Clients", icon: "clients" },
@@ -37,7 +32,7 @@ function SystemReady() {
   );
 }
 
-export function AppLayout({ threadId, onNewSession }: AppLayoutProps) {
+export function AppLayout() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [theme, setThemeState] = useState<Theme>("light");
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -163,13 +158,6 @@ export function AppLayout({ threadId, onNewSession }: AppLayoutProps) {
             </div>
 
             <div className="mt-auto space-y-2 border-t border-terminal-border pt-3">
-              <div className="rounded-xl bg-surface-soft px-3 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-terminal-muted">Session</p>
-                <p className="mt-0.5 truncate font-mono text-[11px] text-terminal-text" title={threadId}>{threadId}</p>
-              </div>
-              <button type="button" onClick={onNewSession} className="flex w-full items-center justify-center rounded-xl border border-terminal-border px-3 py-2 text-xs font-semibold text-terminal-muted transition-colors hover:border-brand-blue/50 hover:text-brand-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue">
-                + New session
-              </button>
               <button type="button" aria-label="Profile settings" onClick={() => { setNavigationOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-terminal-muted transition-colors hover:bg-surface-soft hover:text-terminal-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue">
                 <Icon name="settings" className="h-4 w-4" />
                 Profile settings

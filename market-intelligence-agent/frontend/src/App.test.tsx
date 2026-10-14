@@ -9,6 +9,9 @@ vi.mock("./desk/DeskView", () => ({
     </div>
   ),
 }));
+vi.mock("./research/ConversationPanel", () => ({
+  ConversationPanel: () => null,
+}));
 vi.mock("./clients/ClientWorkspace", () => ({
   ClientWorkspace: () => <div data-testid="client-workspace" />,
 }));
@@ -128,12 +131,9 @@ describe("App routing", () => {
     expect(screen.getByTestId("client-workspace")).toBeInTheDocument();
   });
 
-  it("New session gives the desk a new thread id", async () => {
-    const { default: userEvent } = await import("@testing-library/user-event");
-    const user = userEvent.setup();
+  it("/research opens a desk_ conversation through the Research page", () => {
     renderAt("/research");
-    const before = screen.getByTestId("desk-view").textContent;
-    await user.click(screen.getByRole("button", { name: /new session/i }));
-    expect(screen.getByTestId("desk-view").textContent).not.toBe(before);
+    expect(screen.getByTestId("desk-view").textContent).toMatch(/^desk_/);
+    expect(screen.queryByRole("button", { name: /new session/i })).not.toBeInTheDocument();
   });
 });
