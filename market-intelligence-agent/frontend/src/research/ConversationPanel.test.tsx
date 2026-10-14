@@ -98,4 +98,45 @@ describe("ConversationPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "New conversation" }));
     expect(p.onNew).toHaveBeenCalled();
   });
+
+  it("shows an error and keeps the row when delete fails", async () => {
+    vi.mocked(api.deleteConversation).mockRejectedValueOnce(new Error("409"));
+    const p = setup();
+    await screen.findByText("NVDA vs AMD");
+    await userEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't delete this conversation");
+    expect(screen.getByText("NVDA vs AMD")).toBeInTheDocument();
+    expect(p.onDeleted).not.toHaveBeenCalled();
+  });
+
+  it("shows an error when rename fails", async () => {
+    vi.mocked(api.renameConversation).mockRejectedValueOnce(new Error("500"));
+    setup();
+    await screen.findByText("NVDA vs AMD");
+    await userEvent.click(screen.getAllByRole("button", { name: "Rename" })[0]);
+    const box = screen.getByRole("textbox", { name: "Conversation title" });
+    await userEvent.clear(box);
+    await userEvent.type(box, "Chips{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't rename this conversation");
+    expect(screen.getByText("NVDA vs AMD")).toBeInTheDocument();
+  });
+
+  it("ignores a slow search answer that arrives after a newer request", async () => {
+    let resolveSearch: (found: api.Conversation[]) => void = () => undefined;
+    vi.mocked(api.listConversations).mockImplementation((q?: string) =>
+      q ? new Promise((r) => { resolveSearch = r; }) : Promise.resolve(rows),
+    );
+    setup();
+    await screen.findByText("NVDA vs AMD");
+    const box = screen.getByRole("searchbox", { name: "Search conversations" });
+    await userEvent.type(box, "chips");
+    await waitFor(() => expect(api.listConversations).toHaveBeenLastCalledWith("chips"));
+    await userEvent.clear(box);
+    await waitFor(() => expect(api.listConversations).toHaveBeenLastCalledWith(""));
+    resolveSearch([]);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByText("NVDA vs AMD")).toBeInTheDocument();
+    expect(screen.getByText("Cohen review")).toBeInTheDocument();
+  });
 });

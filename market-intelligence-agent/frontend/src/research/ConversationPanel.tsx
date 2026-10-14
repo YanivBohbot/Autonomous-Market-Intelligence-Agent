@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { deleteConversation, listConversations, renameConversation, type Conversation } from "./conversationsApi";
 import { relativeTime } from "./relativeTime";
 
@@ -47,12 +47,20 @@ export function ConversationPanel({ activeId, refreshKey, onSelect, onNew, onDel
     writeCollapsed(next);
   }
 
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Only the latest list request may update the panel: a slow semantic
+  // search must not overwrite a newer plain list (or bring back a deleted row).
+  const latestRequest = useRef(0);
+
   const load = useCallback(async (q: string) => {
+    const id = ++latestRequest.current;
     try {
-      setItems(await listConversations(q));
+      const rows = await listConversations(q);
+      if (id !== latestRequest.current) return;
+      setItems(rows);
       setError(false);
     } catch {
-      setError(true);
+      if (id === latestRequest.current) setError(true);
     }
   }, []);
 
@@ -65,13 +73,26 @@ export function ConversationPanel({ activeId, refreshKey, onSelect, onNew, onDel
     const title = draft.trim();
     setEditing(null);
     if (!title) return;
-    const row = await renameConversation(id, title);
-    setItems((cur) => cur?.map((c) => (c.id === id ? { ...c, title: row.title } : c)) ?? cur);
+    try {
+      const row = await renameConversation(id, title);
+      setActionError(null);
+      setItems((cur) => cur?.map((c) => (c.id === id ? { ...c, title: row.title } : c)) ?? cur);
+    } catch {
+      setActionError("Couldn't rename this conversation");
+    }
   }
 
   async function confirmDelete(id: string) {
     setConfirming(null);
-    await deleteConversation(id);
+    try {
+      await deleteConversation(id);
+    } catch {
+      // 409 while a turn is running in it, or the backend is down.
+      setActionError("Couldn't delete this conversation");
+      return;
+    }
+    setActionError(null);
+    latestRequest.current += 1; // drop any in-flight list that still has it
     setItems((cur) => cur?.filter((c) => c.id !== id) ?? cur);
     onDeleted(id);
   }
@@ -115,6 +136,11 @@ export function ConversationPanel({ activeId, refreshKey, onSelect, onNew, onDel
             <p>Couldn't load conversations</p>
             <button type="button" onClick={() => setAttempt((n) => n + 1)} className="mt-1 font-semibold text-brand-blue">Retry</button>
           </div>
+        )}
+        {actionError && (
+          <p role="alert" className="mb-2 rounded-lg border border-terminal-warn/40 bg-terminal-warn/10 px-2 py-1.5 text-[11px] text-terminal-warn">
+            {actionError}
+          </p>
         )}
         {!error && items?.length === 0 && <p className="p-2 text-xs text-terminal-muted">No conversations yet</p>}
         <ul className="space-y-1">
