@@ -63,3 +63,24 @@ async def test_no_store_is_fine():
 def test_graph_registers_async_record_question():
     node = graph_mod._build_workflow().nodes["record_question"].runnable
     assert getattr(node, "afunc", None) is getattr(graph_mod, "arecord_multi_agent_question", object())
+
+
+@pytest.mark.anyio
+async def test_ag_ui_turn_without_question_key_is_indexed():
+    # Market Desk (AG-UI) sends the user turn as a message, not as "question".
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    store = _store()
+    history = [HumanMessage("Old question"), AIMessage("Old answer"), HumanMessage("Compare NVDA and AMD")]
+    out = await _app(store).ainvoke({"messages": history}, {"configurable": {"thread_id": "desk_t4"}})
+    assert out["messages"][-1].content == "Compare NVDA and AMD"
+    assert (await store.aget(conv.NAMESPACE, "desk_t4")).value["title"] == "Compare NVDA and AMD"
+
+
+@pytest.mark.anyio
+async def test_turn_ending_on_ai_message_is_not_indexed():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    store = _store()
+    await _app(store).ainvoke({"messages": [HumanMessage("Q"), AIMessage("A")]}, {"configurable": {"thread_id": "desk_t5"}})
+    assert await store.aget(conv.NAMESPACE, "desk_t5") is None

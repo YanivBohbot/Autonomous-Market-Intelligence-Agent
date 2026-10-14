@@ -42,11 +42,19 @@ def record_multi_agent_question(state: SupervisorState, config: RunnableConfig) 
 
 
 
+
+def _latest_user_text(messages: list) -> str:
+    """Market Desk (AG-UI) sends the new user turn as the last message, not
+    as `question` (only voice and /stream set that)."""
+    if messages and isinstance(messages[-1], HumanMessage):
+        return messages[-1].text
+    return ""
+
 async def arecord_multi_agent_question(state: SupervisorState, config: RunnableConfig) -> dict:
     """Async twin used by every real transport: same update, plus the
     Research history index (desk_* threads only). Never fails the turn."""
     update = record_multi_agent_question(state, config)
-    question = state.get("question")
+    question = state.get("question") or _latest_user_text(state.get("messages") or [])
     thread_id = (config.get("configurable") or {}).get("thread_id")
     if question and thread_id:
         try:
