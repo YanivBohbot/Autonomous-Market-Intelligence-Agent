@@ -27,7 +27,14 @@ _CLIENT_THREAD_RE = re.compile(r"^clients_(\d+)$")
 
 
 def record_multi_agent_question(state: SupervisorState, config: RunnableConfig) -> dict:
-    """Persist a turn with its transport source for presentation filtering."""
+    """Persist a turn with its transport source for presentation filtering.
+
+    `question` is the input of voice, /stream and AgentCore runs and is
+    consumed here (reset to None) so it cannot go stale in the checkpoint.
+    Market Desk (AG-UI) runs bring the user turn as a message instead: a
+    `question` left by an older checkpoint is ignored there."""
+    if is_ag_ui_run(config):
+        return {"turn_source": "text", **({"question": None} if state.get("question") else {})}
     question = state.get("question")
     if not question:
         return {}
@@ -38,6 +45,7 @@ def record_multi_agent_question(state: SupervisorState, config: RunnableConfig) 
             HumanMessage(content=question, additional_kwargs={"source": source})
         ],
         "turn_source": source,
+        "question": None,
     }
 
 
@@ -54,7 +62,10 @@ async def arecord_multi_agent_question(state: SupervisorState, config: RunnableC
     """Async twin used by every real transport: same update, plus the
     Research history index (desk_* threads only). Never fails the turn."""
     update = record_multi_agent_question(state, config)
-    question = state.get("question") or _latest_user_text(state.get("messages") or [])
+    if is_ag_ui_run(config):
+        question = _latest_user_text(state.get("messages") or [])
+    else:
+        question = state.get("question") or _latest_user_text(state.get("messages") or [])
     thread_id = (config.get("configurable") or {}).get("thread_id")
     if question and thread_id:
         try:

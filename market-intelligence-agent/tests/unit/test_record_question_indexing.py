@@ -121,3 +121,24 @@ async def test_finalize_answer_index_failure_never_fails_the_turn(monkeypatch):
 def test_graph_registers_async_finalize_turn():
     node = graph_mod._build_workflow().nodes["finalize_turn"].runnable
     assert getattr(node, "afunc", None) is getattr(graph_mod, "afinalize_turn", object())
+
+
+@pytest.mark.anyio
+async def test_stale_voice_question_is_ignored_on_ag_ui_turns():
+    # A voice turn leaves state["question"] checkpointed; the next typed
+    # (AG-UI) turn must index and keep the typed message, not re-add the old one.
+    from langchain_core.messages import HumanMessage
+    from app.agent.orchestration.state import AG_UI_RUN_METADATA
+
+    store = _store()
+    cfg = {"configurable": {"thread_id": "desk_t8"}, "metadata": dict(AG_UI_RUN_METADATA)}
+    out = await _app(store).ainvoke({"question": "voice q", "messages": [HumanMessage("typed q")]}, cfg)
+    assert [m.content for m in out["messages"]] == ["typed q"]
+    assert (await store.aget(conv.NAMESPACE, "desk_t8")).value["questions"] == ["typed q"]
+
+
+@pytest.mark.anyio
+async def test_question_is_consumed_so_it_cannot_go_stale():
+    out = await _app(_store()).ainvoke({"question": "voice q"}, {"configurable": {"thread_id": "desk_t9"}})
+    assert out["messages"][-1].content == "voice q"
+    assert not out.get("question")

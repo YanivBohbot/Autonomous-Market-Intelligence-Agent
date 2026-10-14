@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 
+from app.agent.guardrails.detection import mask_credit_cards_in
+
 NAMESPACE = ("conversations",)
 RESEARCH_PREFIX = "desk_"
 TITLE_MAX = 60
@@ -34,7 +36,9 @@ def is_research_thread(thread_id: str) -> bool:
 
 
 def _clean(text: str, limit: int) -> str:
-    text = " ".join(str(text).split())
+    # The index runs before the supervisor's card guard: mask here so a card
+    # number never reaches store.db, the embeddings API or the panel.
+    text = " ".join(mask_credit_cards_in(str(text)).split())
     return text if len(text) <= limit else text[:limit].rstrip() + "…"
 
 

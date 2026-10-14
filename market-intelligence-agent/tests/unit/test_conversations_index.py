@@ -166,3 +166,15 @@ async def test_rename_keeps_answers_in_text():
     await conv.record_conversation_answer(s, "desk_a", "semiconductor answer")
     await conv.rename_conversation(s, "desk_a", "Chips")
     assert "semiconductor answer" in (await s.aget(conv.NAMESPACE, "desk_a")).value["text"]
+
+
+@pytest.mark.anyio
+async def test_card_numbers_never_reach_the_index():
+    s = _store()
+    await conv.record_conversation_turn(s, "desk_a", "Pay with 4111 1111 1111 1111 please", now=T0)
+    await conv.record_conversation_turn(s, "desk_a", "card 4111111111111111 again", now=T0)
+    await conv.record_conversation_answer(s, "desk_a", "I saw 4111111111111111 in your message")
+    value = (await s.aget(conv.NAMESPACE, "desk_a")).value
+    blob = repr(value)
+    assert "4111111111111111" not in blob and "4111 1111 1111 1111" not in blob
+    assert "1111" in value["title"]  # masked to the last 4 digits, like PIIMiddleware

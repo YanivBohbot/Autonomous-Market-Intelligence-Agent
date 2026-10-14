@@ -50,3 +50,15 @@ def test_delete():
 
 def test_delete_refuses_non_research_thread():
     assert client.delete("/conversations/clients_17").status_code == 400
+
+
+def test_delete_refused_while_a_turn_owns_the_thread():
+    import asyncio
+    from app.agent.turn_coordinator import ThreadTurnCoordinator
+
+    app.state.turn_coordinator = ThreadTurnCoordinator()
+    _seed("desk_busy", "Busy")
+    lease = asyncio.run(app.state.turn_coordinator.try_acquire("desk_busy", "text"))
+    assert client.delete("/conversations/desk_busy").status_code == 409
+    asyncio.run(app.state.turn_coordinator.release(lease))
+    assert client.delete("/conversations/desk_busy").status_code == 204

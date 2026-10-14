@@ -23,6 +23,9 @@ __pycache__/
 data/checkpoints.db
 data/checkpoints.db-shm
 data/checkpoints.db-wal
+data/store.db
+data/store.db-shm
+data/store.db-wal
 
 # Source PDFs for app/ingest.py — large and not needed at runtime (the
 # source_filter manifest app/agent/tools/kb_documents.json is what ships).

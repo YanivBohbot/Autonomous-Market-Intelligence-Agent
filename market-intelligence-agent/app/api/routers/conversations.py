@@ -48,5 +48,9 @@ async def patch_conversation(thread_id: str, body: RenameRequest, request: Reque
 async def remove_conversation(thread_id: str, request: Request) -> Response:
     if not is_research_thread(thread_id):
         raise HTTPException(status_code=400, detail="only Research conversations can be deleted")
+    coordinator = getattr(request.app.state, "turn_coordinator", None)
+    if coordinator is not None and await coordinator.owner(thread_id):
+        # A running turn would keep writing checkpoints after the delete.
+        raise HTTPException(status_code=409, detail="a turn is running in this conversation")
     await delete_conversation(request.app.state.store, request.app.state.checkpointer, thread_id)
     return Response(status_code=204)
