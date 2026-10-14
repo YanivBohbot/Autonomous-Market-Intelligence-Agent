@@ -1,12 +1,15 @@
+import logging
 import re
 import sqlite3
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.config import get_store
 from langgraph.graph import END, START, StateGraph
 from langgraph.store.base import BaseStore
 from app.agent.agents_specialist.browser_agent import build_browser_agent
+from app.agent.memory.conversations import record_conversation_turn
 from app.agent.agents_specialist.email_agent import build_email_agent
 from app.agent.agents_specialist.filesystem_agent import build_filesystem_agent
 from app.agent.agents_specialist.finance_agent import build_finance_agent
@@ -17,6 +20,8 @@ from app.agent.orchestration.followups import suggest_followups, suggest_followu
 from app.agent.orchestration.state import AG_UI_KEY, SupervisorState, is_ag_ui_run
 from app.agent.orchestration.supervisor import supervisor_node
 from app.data_import.db import DB_PATH, get_client_with_holdings
+
+logger = logging.getLogger(__name__)
 
 _CLIENT_THREAD_RE = re.compile(r"^clients_(\d+)$")
 
@@ -35,6 +40,22 @@ def record_multi_agent_question(state: SupervisorState, config: RunnableConfig) 
         "turn_source": source,
     }
 
+
+
+async def arecord_multi_agent_question(state: SupervisorState, config: RunnableConfig) -> dict:
+    """Async twin used by every real transport: same update, plus the
+    Research history index (desk_* threads only). Never fails the turn."""
+    update = record_multi_agent_question(state, config)
+    question = state.get("question")
+    thread_id = (config.get("configurable") or {}).get("thread_id")
+    if question and thread_id:
+        try:
+            store = get_store()
+            if store is not None:
+                await record_conversation_turn(store, thread_id, question)
+        except Exception:
+            logger.exception("conversation index update failed (thread=%s)", thread_id)
+    return update
 
 def finalize_turn(state: SupervisorState) -> dict:
     """Tag voice-generated AI messages while preserving their message ids."""
@@ -110,7 +131,10 @@ SPECIALISTS = {
 def _build_workflow() -> StateGraph:
     workflow = StateGraph(SupervisorState)
     workflow.add_node("load_client_context", load_client_context)
-    workflow.add_node("record_question", record_multi_agent_question)
+    workflow.add_node(
+        "record_question",
+        RunnableLambda(record_multi_agent_question, afunc=arecord_multi_agent_question),
+    )
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("finalize_turn", finalize_turn)
     for name, agent_specialist in SPECIALISTS.items():
