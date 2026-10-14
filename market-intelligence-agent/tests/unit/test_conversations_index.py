@@ -127,3 +127,12 @@ async def test_delete_removes_checkpoints_and_item():
     await conv.delete_conversation(s, saver, "desk_a")
     assert await saver.aget_tuple(cfg) is None
     assert await s.aget(conv.NAMESPACE, "desk_a") is None
+
+
+def test_filter_hits_floor_and_relative_cut():
+    from types import SimpleNamespace as H
+
+    hits = [H(key="a", score=0.40), H(key="b", score=0.33), H(key="c", score=0.30), H(key="d", score=0.15)]
+    assert [h.key for h in conv._filter_hits(hits)] == ["a", "b"]  # 0.30 < 0.8 * 0.40
+    assert conv._filter_hits([H(key="x", score=0.19)]) == []  # below the floor
+    assert conv._filter_hits([]) == []

@@ -17,7 +17,11 @@ RESEARCH_PREFIX = "desk_"
 TITLE_MAX = 60
 QUESTION_MAX = 300
 MAX_QUESTIONS = 10
-SEARCH_MIN_SCORE = 0.25
+# Calibrated on text-embedding-3-small (2026-10-14): good matches score
+# 0.23-0.52, unrelated queries up to ~0.22, so no fixed cut separates them.
+# Keep hits above a floor AND close to the best one.
+SEARCH_MIN_SCORE = 0.20
+SEARCH_RELATIVE = 0.8
 _LIST_SCAN = 1000
 
 
@@ -58,10 +62,18 @@ async def record_conversation_turn(
     await store.aput(NAMESPACE, thread_id, value)
 
 
+def _filter_hits(hits: list) -> list:
+    hits = [h for h in hits if (h.score or 0) >= SEARCH_MIN_SCORE]
+    if not hits:
+        return []
+    best = max(h.score for h in hits)
+    return [h for h in hits if h.score >= best * SEARCH_RELATIVE]
+
+
 async def list_conversations(store: BaseStore, query: str | None = None, limit: int = 50) -> list[dict]:
     if query and query.strip():
         hits = await store.asearch(NAMESPACE, query=query.strip(), limit=limit)
-        return [_row(h.key, h.value) for h in hits if (h.score or 0) >= SEARCH_MIN_SCORE]
+        return [_row(h.key, h.value) for h in _filter_hits(hits)]
     items = await store.asearch(NAMESPACE, limit=_LIST_SCAN)
     items.sort(key=lambda i: i.value.get("updated_at", ""), reverse=True)
     return [_row(i.key, i.value) for i in items[:limit]]
