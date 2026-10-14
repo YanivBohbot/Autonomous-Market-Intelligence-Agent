@@ -10,6 +10,7 @@ from app.agent.orchestration.graph import build_multi_agent_app
 from app.agent.turn_coordinator import ThreadTurnCoordinator
 from app.api.routers.agentcore import router as agentcore_router
 from app.api.routers.approve import router as approve_router
+from app.api.routers.conversations import router as conversations_router
 from app.api.routers.data import router as data_router
 from app.api.routers.gptlive_session import router as gptlive_session_router
 from app.api.routers.health import router as health_router
@@ -70,7 +71,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=".*",
-    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_methods=["POST", "GET", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 app.include_router(health_router)
@@ -79,5 +80,6 @@ app.include_router(stream_router)
 app.include_router(gptlive_session_router)
 app.include_router(agentcore_router)
 app.include_router(workspace_router)
+app.include_router(conversations_router)
 app.include_router(data_router)
 include_market_desk_routes(app)
