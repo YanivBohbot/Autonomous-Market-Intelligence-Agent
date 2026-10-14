@@ -30,7 +30,8 @@ async def save_memory(
     """Persist a durable user fact across sessions. Use short snake_case keys
     (e.g. 'email', 'investment_horizon'). Call only when the user has stated a
     fact about themselves they would want remembered next time."""
-    await store.aput(USER_FACTS_NS, key, {"value": value})
+    # Looked up by key, never by meaning: skip the store's embedding index.
+    await store.aput(USER_FACTS_NS, key, {"value": value}, index=False)
     logger.info("save_memory: %s=%s", key, value)
     return f"Saved {key}={value}"
 

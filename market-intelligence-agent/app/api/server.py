@@ -50,9 +50,10 @@ def include_market_desk_routes(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with create_checkpointer() as checkpointer:
-        store = create_store()
+    async with create_checkpointer() as checkpointer, create_store() as store:
         agent_graph = build_multi_agent_app(checkpointer, store)
+        app.state.checkpointer = checkpointer
+        app.state.store = store
         app.state.agent_app = agent_graph
         app.state.turn_coordinator = ThreadTurnCoordinator()
         app.state.voice_activity_store = VoiceActivityStore()

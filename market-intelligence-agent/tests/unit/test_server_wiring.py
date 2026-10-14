@@ -31,3 +31,5 @@ async def test_lifespan_shares_one_multi_agent_graph_across_transports(monkeypat
         assert isinstance(test_app.state.voice_activity_store, VoiceActivityStore)
         assert isinstance(test_app.state.research_voice_runtime, ResearchVoiceRuntime)
         assert test_app.state.research_voice_runtime.graph is test_app.state.agent_app
+        assert test_app.state.store is not None
+        assert test_app.state.checkpointer is not None
