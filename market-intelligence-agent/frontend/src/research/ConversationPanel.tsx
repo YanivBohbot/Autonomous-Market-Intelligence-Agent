@@ -171,9 +171,10 @@ export function ConversationPanel({ activeId, refreshKey, onSelect, onNew, onDel
                 </button>
               )}
               {editing !== c.id && (
-                <div className="absolute right-1 top-1 hidden gap-1 group-hover:flex group-focus-within:flex">
-                  <button type="button" onClick={() => { setDraft(c.title); setEditing(c.id); }} className="rounded px-1 text-[10px] text-terminal-muted hover:text-terminal-text">Rename</button>
-                  <button type="button" onClick={() => setConfirming(c.id)} className="rounded px-1 text-[10px] text-terminal-muted hover:text-terminal-warn">Delete</button>
+                // On the date line (short), not over the title: a long title would hide them.
+                <div className="absolute bottom-1 right-1 hidden gap-1 rounded-md border border-terminal-border bg-terminal-panel px-0.5 shadow-sm group-hover:flex group-focus-within:flex">
+                  <button type="button" onClick={() => { setDraft(c.title); setEditing(c.id); }} className="rounded px-1 text-[10px] font-medium text-terminal-text hover:text-brand-blue">Rename</button>
+                  <button type="button" onClick={() => setConfirming(c.id)} className="rounded px-1 text-[10px] font-medium text-terminal-text hover:text-terminal-warn">Delete</button>
                 </div>
               )}
               {confirming === c.id && (
