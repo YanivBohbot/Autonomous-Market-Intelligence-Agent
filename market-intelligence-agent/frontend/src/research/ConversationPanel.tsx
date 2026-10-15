@@ -142,8 +142,22 @@ export function ConversationPanel({ activeId, refreshKey, onSelect, onNew, onDel
             {actionError}
           </p>
         )}
-        {!error && items?.length === 0 && <p className="p-2 text-xs text-terminal-muted">No conversations yet</p>}
+        {!error && query && items?.length === 0 && <p className="p-2 text-xs text-terminal-muted">No matching conversations</p>}
         <ul className="space-y-1">
+          {/* The open conversation is only indexed after its first question:
+              until then, show it here so "+ New conversation" visibly lands somewhere. */}
+          {items && !query && !items.some((c) => c.id === activeId) && (
+            <li>
+              <button
+                type="button"
+                aria-current="true"
+                className="w-full rounded-lg bg-blue-50 px-2 py-1.5 text-left text-xs text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+              >
+                <span className="block truncate font-medium">New conversation</span>
+                <span className="block text-[10px] text-terminal-muted">Ask a question to start</span>
+              </button>
+            </li>
+          )}
           {items?.map((c) => (
             <li key={c.id} className="group relative">
               {editing === c.id ? (

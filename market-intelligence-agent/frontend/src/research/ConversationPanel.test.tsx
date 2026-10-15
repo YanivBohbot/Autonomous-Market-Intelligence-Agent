@@ -38,6 +38,27 @@ describe("ConversationPanel", () => {
     expect(p.onNew).toHaveBeenCalled();
   });
 
+  it("shows the just-started conversation at the top before its first question", async () => {
+    setup("desk_new");
+    const row = await screen.findByRole("button", { name: /^New conversation/ });
+    expect(row).toHaveAttribute("aria-current", "true");
+    expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("New conversation");
+    expect(screen.getAllByRole("button", { name: "Rename" })).toHaveLength(rows.length);
+  });
+
+  it("drops the placeholder once the conversation is listed", async () => {
+    setup("desk_a");
+    await screen.findByText("NVDA vs AMD");
+    expect(screen.getAllByRole("listitem")).toHaveLength(rows.length);
+  });
+
+  it("hides the placeholder while searching", async () => {
+    setup("desk_new");
+    await screen.findByRole("button", { name: /^New conversation/ });
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search conversations" }), "chips");
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^New conversation/ })).not.toBeInTheDocument());
+  });
+
   it("searches with the typed query", async () => {
     setup();
     await userEvent.type(screen.getByRole("searchbox", { name: "Search conversations" }), "chips");
@@ -72,10 +93,18 @@ describe("ConversationPanel", () => {
     expect(await screen.findByText("NVDA vs AMD")).toBeInTheDocument();
   });
 
-  it("shows an empty state", async () => {
+  it("shows only the new conversation when the history is empty", async () => {
     vi.mocked(api.listConversations).mockResolvedValue([]);
     setup();
-    expect(await screen.findByText("No conversations yet")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^New conversation/ })).toBeInTheDocument();
+    expect(screen.queryByText("No conversations yet")).not.toBeInTheDocument();
+  });
+
+  it("says so when a search finds nothing", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([]);
+    setup();
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search conversations" }), "zzz");
+    expect(await screen.findByText("No matching conversations")).toBeInTheDocument();
   });
 
   it("collapses to a thin rail and expands again, remembering the choice", async () => {
