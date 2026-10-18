@@ -19,12 +19,14 @@ RUN uv sync --frozen --no-dev
 # Pre-pull the filesystem MCP server so the first request doesn't pay an npm install.
 RUN npx -y @modelcontextprotocol/server-filesystem --help >/dev/null 2>&1 || true
 
-# Install Chromium for @playwright/mcp. `--with-deps` brings in the shared libraries
-# (libnss, libatk, fonts, etc.) that headless Chrome needs on Debian-slim.
-RUN npx -y playwright@latest install --with-deps chromium
+# Shared libraries headless Chrome needs on Debian-slim (libnss, libatk, fonts...).
+RUN npx -y playwright@latest install-deps chromium
 
-# Pre-pull the Playwright MCP server so the first request doesn't pay an npm install.
+# Pre-pull the Playwright MCP server, then install the Chromium build ITS bundled
+# playwright-core expects: `playwright@latest install` fetches a different
+# revision and the MCP then reports the browser as not installed.
 RUN npx -y @playwright/mcp@latest --help >/dev/null 2>&1 || true
+RUN npx -y @playwright/mcp@latest install-browser chromium
 
 EXPOSE 8000 8080
 
