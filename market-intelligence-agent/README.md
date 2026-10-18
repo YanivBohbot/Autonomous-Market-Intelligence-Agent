@@ -257,6 +257,10 @@ docker compose up --build
 
 The image includes Node 20 and Chromium and pre-pulls the MCP packages.
 
+### Put the full product online (interview demo)
+
+One small server, Caddy in front (HTTPS + login), the whole console and API: see [`deploy/demo/README.md`](deploy/demo/README.md).
+
 ---
 
 ## 🧪 Tests
