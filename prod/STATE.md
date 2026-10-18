@@ -72,7 +72,7 @@ PINECONE_API_KEY_ARN   = <secret arn>
 TAVILY_API_KEY_ARN     = <secret arn>
 OPENAI_MODEL           = gpt-4o-mini
 OPENAI_EMBEDDING_MODEL = text-embedding-3-small
-PINECONE_INDEX_NAME    = mia-rag      # index is empty — RAG falls through to web_search
+PINECONE_INDEX_NAME    = market-intel # 4 reports, 2833 vectors (hybrid BM25 + rerank)
 ```
 
 `EMAIL_PASSWORD_ARN`, `EMAIL_SMTP_SERVER`, `EMAIL_SMTP_PORT` were dropped when send_email migrated to SES. The Secrets Manager entry `mia/email-password` still exists for rollback.
