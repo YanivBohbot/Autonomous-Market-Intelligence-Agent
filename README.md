@@ -1,4 +1,4 @@
-# 🕵️‍♂️ Autonomous Market Intelligence Agent (LangGraph + MCP)
+# 🕵️‍♂️ Finance Market Intelligence Multi-Agents System (LangGraph + MCP)
 
 A full-stack, multi-agent AI assistant for **wealth managers**. It researches markets, analyses client portfolios, reads company annual reports, browses the web, and carries out real actions — emails, files, reports — **only after a human approves them**.
 
