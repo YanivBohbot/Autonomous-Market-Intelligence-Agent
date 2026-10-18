@@ -224,18 +224,17 @@ def _run_async(coro_factory):
     Takes a zero-arg callable that returns a fresh coroutine (NOT a coroutine
     directly), so retries on the threadpool path get a new awaitable instead
     of re-awaiting the same one — re-awaiting raises 'cannot reuse already
-    awaited coroutine' and masks the original error. We only fall back to the
-    threadpool when asyncio.run refuses because a loop is already running;
-    real exceptions inside the coroutine propagate.
+    awaited coroutine' and masks the original error. When a loop is already
+    running (asyncio.run would refuse), the coroutine is created and run in a
+    worker thread instead -- checked up front, so no coroutine is ever created
+    and then dropped un-awaited. Real exceptions inside the coroutine propagate.
     """
     try:
+        asyncio.get_running_loop()
+    except RuntimeError:
         return asyncio.run(coro_factory())
-    except RuntimeError as exc:
-        if "asyncio.run() cannot be called" not in str(exc) and \
-           "no running event loop" not in str(exc):
-            raise
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, coro_factory()).result()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(lambda: asyncio.run(coro_factory())).result()
 
 
 @lru_cache(maxsize=1)
