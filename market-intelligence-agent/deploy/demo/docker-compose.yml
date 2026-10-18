@@ -1,0 +1,41 @@
+# Full product for interview demos: caddy (HTTPS + login + React build) in
+# front of api (FastAPI + multi-agent graph + MCP + Chromium).
+#   docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env up -d --build
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    env_file: .env
+    volumes:
+      # checkpoints.db, store.db, workspace/ (reports, screenshots)
+      - ./data:/app/data
+      # The app opens the bare relative path "customers.db" (= /app/customers.db).
+      - ./data/customers.db:/app/customers.db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+
+  caddy:
+    build:
+      context: ../..
+      dockerfile: deploy/demo/Dockerfile.web
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

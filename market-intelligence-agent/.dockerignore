@@ -6,3 +6,8 @@ __pycache__/
 .env
 *.db
 .worktrees/
+frontend/node_modules/
+frontend/dist/
+data/
+deploy/demo/data/
+deploy/demo/.env

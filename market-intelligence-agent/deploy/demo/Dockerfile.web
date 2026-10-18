@@ -1,0 +1,13 @@
+# Caddy image carrying the built React console.
+# Build context: market-intelligence-agent/ (see docker-compose.yml).
+
+FROM node:20-slim AS build
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM caddy:2
+COPY --from=build /web/dist /srv
+COPY deploy/demo/Caddyfile /etc/caddy/Caddyfile

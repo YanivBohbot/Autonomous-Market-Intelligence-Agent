@@ -63,3 +63,7 @@ qa_final_state.png
 
 # Superpowers visual-brainstorming sessions (local mockups and events)
 .superpowers/
+
+# Demo deployment (deploy/demo/): server-only secrets and data stay out of git
+deploy/demo/data/
+!deploy/demo/.env.example

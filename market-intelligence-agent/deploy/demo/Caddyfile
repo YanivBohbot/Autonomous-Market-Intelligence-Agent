@@ -1,0 +1,24 @@
+# Front door of the demo: HTTPS (Let's Encrypt, or Caddy's local CA for
+# "localhost"), one Basic Auth login for everything, the API proxied to the
+# backend, the React build served for every other path.
+{$DOMAIN} {
+	basic_auth {
+		{$DEMO_USER} {$DEMO_PASSWORD_HASH}
+	}
+
+	# API prefixes only. "/data" alone is the Data page; "/data/..." is the API.
+	@api path /stream* /approve* /copilot* /data/* /conversations* /workspace* /gptlive* /voice/* /health
+	handle @api {
+		reverse_proxy api:8000 {
+			# Server-sent events: forward each token as soon as it arrives.
+			flush_interval -1
+		}
+	}
+
+	# Client-side routes (/research, /clients/7...) all load index.html.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
