@@ -23,10 +23,10 @@ docker run --rm caddy:2 caddy hash-password --plaintext 'YOUR_PASSWORD' | base64
 mkdir -p deploy/demo/data && cp customers.db deploy/demo/data/
 
 docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env up -d --build
-uv run python deploy/demo/smoke.py --base-url https://localhost --user demo --password 'YOUR_PASSWORD' --insecure
+uv run python deploy/demo/smoke.py --base-url https://127.0.0.1 --user demo --password 'YOUR_PASSWORD' --insecure
 ```
 
-Open https://localhost (accept Caddy's local certificate). Expect 6 × `PASS`.
+Open https://127.0.0.1 (accept Caddy's local certificate). Expect 6 × `PASS`. Use `127.0.0.1`, not `localhost`: on Windows, WSL can hold `[::1]:443`, and the browser then reaches WSL instead of Docker.
 
 ## Demo day (~30 min, billable from step 1)
 

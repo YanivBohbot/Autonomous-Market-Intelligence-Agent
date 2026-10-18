@@ -1,6 +1,12 @@
 # Front door of the demo: HTTPS (Let's Encrypt, or Caddy's local CA for
 # "localhost"), one Basic Auth login for everything, the API proxied to the
 # backend, the React build served for every other path.
+{
+	# Clients send no SNI for an IP address (local test on 127.0.0.1):
+	# answer with this site's certificate anyway.
+	default_sni {$DOMAIN}
+}
+
 {$DOMAIN} {
 	basic_auth {
 		{$DEMO_USER} {$DEMO_PASSWORD_HASH}
