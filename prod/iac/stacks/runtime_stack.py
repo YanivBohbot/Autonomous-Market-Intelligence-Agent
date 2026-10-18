@@ -180,7 +180,10 @@ class MiaRuntimeStack(Stack):
                 # rollback if we ever revert to smtplib.
                 "OPENAI_MODEL": "gpt-4o-mini",
                 "OPENAI_EMBEDDING_MODEL": "text-embedding-3-small",
-                "PINECONE_INDEX_NAME": f"{project}-rag",
+                # The 4 ingested reports live in "market-intel" (the free
+                # Pinecone plan is at its 5-index cap; "mia-rag" was never
+                # created, so prod RAG fell through to web search).
+                "PINECONE_INDEX_NAME": "market-intel",
                 # SES-verified sender identity. Must match the identity ARN
                 # in the IAM policy above and must be verified in SES (and in
                 # sandbox mode, the recipient must also be verified — self-
