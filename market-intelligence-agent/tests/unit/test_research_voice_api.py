@@ -223,6 +223,49 @@ def test_negotiation_failure_releases_research_lease(voice_api):
     assert asyncio.run(app.state.turn_coordinator.owner("failed-thread")) is None
 
 
+def _openai_status_error(cls, status_code: int, message: str):
+    import httpx
+
+    request = httpx.Request("POST", "https://api.openai.com/v1/live/sessions")
+    response = httpx.Response(status_code, request=request)
+    return cls(message, response=response, body={"error": {"message": message}})
+
+
+def test_offer_rejected_by_openai_is_a_400_with_its_reason(voice_api):
+    import openai
+
+    client, create, _ = voice_api
+    create.side_effect = _openai_status_error(
+        openai.BadRequestError, 400, "Failed to parse offer"
+    )
+
+    response = client.post(
+        "/gptlive/session",
+        json={"sdp": "offer", "thread_id": "bad-offer", "surface": "research"},
+    )
+
+    assert response.status_code == 400
+    assert "Failed to parse offer" in response.json()["detail"]
+    assert asyncio.run(app.state.turn_coordinator.owner("bad-offer")) is None
+
+
+def test_openai_outage_is_a_502(voice_api):
+    import openai
+
+    client, create, _ = voice_api
+    create.side_effect = _openai_status_error(
+        openai.InternalServerError, 503, "upstream down"
+    )
+
+    response = client.post(
+        "/gptlive/session",
+        json={"sdp": "offer", "thread_id": "outage", "surface": "research"},
+    )
+
+    assert response.status_code == 502
+    assert asyncio.run(app.state.turn_coordinator.owner("outage")) is None
+
+
 def test_worker_start_failure_releases_research_lease(voice_api, monkeypatch):
     client, _, _ = voice_api
     monkeypatch.setattr(

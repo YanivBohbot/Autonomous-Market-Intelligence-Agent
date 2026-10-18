@@ -8,6 +8,7 @@ import asyncio
 import logging
 from uuid import uuid4
 
+import openai
 from fastapi import APIRouter, HTTPException, Request
 from openai import AsyncOpenAI
 
@@ -89,6 +90,16 @@ async def create_session(payload: GptLiveSessionRequest, request: Request) -> Gp
     except Exception as exc:
         activity_store.end_session(thread_id, error=exc)
         await coordinator.release(lease)
+        # OpenAI refusing the offer is the browser's problem (4xx); OpenAI
+        # failing is an upstream outage (502). Anything else stays a 500.
+        if isinstance(exc, openai.APIStatusError):
+            if exc.status_code < 500:
+                raise HTTPException(
+                    status_code=400, detail=f"Voice session rejected: {exc.message}"
+                ) from exc
+            raise HTTPException(
+                status_code=502, detail="Voice service is unavailable."
+            ) from exc
         raise
 
     session_id = response.session.id
