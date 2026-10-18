@@ -88,6 +88,15 @@ export function groupActivityRuns(items: DeskActivity[]): ActivityRun[] {
     }
   }
 
+  // A pending approval blocks the thread, so any later run means it was
+  // decided: only the newest run can still be waiting.
+  for (const run of runs.slice(0, -1)) {
+    if (run.status === "awaiting") {
+      run.status = "done";
+      run.items = closeRunningTools(run.items);
+    }
+  }
+
   return runs.reverse();
 }
 

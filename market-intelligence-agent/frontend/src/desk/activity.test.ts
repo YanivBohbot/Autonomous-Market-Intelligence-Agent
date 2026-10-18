@@ -125,7 +125,8 @@ describe("groupActivityRuns", () => {
     const groups = groupActivityRuns(rows);
 
     expect(groups).toHaveLength(4);
-    expect(groups.map((group) => group.status)).toEqual(["running", "awaiting", "error", "done"]);
+    // The interrupted run is followed by a later run, so it is no longer waiting.
+    expect(groups.map((group) => group.status)).toEqual(["running", "done", "error", "done"]);
     expect(groups.map((group) => group.items[0]?.kind)).toEqual(["specialist", "specialist", "specialist", "specialist"]);
     expect(groups[0].startedAt).toBeGreaterThan(groups[1].startedAt);
   });
@@ -135,6 +136,23 @@ describe("groupActivityRuns", () => {
     expect(groupActivityRuns(run([{ type: "RUN_FINISHED" }]))[0].status).toBe("done");
     expect(groupActivityRuns(run([{ type: "RUN_ERROR" }]))[0].status).toBe("error");
     expect(groupActivityRuns(run([{ type: "STEP_STARTED", stepName: "rag_agent" }]))[0].status).toBe("running");
+  });
+
+  it("settles an approval run once the resumed run has started", () => {
+    const rows = run([
+      { type: "STEP_STARTED", stepName: "portfolio_agent" },
+      { type: "TOOL_CALL_START", toolCallId: "t1", toolCallName: "save_portfolio_report" },
+      { type: "RUN_FINISHED", outcome: { type: "interrupt" } },
+      { type: "STEP_STARTED", stepName: "portfolio_agent" },
+      { type: "TOOL_CALL_RESULT", toolCallId: "t1" },
+      { type: "RUN_FINISHED" },
+    ]);
+
+    const [resumed, approval] = groupActivityRuns(rows);
+
+    expect(resumed.status).toBe("done");
+    expect(approval.status).toBe("done");
+    expect(approval.items.filter((it) => it.kind === "tool").every((it) => it.status === "done")).toBe(true);
   });
 });
 
