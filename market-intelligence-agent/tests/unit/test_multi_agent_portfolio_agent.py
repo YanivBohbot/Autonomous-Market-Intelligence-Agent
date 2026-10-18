@@ -84,6 +84,17 @@ def test_report_recipe_calls_the_single_atomic_save_tool():
     assert "client_portfolio" in example
 
 
+def test_report_recipe_forbids_links_in_the_reply():
+    # Regression (QA 2026-10-18): the model wrote a relative link to the
+    # .xlsx, which the chat's markdown sanitizer rendered as "[blocked]".
+    # The file card already carries the Download button.
+    from app.agent.prompts.agents_specialist_prompts import PORTFOLIO_SYSTEM_PROMPT
+
+    recipe = PORTFOLIO_SYSTEM_PROMPT.split("Report recipe:")[1].split("\n-")[0]
+    assert "Download" in recipe
+    assert "never write a link" in recipe
+
+
 def test_prompt_never_saves_a_report_for_an_email_request():
     """Live QA 2026-10-11: "Send an email to Margaret Collins with a short
     summary of her portfolio" sometimes called save_portfolio_report (report
