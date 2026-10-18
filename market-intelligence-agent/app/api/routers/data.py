@@ -113,7 +113,7 @@ _MARKETS: dict[str, tuple[str, list[tuple[str, str]]]] = {
     "us": ("United States", [("S&P 500", "^GSPC"), ("Dow Jones", "^DJI"), ("Nasdaq", "^IXIC"), ("Russell 2000", "^RUT"), ("NYSE Composite", "^NYA"), ("S&P MidCap 400", "^MID"), ("VIX", "^VIX")]),
     "europe": ("Europe", [("DAX", "^GDAXI"), ("FTSE 100", "^FTSE"), ("CAC 40", "^FCHI"), ("Euro Stoxx 50", "^STOXX50E"), ("IBEX 35", "^IBEX"), ("SMI", "^SSMI"), ("AEX", "^AEX")]),
     "asia": ("Asia", [("Nikkei 225", "^N225"), ("Hang Seng", "^HSI"), ("Shanghai Composite", "000001.SS"), ("KOSPI", "^KS11"), ("Nifty 50", "^NSEI"), ("BSE Sensex", "^BSESN"), ("ASX 200", "^AXJO"), ("Taiwan Weighted", "^TWII")]),
-    "latin-america": ("Latin America", [("Ibovespa", "^BVSP"), ("S&P/BMV IPC", "^MXX"), ("Merval", "^MERV"), ("S&P Latin America 40", "^SPBLPGPT"), ("S&P IPSA", "^IPSA")]),
+    "latin-america": ("Latin America", [("Ibovespa", "^BVSP"), ("S&P/BMV IPC", "^MXX"), ("Merval", "^MERV"), ("iShares Latin America 40 ETF", "ILF"), ("iShares MSCI Chile ETF", "ECH")]),
     "currencies": ("Currencies", [("EUR / USD", "EURUSD=X"), ("USD / JPY", "JPY=X"), ("GBP / USD", "GBPUSD=X"), ("AUD / USD", "AUDUSD=X"), ("USD / CAD", "CAD=X"), ("USD / CHF", "CHF=X"), ("USD / CNY", "CNY=X")]),
     "crypto": ("Cryptocurrency", [("Bitcoin", "BTC-USD"), ("Ethereum", "ETH-USD"), ("Solana", "SOL-USD"), ("XRP", "XRP-USD"), ("BNB", "BNB-USD"), ("Dogecoin", "DOGE-USD"), ("Cardano", "ADA-USD")]),
 }
